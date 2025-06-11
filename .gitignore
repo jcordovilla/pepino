@@ -1,0 +1,20 @@
+# This is a .gitignore file for a Python project
+# It tells Git which files or directories to ignore
+# So that they are not tracked in the repository
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+
+# Database files
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
