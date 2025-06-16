@@ -1010,31 +1010,34 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             return timestamp
 
     async def update_word_frequencies(self, args: dict = None) -> str:
-        """Update word frequency statistics"""
+        """Update word frequency statistics - async wrapper"""
         try:
-            # Get all messages
-            cursor = self.conn.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT content, author_id, channel_name
-                    FROM messages
-                    WHERE content IS NOT NULL 
-                    AND content != ''
-                    AND {self.base_filter}
-                )
-                SELECT * FROM filtered_messages
-            """)
+            await self.initialize()
             
-            messages = cursor.fetchall()
+            # Get all messages
+            async with self.pool.execute(f"""
+                SELECT content
+                FROM messages
+                WHERE content IS NOT NULL 
+                AND content != ''
+                AND {self.base_filter}
+            """) as cursor:
+                messages = await cursor.fetchall()
+            
             if not messages:
                 return "No messages found for word frequency analysis"
             
             # Process messages
             word_freq = {}
             for msg in messages:
-                words = msg['content'].lower().split()
-                for word in words:
-                    if word not in stopwords.words('english') and len(word) > 2:
-                        word_freq[word] = word_freq.get(word, 0) + 1
+                content = msg[0] if msg else ""
+                if content:
+                    words = content.lower().split()
+                    for word in words:
+                        # Clean word and filter
+                        word = word.strip('.,!?";:()[]{}')
+                        if len(word) > 3 and word.isalpha():
+                            word_freq[word] = word_freq.get(word, 0) + 1
             
             # Sort by frequency
             sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
@@ -1051,114 +1054,65 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             return f"Error updating word frequencies: {str(e)}"
 
     async def update_user_statistics(self, args: dict = None) -> str:
-        """Update user activity statistics"""
+        """Update user activity statistics - async wrapper"""
         try:
+            await self.initialize()
+            
             # Get user statistics
-            cursor = self.conn.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE {self.base_filter}
-                )
+            async with self.pool.execute(f"""
                 SELECT 
                     author_id,
                     COALESCE(author_display_name, author_name, author_id) as display_name,
                     COUNT(*) as message_count,
                     COUNT(DISTINCT channel_name) as channels_active,
                     AVG(LENGTH(content)) as avg_message_length
-                FROM filtered_messages
+                FROM messages
+                WHERE {self.base_filter}
                 GROUP BY author_id, author_display_name, author_name
                 ORDER BY message_count DESC
-            """)
+                LIMIT 20
+            """) as cursor:
+                users = await cursor.fetchall()
             
-            users = cursor.fetchall()
             if not users:
                 return "No user statistics available"
             
             # Format results
             result = "**User Activity Statistics**\n\n"
             for user in users:
-                result += f"User {user['display_name']}:\n"
-                result += f"Total Messages: {user['message_count']}\n"
-                result += f"Active Channels: {user['channels_active']}\n"
-                result += f"Average Message Length: {user['avg_message_length']:.1f} characters\n\n"
+                display_name = user[1] if user[1] else user[0]
+                message_count = user[2]
+                channels_active = user[3]
+                avg_length = user[4] if user[4] else 0
+                
+                result += f"**{display_name}:**\n"
+                result += f"• Total Messages: {message_count}\n"
+                result += f"• Active Channels: {channels_active}\n"
+                result += f"• Average Message Length: {avg_length:.1f} characters\n\n"
             
             return result
             
         except Exception as e:
             return f"Error updating user statistics: {str(e)}"
 
-    async def update_conversation_chains(self, args: dict = None) -> str:
-        """Update conversation chain analysis"""
-        try:
-            # Get conversation chains
-            cursor = self.conn.execute("""
-                SELECT 
-                    channel_name,
-                    author_id,
-                    timestamp,
-                    content
-                FROM messages
-                WHERE content IS NOT NULL AND content != ''
-                ORDER BY channel_name, timestamp
-            """)
-            
-            messages = cursor.fetchall()
-            if not messages:
-                return "No messages found for conversation analysis"
-            
-            # Analyze conversation patterns
-            chains = {}
-            current_chain = []
-            current_channel = None
-            
-            for msg in messages:
-                if current_channel != msg['channel_name']:
-                    if current_chain:
-                        chain_key = f"{current_chain[0]['author_id']} -> {current_chain[-1]['author_id']}"
-                        chains[chain_key] = chains.get(chain_key, 0) + 1
-                    current_chain = [msg]
-                    current_channel = msg['channel_name']
-                else:
-                    if current_chain and msg['author_id'] != current_chain[-1]['author_id']:
-                        current_chain.append(msg)
-                    else:
-                        if current_chain:
-                            chain_key = f"{current_chain[0]['author_id']} -> {current_chain[-1]['author_id']}"
-                            chains[chain_key] = chains.get(chain_key, 0) + 1
-                        current_chain = [msg]
-            
-            # Format results
-            result = "**Conversation Chain Analysis**\n\n"
-            result += "**Most Common Conversation Patterns:**\n"
-            for chain, count in sorted(chains.items(), key=lambda x: x[1], reverse=True)[:10]:
-                result += f"{chain}: {count} occurrences\n"
-            
-            return result
-            
-        except Exception as e:
-            return f"Error updating conversation chains: {str(e)}"
-
     async def update_temporal_stats(self, args: dict = None) -> str:
-        """Update temporal activity statistics"""
+        """Update temporal activity statistics - async wrapper"""
         try:
+            await self.initialize()
+            
             # Get temporal statistics
-            cursor = self.conn.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE {self.base_filter}
-                )
+            async with self.pool.execute(f"""
                 SELECT 
                     strftime('%H', timestamp) as hour,
                     strftime('%w', timestamp) as day,
                     COUNT(*) as message_count
-                FROM filtered_messages
+                FROM messages
+                WHERE {self.base_filter}
                 GROUP BY hour, day
                 ORDER BY day, hour
-            """)
+            """) as cursor:
+                stats = await cursor.fetchall()
             
-            stats = cursor.fetchall()
             if not stats:
                 return "No temporal statistics available"
             
@@ -1167,9 +1121,9 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             daily_stats = {}
             
             for stat in stats:
-                hour = int(stat['hour'])
-                day = int(stat['day'])
-                count = stat['message_count']
+                hour = int(stat[0])
+                day = int(stat[1])
+                count = stat[2]
                 
                 if hour not in hourly_stats:
                     hourly_stats[hour] = 0
@@ -1179,24 +1133,17 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     daily_stats[day] = 0
                 daily_stats[day] += count
             
-            # Generate temporal activity chart
-            chart_path = await self.generate_temporal_activity_chart(hourly_stats, daily_stats)
-            
             # Format results
             result = "**Temporal Activity Analysis**\n\n"
             
             result += "**Activity by Hour:**\n"
             for hour in sorted(hourly_stats.keys()):
-                result += f"{hour:02d}:00 - {hour+1:02d}:00: {hourly_stats[hour]} messages\n"
+                result += f"{hour:02d}:00-{hour+1:02d}:00: {hourly_stats[hour]} messages\n"
             
             result += "\n**Activity by Day:**\n"
             days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
             for day in range(7):
                 result += f"{days[day]}: {daily_stats.get(day, 0)} messages\n"
-            
-            # Add chart information
-            if chart_path:
-                result += f"\n**Activity Chart:**\nChart has been generated and saved to: {chart_path}\n"
             
             return result
             
