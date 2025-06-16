@@ -34,20 +34,20 @@ class AnalysisCommands(commands.Cog):
     
     @app_commands.command(
         name="analyze",
-        description="Analyze Discord messages with various tasks"
+        description="General analysis tasks (use dedicated commands for better autocomplete)"
     )
     @app_commands.describe(
         task="The analysis task to perform",
-        channel="Channel name (for channel-specific analysis)",
-        user="Username (for user-specific analysis)"
+        channel="Channel name (better to use /channel_analysis or /topics_analysis)",
+        user="Username (better to use /user_analysis)"
     )
     @app_commands.choices(task=[
-        app_commands.Choice(name="wordfreq", value="wordfreq"),
-        app_commands.Choice(name="userstats", value="userstats"),
-        app_commands.Choice(name="channel", value="channel"),
-        app_commands.Choice(name="topics", value="topics"),
-        app_commands.Choice(name="temporal", value="temporal"),
-        app_commands.Choice(name="user", value="user")
+        app_commands.Choice(name="wordfreq - Word frequency analysis", value="wordfreq"),
+        app_commands.Choice(name="userstats - User statistics", value="userstats"),
+        app_commands.Choice(name="channel - Channel analysis (use /channel_analysis)", value="channel"),
+        app_commands.Choice(name="topics - Topic analysis (use /topics_analysis)", value="topics"),
+        app_commands.Choice(name="temporal - Temporal analysis", value="temporal"),
+        app_commands.Choice(name="user - User analysis (use /user_analysis)", value="user")
     ])
     async def analyze(
         self,
@@ -78,10 +78,7 @@ class AnalysisCommands(commands.Cog):
             elif task == "channel":
                 print(f"Channel task: channel parameter = '{channel}' (type: {type(channel)})")
                 if not channel:
-                    # Get list of channels for autocomplete
-                    channels = await self.analyzer.get_available_channels()
-                    channel_list = "\n".join([f"• {c}" for c in channels[:20]])
-                    await interaction.followup.send(f"Please specify a channel name. Usage: /analyze channel <channel_name>\n\nAvailable channels:\n{channel_list}")
+                    await interaction.followup.send(f"❌ **Channel parameter missing!**\n\n**For better experience, use the dedicated command:**\n`/channel_analysis` - Select channel from autocomplete dropdown\n\n**Or provide channel parameter:**\nChannel parameter received: `{repr(channel)}`")
                     return
                 print(f"Calling get_channel_insights with channel: '{channel}'")
                 result = await self.analyzer.get_channel_insights(channel)
@@ -98,10 +95,7 @@ class AnalysisCommands(commands.Cog):
             elif task == "user":
                 print(f"User task: user parameter = '{user}' (type: {type(user)})")
                 if not user:
-                    # Get list of users for autocomplete
-                    users = await self.analyzer.get_available_users()
-                    user_list = "\n".join([f"• {u}" for u in users[:20]])
-                    await interaction.followup.send(f"Please specify a user name. Usage: /analyze user <user_name>\n\nAvailable users:\n{user_list}")
+                    await interaction.followup.send(f"❌ **User parameter missing!**\n\n**For better experience, use the dedicated command:**\n`/user_analysis` - Select user from autocomplete dropdown\n\n**Or provide user parameter:**\nUser parameter received: `{repr(user)}`")
                     return
                 print(f"Calling get_user_insights with user: '{user}'")
                 result = await self.analyzer.get_user_insights(user)
@@ -429,6 +423,37 @@ class AnalysisCommands(commands.Cog):
         """Autocomplete for topics analysis channel filter"""
         return await self.channel_autocomplete(interaction, current)
 
+    @app_commands.command(
+        name="help_analysis",
+        description="Show available analysis commands and their usage"
+    )
+    async def help_analysis(self, interaction: discord.Interaction):
+        """Show help for analysis commands"""
+        help_text = """
+**🧠 Discord Analysis Bot Commands**
+
+**🎯 Recommended Commands (with autocomplete):**
+• `/channel_analysis` - Analyze a specific channel (autocomplete available)
+• `/user_analysis` - Analyze a specific user (autocomplete available)  
+• `/topics_analysis` - Analyze discussion topics, optionally by channel (autocomplete available)
+
+**📊 General Analysis Commands:**
+• `/analyze wordfreq` - Update word frequency statistics
+• `/analyze userstats` - Update user activity statistics
+• `/analyze temporal` - Analyze temporal patterns
+
+**📋 Utility Commands:**
+• `/list_users` - Show all available users
+• `/list_channels` - Show all available channels
+• `/help_analysis` - Show this help message
+
+**💡 Pro Tips:**
+- Use the dedicated commands (`/channel_analysis`, `/user_analysis`, `/topics_analysis`) for the best experience
+- These commands have autocomplete - just start typing and select from the dropdown!
+- The general `/analyze` command is available but dedicated commands work better
+        """
+        await interaction.response.send_message(help_text)
+        
     async def cog_unload(self):
         """Cleanup when the cog is unloaded"""
         if hasattr(self, 'analyzer'):

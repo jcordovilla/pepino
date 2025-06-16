@@ -581,37 +581,56 @@ class MessageAnalyzer:
             print(f"Error generating temporal activity chart: {e}")
             return None
 
-    async def get_channel_insights(self, args: dict = None) -> str:
+    async def get_channel_insights(self, channel_name_or_args) -> str:
         """Get insights for a specific channel"""
         try:
-            if not args or "channel_name" not in args:
-                return "Please specify a channel name. Usage: /analyze channel <channel_name>"
+            # Handle both old dict format and new string format
+            if isinstance(channel_name_or_args, dict):
+                # Old format: args dictionary
+                if not channel_name_or_args or "channel_name" not in channel_name_or_args:
+                    return "Please specify a channel name. Usage: /analyze channel <channel_name>"
+                channel_name = channel_name_or_args["channel_name"]
+            elif isinstance(channel_name_or_args, str):
+                # New format: direct string
+                if not channel_name_or_args:
+                    return "Please specify a channel name."
+                channel_name = channel_name_or_args
+            else:
+                return "Please specify a channel name."
+            await self.initialize()
             
-            channel_name = args["channel_name"]
-            
-            # Get all channel names for fuzzy matching
-            cursor = self.conn.cursor()
-            cursor.execute(f"""
+            # Get all channel names for matching
+            async with self.pool.execute(f"""
                 SELECT DISTINCT channel_name 
                 FROM messages 
                 WHERE {self.base_filter}
-            """)
-            channels = [row[0] for row in cursor.fetchall()]
+            """) as cursor:
+                channels = await cursor.fetchall()
+                channel_names = [row[0] for row in channels]
             
-            # Find best matching channel
+            # Find best matching channel (simple case-insensitive search)
             best_match = None
-            best_score = 0
-            for channel in channels:
-                score = fuzz.ratio(channel.lower(), channel_name.lower())
-                if score > best_score and score > 80:  # Require 80% similarity
-                    best_score = score
+            channel_name_lower = channel_name.lower()
+            
+            # Try exact match first
+            for channel in channel_names:
+                if channel.lower() == channel_name_lower:
                     best_match = channel
+                    break
+            
+            # Try partial match if no exact match
+            if not best_match:
+                for channel in channel_names:
+                    if channel_name_lower in channel.lower():
+                        best_match = channel
+                        break
             
             if not best_match:
-                return f"Channel '{channel_name}' not found. Available channels: {', '.join(channels)}"
+                available_channels = [ch for ch in channel_names if ch][:20]  # Limit display
+                return f"Channel '{channel_name}' not found. Available channels: {', '.join(available_channels)}"
             
             # Get channel statistics
-            cursor.execute(f"""
+            async with self.pool.execute(f"""
                 WITH filtered_messages AS (
                     SELECT *
                     FROM messages
@@ -623,12 +642,11 @@ class MessageAnalyzer:
                     MIN(timestamp) as first_message,
                     MAX(timestamp) as last_message
                 FROM filtered_messages
-            """, (str(best_match),))
-            
-            stats = cursor.fetchone()
+            """, (str(best_match),)) as cursor:
+                stats = await cursor.fetchone()
             
             # Get top contributors
-            cursor.execute(f"""
+            async with self.pool.execute(f"""
                 WITH filtered_messages AS (
                     SELECT *
                     FROM messages
@@ -641,12 +659,11 @@ class MessageAnalyzer:
                 GROUP BY author_id, author_display_name, author_name
                 ORDER BY message_count DESC
                 LIMIT 5
-            """, (str(best_match),))
-            
-            top_users = cursor.fetchall()
+            """, (str(best_match),)) as cursor:
+                top_users = await cursor.fetchall()
             
             # Get activity by hour
-            cursor.execute(f"""
+            async with self.pool.execute(f"""
                 WITH filtered_messages AS (
                     SELECT *
                     FROM messages
@@ -658,9 +675,8 @@ class MessageAnalyzer:
                 FROM filtered_messages
                 GROUP BY hour
                 ORDER BY hour
-            """, (str(best_match),))
-            
-            hourly_activity = cursor.fetchall()
+            """, (str(best_match),)) as cursor:
+                hourly_activity = await cursor.fetchall()
             
             # Generate activity chart
             chart_path = await self.generate_channel_activity_chart(best_match)
@@ -670,20 +686,20 @@ class MessageAnalyzer:
             
             # Basic statistics
             result += "**Basic Statistics:**\n"
-            result += f"Total Messages: {stats['total_messages']}\n"
-            result += f"Unique Users: {stats['unique_users']}\n"
-            result += f"First Message: {self.format_timestamp(stats['first_message'])}\n"
-            result += f"Last Message: {self.format_timestamp(stats['last_message'])}\n\n"
+            result += f"Total Messages: {stats[0]}\n"
+            result += f"Unique Users: {stats[1]}\n"
+            result += f"First Message: {self.format_timestamp(stats[2])}\n"
+            result += f"Last Message: {self.format_timestamp(stats[3])}\n\n"
             
             # Top contributors
             result += "**Top Contributors:**\n"
             for user in top_users:
-                result += f"{user['display_name']}: {user['message_count']} messages\n"
+                result += f"{user[0]}: {user[1]} messages\n"
             
             # Activity by hour
             result += "\n**Activity by Hour:**\n"
             for hour in hourly_activity:
-                result += f"{hour['hour']}:00 - {hour['hour']}:59: {hour['message_count']} messages\n"
+                result += f"{hour[0]}:00 - {hour[0]}:59: {hour[1]} messages\n"
             
             # Add chart information
             if chart_path:
