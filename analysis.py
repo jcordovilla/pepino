@@ -64,9 +64,10 @@ class MessageAnalyzer:
         # Base filter to exclude sesh bot and test channels
         self.base_filter = """
             author_id != 'sesh' 
+            AND author_id != '1362434210895364327'
             AND author_name != 'sesh'
-            AND author_name != 'Pepe'
-            AND author_name != 'Pepino'
+            AND LOWER(author_name) != 'pepe'
+            AND LOWER(author_name) != 'pepino'
             AND channel_name NOT LIKE '%test%' 
             AND channel_name NOT LIKE '%playground%' 
             AND channel_name NOT LIKE '%pg%'
@@ -939,9 +940,11 @@ class MessageAnalyzer:
                 SELECT DISTINCT author_name 
                 FROM messages 
                 WHERE author_name IS NOT NULL 
+                AND author_id != 'sesh'
+                AND author_id != '1362434210895364327'
                 AND author_name != 'sesh'
-                AND author_name != 'Pepe'
-                AND author_name != 'Pepino'
+                AND LOWER(author_name) != 'pepe'
+                AND LOWER(author_name) != 'pepino'
                 ORDER BY author_name
             """) as cursor:
                 users = await cursor.fetchall()
@@ -960,9 +963,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         self.base_filter = """
             channel_name NOT LIKE '%test%'
             AND channel_name NOT LIKE '%playground%'
+            AND author_id != 'sesh'
+            AND author_id != '1362434210895364327'
             AND author_name != 'sesh'
-            AND author_name != 'Pepe'
-            AND author_name != 'Pepino'
+            AND LOWER(author_name) != 'pepe'
+            AND LOWER(author_name) != 'pepino'
         """
         # Initialize NLTK resources
         try:
@@ -1482,9 +1487,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 SELECT DISTINCT author_id, author_name, author_display_name
                 FROM messages 
                 WHERE author_name IS NOT NULL 
+                AND author_id != 'sesh'
+                AND author_id != '1362434210895364327'
                 AND author_name != 'sesh'
-                AND author_name != 'Pepe'
-                AND author_name != 'Pepino'
+                AND LOWER(author_name) != 'pepe'
+                AND LOWER(author_name) != 'pepino'
                 ORDER BY author_name
             """) as cursor:
                 all_users = await cursor.fetchall()
