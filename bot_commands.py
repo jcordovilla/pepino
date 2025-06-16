@@ -58,6 +58,8 @@ class AnalysisCommands(commands.Cog):
     ):
         """Analyze Discord messages with various tasks"""
         try:
+            print(f"Analyze command called with task='{task}', channel='{channel}', user='{user}'")
+            
             # Ensure analyzer is initialized
             try:
                 await self.analyzer.initialize()
@@ -74,27 +76,34 @@ class AnalysisCommands(commands.Cog):
             elif task == "userstats":
                 result = await self.analyzer.update_user_statistics()
             elif task == "channel":
+                print(f"Channel task: channel parameter = '{channel}' (type: {type(channel)})")
                 if not channel:
                     # Get list of channels for autocomplete
                     channels = await self.analyzer.get_available_channels()
                     channel_list = "\n".join([f"• {c}" for c in channels[:20]])
-                    await interaction.followup.send(f"Please specify a channel name. Available channels:\n{channel_list}")
+                    await interaction.followup.send(f"Please specify a channel name. Usage: /analyze channel <channel_name>\n\nAvailable channels:\n{channel_list}")
                     return
+                print(f"Calling get_channel_insights with channel: '{channel}'")
                 result = await self.analyzer.get_channel_insights(channel)
             elif task == "topics":
                 args_dict = {}
                 if channel:
+                    print(f"Topics with channel filter: '{channel}'")
                     args_dict["channel_name"] = channel
+                else:
+                    print("Topics without channel filter")
                 result = await self.analyzer.analyze_topics_spacy(args_dict)
             elif task == "temporal":
                 result = await self.analyzer.update_temporal_stats()
             elif task == "user":
+                print(f"User task: user parameter = '{user}' (type: {type(user)})")
                 if not user:
                     # Get list of users for autocomplete
                     users = await self.analyzer.get_available_users()
                     user_list = "\n".join([f"• {u}" for u in users[:20]])
-                    await interaction.followup.send(f"Please specify a user name. Available users:\n{user_list}")
+                    await interaction.followup.send(f"Please specify a user name. Usage: /analyze user <user_name>\n\nAvailable users:\n{user_list}")
                     return
+                print(f"Calling get_user_insights with user: '{user}'")
                 result = await self.analyzer.get_user_insights(user)
             else:
                 await interaction.followup.send(f"Unknown task: {task}")
@@ -274,6 +283,151 @@ class AnalysisCommands(commands.Cog):
             import traceback
             traceback.print_exc()
             return []
+
+    @app_commands.command(
+        name="channel_analysis",
+        description="Analyze a specific Discord channel"
+    )
+    @app_commands.describe(
+        channel="Channel name to analyze"
+    )
+    async def channel_analysis(
+        self,
+        interaction: discord.Interaction,
+        channel: str
+    ):
+        """Analyze a specific Discord channel"""
+        try:
+            print(f"Channel analysis command called with channel='{channel}'")
+            
+            await self.analyzer.initialize()
+            await interaction.response.defer()
+            
+            result = await self.analyzer.get_channel_insights(channel)
+            
+            # Handle the result
+            if isinstance(result, tuple):
+                text_result, file_path = result
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        file = discord.File(f, filename=os.path.basename(file_path))
+                        await interaction.followup.send(text_result, file=file)
+                else:
+                    await interaction.followup.send(text_result)
+            else:
+                if len(result) > 2000:
+                    chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                    for chunk in chunks:
+                        await interaction.followup.send(chunk)
+                else:
+                    await interaction.followup.send(result)
+                    
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Error during channel analysis: {str(e)}")
+            else:
+                await interaction.followup.send(f"Error during channel analysis: {str(e)}")
+
+    @channel_analysis.autocomplete('channel')
+    async def channel_analysis_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete for channel analysis"""
+        return await self.channel_autocomplete(interaction, current)
+
+    @app_commands.command(
+        name="user_analysis", 
+        description="Analyze a specific Discord user"
+    )
+    @app_commands.describe(
+        user="Username to analyze"
+    )
+    async def user_analysis(
+        self,
+        interaction: discord.Interaction,
+        user: str
+    ):
+        """Analyze a specific Discord user"""
+        try:
+            print(f"User analysis command called with user='{user}'")
+            
+            await self.analyzer.initialize()
+            await interaction.response.defer()
+            
+            result = await self.analyzer.get_user_insights(user)
+            
+            # Handle the result  
+            if len(result) > 2000:
+                chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                for chunk in chunks:
+                    await interaction.followup.send(chunk)
+            else:
+                await interaction.followup.send(result)
+                    
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Error during user analysis: {str(e)}")
+            else:
+                await interaction.followup.send(f"Error during user analysis: {str(e)}")
+
+    @user_analysis.autocomplete('user')
+    async def user_analysis_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete for user analysis"""
+        return await self.user_autocomplete(interaction, current)
+
+    @app_commands.command(
+        name="topics_analysis",
+        description="Analyze topics in messages, optionally filtered by channel"
+    )
+    @app_commands.describe(
+        channel="Optional: Channel name to filter analysis"
+    )
+    async def topics_analysis(
+        self,
+        interaction: discord.Interaction,
+        channel: str = None
+    ):
+        """Analyze topics in messages with optional channel filter"""
+        try:
+            print(f"Topics analysis command called with channel='{channel}'")
+            
+            await self.analyzer.initialize()
+            await interaction.response.defer()
+            
+            args_dict = {}
+            if channel:
+                args_dict["channel_name"] = channel
+                
+            result = await self.analyzer.analyze_topics_spacy(args_dict)
+            
+            # Handle the result
+            if len(result) > 2000:
+                chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                for chunk in chunks:
+                    await interaction.followup.send(chunk)
+            else:
+                await interaction.followup.send(result)
+                    
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Error during topics analysis: {str(e)}")
+            else:
+                await interaction.followup.send(f"Error during topics analysis: {str(e)}")
+
+    @topics_analysis.autocomplete('channel')
+    async def topics_analysis_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete for topics analysis channel filter"""
+        return await self.channel_autocomplete(interaction, current)
 
     async def cog_unload(self):
         """Cleanup when the cog is unloaded"""
