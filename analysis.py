@@ -918,14 +918,13 @@ class MessageAnalyzer:
         """Get list of available channels in the database"""
         try:
             await self.initialize()
-            async with self.pool.cursor() as cursor:
-                await cursor.execute("""
-                    SELECT DISTINCT channel_name 
-                    FROM messages 
-                    WHERE channel_name NOT LIKE '%test%'
-                    AND channel_name NOT LIKE '%playground%'
-                    ORDER BY channel_name
-                """)
+            async with self.pool.execute("""
+                SELECT DISTINCT channel_name 
+                FROM messages 
+                WHERE channel_name NOT LIKE '%test%'
+                AND channel_name NOT LIKE '%playground%'
+                ORDER BY channel_name
+            """) as cursor:
                 channels = await cursor.fetchall()
                 return [channel[0] for channel in channels]
         except Exception as e:

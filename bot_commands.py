@@ -38,7 +38,8 @@ class AnalysisCommands(commands.Cog):
     )
     @app_commands.describe(
         task="The analysis task to perform",
-        args="Additional arguments for the task"
+        channel="Channel name (for channel-specific analysis)",
+        user="Username (for user-specific analysis)"
     )
     @app_commands.choices(task=[
         app_commands.Choice(name="wordfreq", value="wordfreq"),
@@ -52,7 +53,8 @@ class AnalysisCommands(commands.Cog):
         self,
         interaction: discord.Interaction,
         task: str,
-        args: str = None
+        channel: str = None,
+        user: str = None
     ):
         """Analyze Discord messages with various tasks"""
         try:
@@ -72,25 +74,28 @@ class AnalysisCommands(commands.Cog):
             elif task == "userstats":
                 result = await self.analyzer.update_user_statistics()
             elif task == "channel":
-                if not args:
+                if not channel:
                     # Get list of channels for autocomplete
                     channels = await self.analyzer.get_available_channels()
-                    channel_list = "\n".join([f"• {c}" for c in channels])
+                    channel_list = "\n".join([f"• {c}" for c in channels[:20]])
                     await interaction.followup.send(f"Please specify a channel name. Available channels:\n{channel_list}")
                     return
-                result = await self.analyzer.get_channel_insights(args)
+                result = await self.analyzer.get_channel_insights(channel)
             elif task == "topics":
-                result = await self.analyzer.analyze_topics_spacy()
+                args_dict = {}
+                if channel:
+                    args_dict["channel_name"] = channel
+                result = await self.analyzer.analyze_topics_spacy(args_dict)
             elif task == "temporal":
                 result = await self.analyzer.update_temporal_stats()
             elif task == "user":
-                if not args:
+                if not user:
                     # Get list of users for autocomplete
                     users = await self.analyzer.get_available_users()
-                    user_list = "\n".join([f"• {u}" for u in users])
+                    user_list = "\n".join([f"• {u}" for u in users[:20]])
                     await interaction.followup.send(f"Please specify a user name. Available users:\n{user_list}")
                     return
-                result = await self.analyzer.get_user_insights(args)
+                result = await self.analyzer.get_user_insights(user)
             else:
                 await interaction.followup.send(f"Unknown task: {task}")
                 return
@@ -174,6 +179,80 @@ class AnalysisCommands(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"Error listing channels: {str(e)}")
 
+    @analyze.autocomplete('channel')
+    async def channel_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete for channel names"""
+        try:
+            # Ensure analyzer is initialized
+            await self.analyzer.initialize()
+            
+            # Get available channels
+            channels = await self.analyzer.get_available_channels()
+            
+            # Filter channels based on current input
+            if current:
+                # Case-insensitive filtering
+                filtered_channels = [
+                    channel for channel in channels 
+                    if current.lower() in channel.lower()
+                ]
+            else:
+                filtered_channels = channels
+            
+            # Limit to 25 choices (Discord limit)
+            filtered_channels = filtered_channels[:25]
+            
+            # Return choices
+            return [
+                app_commands.Choice(name=channel, value=channel)
+                for channel in filtered_channels
+            ]
+            
+        except Exception as e:
+            print(f"Error in channel autocomplete: {e}")
+            return []
+    
+    @analyze.autocomplete('user')
+    async def user_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete for user names"""
+        try:
+            # Ensure analyzer is initialized
+            await self.analyzer.initialize()
+            
+            # Get available users
+            users = await self.analyzer.get_available_users()
+            
+            # Filter users based on current input
+            if current:
+                # Case-insensitive filtering
+                filtered_users = [
+                    user for user in users 
+                    if current.lower() in user.lower()
+                ]
+            else:
+                filtered_users = users
+            
+            # Limit to 25 choices (Discord limit)
+            filtered_users = filtered_users[:25]
+            
+            # Return choices
+            return [
+                app_commands.Choice(name=user, value=user)
+                for user in filtered_users
+            ]
+            
+        except Exception as e:
+            print(f"Error in user autocomplete: {e}")
+            return []
+
     async def cog_unload(self):
         """Cleanup when the cog is unloaded"""
         if hasattr(self, 'analyzer'):
@@ -190,4 +269,4 @@ async def setup(bot):
         print('Analysis commands loaded successfully!')
     except Exception as e:
         print(f'Error loading analysis commands: {str(e)}')
-        raise 
+        raise

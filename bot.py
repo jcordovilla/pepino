@@ -113,6 +113,17 @@ Example: `/analyze channel general` or `/analyze user Jose Cordovilla`
         if 'analyzer' in locals():
             analyzer.close()
 
+@bot.command(name='sync')
+async def sync(ctx):
+    """Manually sync slash commands"""
+    try:
+        synced = await bot.tree.sync()
+        await ctx.send(f'Synced {len(synced)} command(s)')
+        logger.info(f'Manually synced {len(synced)} command(s)')
+    except Exception as e:
+        await ctx.send(f'Failed to sync: {e}')
+        logger.error(f'Failed to manually sync: {e}')
+
 def main():
     """Main function to run the bot"""
     # Get token from environment variable
@@ -124,4 +135,4 @@ def main():
     bot.run(token)
 
 if __name__ == '__main__':
-    main() 
+    main()
