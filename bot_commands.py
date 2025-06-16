@@ -68,7 +68,7 @@ class AnalysisCommands(commands.Cog):
             
             # Handle different tasks
             if task == "wordfreq":
-                result = await self.analyzer.update_word_frequency()
+                result = await self.analyzer.update_word_frequencies()
             elif task == "userstats":
                 result = await self.analyzer.update_user_statistics()
             elif task == "channel":
@@ -80,7 +80,7 @@ class AnalysisCommands(commands.Cog):
                     return
                 result = await self.analyzer.get_channel_insights(args)
             elif task == "topics":
-                result = await self.analyzer.update_topic_analysis()
+                result = await self.analyzer.analyze_topics()
             elif task == "temporal":
                 result = await self.analyzer.update_temporal_stats()
             elif task == "user":
