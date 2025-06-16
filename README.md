@@ -152,3 +152,153 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Never commit your `.env` file or Discord tokens to version control
 - Keep your bot token secure and regenerate if compromised
 - The SQLite database may contain sensitive conversation data - handle appropriately
+
+## Bot Analysis Commands
+
+The application includes a Discord bot with comprehensive message analysis capabilities. Use these commands to test all analytical functionalities:
+
+### Basic Analysis Commands
+
+**Word Frequency Analysis**
+```
+/analyze wordfreq
+```
+
+**User Statistics**
+```
+/analyze userstats
+```
+
+**Temporal Activity Patterns**
+```
+/analyze temporal
+```
+
+**Topic Analysis**
+```
+/analyze topics
+```
+
+### Channel Analysis
+
+**Analyze Specific Channels**
+```
+/analyze channel general-chat
+/analyze channel 🦾agent-ops
+/analyze channel 🗂agent-ops-resources
+/analyze channel 👾discord-managers
+```
+
+**List Available Channels**
+```
+/list_channels
+```
+
+### User Analysis
+
+**Search by Display Name**
+```
+/analyze user Arturo Cuevas
+/analyze user Jose Cordovilla
+```
+
+**Search by Username**
+```
+/analyze user arthurcaves
+/analyze user julioverne74
+```
+
+**Test Fuzzy Matching**
+```
+/analyze user Arturo
+/analyze user Jose
+/analyze user arthur
+```
+
+**List Available Users**
+```
+/list_users
+```
+
+### Advanced Analysis Commands
+
+**Topic Analysis for Specific Channel**
+```
+/analyze topics general-chat
+/analyze topics 🦾agent-ops
+```
+
+**Similar Message Finding (if implemented)**
+```
+/analyze similar 1234567890
+```
+
+**Conversation Analysis (if implemented)**
+```
+/analyze conversations
+```
+
+**Run All Analyses**
+```
+/analyze runall
+```
+
+### Test Cases for Edge Cases
+
+**Non-existent Users**
+```
+/analyze user NonExistentUser
+/analyze user XYZ123
+```
+
+**Non-existent Channels**
+```
+/analyze channel nonexistent-channel
+/analyze channel test123
+```
+
+**Special Characters in Names**
+```
+/analyze user José
+/analyze channel #general
+```
+
+**Case Sensitivity Tests**
+```
+/analyze user ARTURO CUEVAS
+/analyze user arturo cuevas
+/analyze channel GENERAL-CHAT
+```
+
+**Partial Name Matching**
+```
+/analyze user Art
+/analyze user Cuevas
+/analyze channel agent
+```
+
+### Bot Command Tests
+
+**Help and Information**
+```
+/analyze
+/analyze help
+```
+
+**Error Handling**
+```
+/analyze invalidcommand
+/analyze user
+/analyze channel
+```
+
+### Performance Tests
+
+**Large Data Analysis**
+```
+/analyze userstats
+/analyze wordfreq
+/analyze temporal
+```
+
+> **Note**: The user analysis feature supports both display names (e.g., "Jose Cordovilla") and usernames (e.g., "julioverne74") with intelligent fuzzy matching for approximate matches.

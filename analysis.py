@@ -690,171 +690,32 @@ class MessageAnalyzer:
         except Exception as e:
             return f"Error getting channel insights: {str(e)}"
 
-    async def get_user_insights(self, user_id: str) -> str:
-        """Get insights for a specific user"""
+    async def get_user_insights_by_display_name(self, display_name: str) -> str:
+        """Get insights for a specific user by their display name"""
         try:
-            # Ensure database is initialized
             await self.initialize()
-            
-            print(f"Getting insights for user: {user_id}")
-            
-            # First try to find the user in the database
-            async with self.pool.cursor() as cursor:
-                # Try exact match first
-                await cursor.execute("""
-                    SELECT DISTINCT user_id, user_name 
-                    FROM messages 
-                    WHERE user_name = ?
-                    LIMIT 1
-                """, (user_id,))
+            print(f"Getting insights for display name: {display_name}")
+
+            # Find the username corresponding to the display name
+            async with self.pool.execute("""
+                SELECT DISTINCT author_name
+                FROM messages
+                WHERE author_display_name = ?
+                LIMIT 1
+            """, (display_name,)) as cursor:
                 user = await cursor.fetchone()
-                
-                if not user:
-                    # Try case-insensitive match
-                    await cursor.execute("""
-                        SELECT DISTINCT user_id, user_name 
-                        FROM messages 
-                        WHERE LOWER(user_name) = LOWER(?)
-                        LIMIT 1
-                    """, (user_id,))
-                    user = await cursor.fetchone()
-                
-                if not user:
-                    # Try partial match
-                    await cursor.execute("""
-                        SELECT DISTINCT user_id, user_name 
-                        FROM messages 
-                        WHERE LOWER(user_name) LIKE LOWER(?)
-                        LIMIT 1
-                    """, (f"%{user_id}%",))
-                    user = await cursor.fetchone()
-                
-                if not user:
-                    # Get all users for suggestion
-                    await cursor.execute("""
-                        SELECT DISTINCT user_name 
-                        FROM messages 
-                        WHERE user_name IS NOT NULL 
-                        ORDER BY user_name
-                    """)
-                    users = await cursor.fetchall()
-                    user_list = "\n".join([f"• {u[0]}" for u in users])
-                    return f"User '{user_id}' not found. Available users:\n{user_list}"
-                
-                user_id = user[0]
-                user_name = user[1]
-                print(f"Found user: {user_name} (ID: {user_id})")
-            
-            # Get user statistics
-            async with self.pool.cursor() as cursor:
-                # Get message count and first/last message
-                await cursor.execute("""
-                    WITH filtered_messages AS (
-                        SELECT * FROM messages 
-                        WHERE user_id = ?
-                        AND channel_name NOT LIKE '%test%'
-                        AND channel_name NOT LIKE '%playground%'
-                        AND user_name != 'sesh'
-                    )
-                    SELECT 
-                        COUNT(*) as message_count,
-                        MIN(created_at) as first_message,
-                        MAX(created_at) as last_message
-                    FROM filtered_messages
-                """, (user_id,))
-                stats = await cursor.fetchone()
-                
-                if not stats or stats[0] == 0:
-                    return f"No messages found for user {user_name}"
-                
-                # Get channel activity
-                await cursor.execute("""
-                    WITH filtered_messages AS (
-                        SELECT * FROM messages 
-                        WHERE user_id = ?
-                        AND channel_name NOT LIKE '%test%'
-                        AND channel_name NOT LIKE '%playground%'
-                        AND user_name != 'sesh'
-                    )
-                    SELECT 
-                        channel_name,
-                        COUNT(*) as message_count
-                    FROM filtered_messages
-                    GROUP BY channel_name
-                    ORDER BY message_count DESC
-                    LIMIT 5
-                """, (user_id,))
-                channel_stats = await cursor.fetchall()
-                
-                # Get temporal activity
-                await cursor.execute("""
-                    WITH filtered_messages AS (
-                        SELECT * FROM messages 
-                        WHERE user_id = ?
-                        AND channel_name NOT LIKE '%test%'
-                        AND channel_name NOT LIKE '%playground%'
-                        AND user_name != 'sesh'
-                    )
-                    SELECT 
-                        strftime('%H', created_at) as hour,
-                        COUNT(*) as message_count
-                    FROM filtered_messages
-                    GROUP BY hour
-                    ORDER BY hour
-                """, (user_id,))
-                temporal_stats = await cursor.fetchall()
-                
-                # Get word frequency
-                await cursor.execute("""
-                    WITH filtered_messages AS (
-                        SELECT * FROM messages 
-                        WHERE user_id = ?
-                        AND channel_name NOT LIKE '%test%'
-                        AND channel_name NOT LIKE '%playground%'
-                        AND user_name != 'sesh'
-                    )
-                    SELECT 
-                        word,
-                        COUNT(*) as frequency
-                    FROM filtered_messages,
-                    LATERAL unnest(string_to_array(LOWER(content), ' ')) as word
-                    WHERE length(word) > 3
-                    GROUP BY word
-                    ORDER BY frequency DESC
-                    LIMIT 10
-                """, (user_id,))
-                word_stats = await cursor.fetchall()
-            
-            # Format the results
-            result = f"**User Analysis for {user_name}**\n\n"
-            
-            # Basic stats
-            result += f"**Message Statistics:**\n"
-            result += f"• Total Messages: {stats[0]}\n"
-            result += f"• First Message: {self.format_timestamp(stats[1])}\n"
-            result += f"• Last Message: {self.format_timestamp(stats[2])}\n\n"
-            
-            # Channel activity
-            result += f"**Top Channels:**\n"
-            for chan in channel_stats:
-                result += f"• #{chan[0]}: {chan[1]} messages\n"
-            result += "\n"
-            
-            # Word frequency
-            result += f"**Most Used Words:**\n"
-            for word in word_stats:
-                result += f"• {word[0]}: {word[1]} times\n"
-            
-            # Generate activity chart
-            chart_path = await self.generate_user_activity_chart(user_name, temporal_stats)
-            if chart_path:
-                return result, chart_path
-            
-            return result
-            
+
+            if not user:
+                return f"Display name '{display_name}' not found."
+
+            author_name = user[0]
+            print(f"Matched display name '{display_name}' to username '{author_name}'")
+
+            # Use existing method to get insights by username
+            return await self.get_user_insights(author_name)
+
         except Exception as e:
-            print(f"Error in get_user_insights: {str(e)}")
-            return f"Error getting user insights: {str(e)}"
+            return f"Error getting user insights by display name: {str(e)}"
 
     def run_all_analyses(self) -> Dict[str, Any]:
         """Run all analysis updates and return a comprehensive summary"""
@@ -1071,14 +932,13 @@ class MessageAnalyzer:
         """Get list of available users in the database"""
         try:
             await self.initialize()
-            async with self.pool.cursor() as cursor:
-                await cursor.execute("""
-                    SELECT DISTINCT user_name 
-                    FROM messages 
-                    WHERE user_name IS NOT NULL 
-                    AND user_name != 'sesh'
-                    ORDER BY user_name
-                """)
+            async with self.pool.execute("""
+                SELECT DISTINCT author_name 
+                FROM messages 
+                WHERE author_name IS NOT NULL 
+                AND author_name != 'sesh'
+                ORDER BY author_name
+            """) as cursor:
                 users = await cursor.fetchall()
                 return [user[0] for user in users]
         except Exception as e:
@@ -1095,7 +955,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         self.base_filter = """
             channel_name NOT LIKE '%test%'
             AND channel_name NOT LIKE '%playground%'
-            AND user_name != 'sesh'
+            AND author_name != 'sesh'
         """
         # Initialize NLTK resources
         try:
@@ -1657,6 +1517,176 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             print(f"Error in topic analysis: {e}")
             return f"Error analyzing topics: {str(e)}"
 
-if __name__ == '__main__':
-    analyzer = MessageAnalyzer()
-    analyzer.run_all_analyses() 
+    async def get_user_insights(self, user_id: str) -> str:
+        """Get insights for a specific user with fuzzy matching"""
+        try:
+            await self.initialize()
+            print(f"Getting insights for user: {user_id}")
+            
+            # Get all available users (both username and display name) for fuzzy matching
+            async with self.pool.execute("""
+                SELECT DISTINCT author_id, author_name, author_display_name
+                FROM messages 
+                WHERE author_name IS NOT NULL 
+                AND author_name != 'sesh'
+                ORDER BY author_name
+            """) as cursor:
+                all_users = await cursor.fetchall()
+            
+            if not all_users:
+                return "No users found in the database."
+            
+            # Try exact matches first
+            user = None
+            
+            # Try exact match on username
+            for u in all_users:
+                if u[1].lower() == user_id.lower():
+                    user = u
+                    print(f"Found exact username match: {user_id}")
+                    break
+            
+            # Try exact match on display name if no username match
+            if not user:
+                for u in all_users:
+                    display_name = u[2] if len(u) > 2 and u[2] else ""
+                    if display_name and display_name.lower() == user_id.lower():
+                        user = u
+                        print(f"Found exact display name match: {user_id}")
+                        break
+            
+            # If no exact match, use fuzzy matching on both username and display name
+            if not user:
+                from fuzzywuzzy import fuzz
+                
+                # Find the best fuzzy match across both usernames and display names
+                best_match = None
+                best_ratio = 0
+                
+                for u in all_users:
+                    # Check username fuzzy match
+                    username_ratio = fuzz.ratio(user_id.lower(), u[1].lower())
+                    if username_ratio > best_ratio:
+                        best_ratio = username_ratio
+                        best_match = u
+                    
+                    # Check display name fuzzy match
+                    display_name = u[2] if len(u) > 2 and u[2] else ""
+                    if display_name:
+                        display_ratio = fuzz.ratio(user_id.lower(), display_name.lower())
+                        if display_ratio > best_ratio:
+                            best_ratio = display_ratio
+                            best_match = u
+                
+                # Use fuzzy match if similarity is above threshold (70%)
+                if best_ratio >= 70:
+                    user = best_match
+                    print(f"Fuzzy match found: '{user_id}' -> '{user[1]}' (similarity: {best_ratio}%)")
+            
+            if not user:
+                # No good match found, show suggestions
+                from fuzzywuzzy import process
+                
+                # Create list of all searchable names (both usernames and display names)
+                searchable_names = []
+                for u in all_users:
+                    searchable_names.append(u[1])  # username
+                    display_name = u[2] if len(u) > 2 and u[2] else ""
+                    if display_name and display_name != u[1]:
+                        searchable_names.append(display_name)  # display name
+                
+                suggestions = process.extract(user_id, searchable_names, limit=5)
+                suggestion_text = "\n".join([f"• {name} (similarity: {score}%)" for name, score in suggestions])
+                return f"User '{user_id}' not found. Did you mean one of these?\n{suggestion_text}"
+            
+            actual_user_id = user[0]
+            user_name = user[1]
+            print(f"Found user: {user_name} (ID: {actual_user_id})")
+            
+            # Get user statistics
+            async with self.pool.execute("""
+                SELECT 
+                    COUNT(*) as message_count,
+                    MIN(timestamp) as first_message,
+                    MAX(timestamp) as last_message
+                FROM messages 
+                WHERE author_id = ?
+                AND channel_name NOT LIKE '%test%'
+                AND channel_name NOT LIKE '%playground%'
+                AND author_name != 'sesh'
+            """, (actual_user_id,)) as cursor:
+                stats = await cursor.fetchone()
+            
+            if not stats or stats[0] == 0:
+                return f"No messages found for user {user_name}"
+            
+            # Get channel activity
+            async with self.pool.execute("""
+                SELECT 
+                    channel_name,
+                    COUNT(*) as message_count
+                FROM messages 
+                WHERE author_id = ?
+                AND channel_name NOT LIKE '%test%'
+                AND channel_name NOT LIKE '%playground%'
+                AND author_name != 'sesh'
+                GROUP BY channel_name
+                ORDER BY message_count DESC
+                LIMIT 5
+            """, (actual_user_id,)) as cursor:
+                channel_stats = await cursor.fetchall()
+            
+            # Get recent messages for word frequency
+            async with self.pool.execute("""
+                SELECT content
+                FROM messages 
+                WHERE author_id = ?
+                AND channel_name NOT LIKE '%test%'
+                AND channel_name NOT LIKE '%playground%'
+                AND author_name != 'sesh'
+                AND content IS NOT NULL AND content != ''
+                ORDER BY timestamp DESC
+                LIMIT 1000
+            """, (actual_user_id,)) as cursor:
+                messages = await cursor.fetchall()
+            
+            # Process word frequency manually
+            word_freq = {}
+            for msg in messages:
+                content = msg[0] if msg else ""
+                if content:
+                    # Simple word processing
+                    words = content.lower().split()
+                    for word in words:
+                        word = word.strip('.,!?";:()[]{}')
+                        if len(word) > 3 and word.isalpha():
+                            word_freq[word] = word_freq.get(word, 0) + 1
+            
+            # Get top 10 words
+            word_stats = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
+            
+            # Format the results
+            result = f"**User Analysis for {user_name}**\n\n"
+            
+            # Basic stats
+            result += f"**Message Statistics:**\n"
+            result += f"• Total Messages: {stats[0]}\n"
+            result += f"• First Message: {stats[1]}\n"
+            result += f"• Last Message: {stats[2]}\n\n"
+            
+            # Channel activity
+            result += f"**Top Channels:**\n"
+            for chan in channel_stats:
+                result += f"• #{chan[0]}: {chan[1]} messages\n"
+            result += "\n"
+            
+            # Word frequency
+            result += f"**Most Used Words:**\n"
+            for word in word_stats:
+                result += f"• {word[0]}: {word[1]} times\n"
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error in get_user_insights: {str(e)}")
+            return f"Error getting user insights: {str(e)}"
