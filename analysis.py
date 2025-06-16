@@ -1589,3 +1589,116 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             import traceback
             traceback.print_exc()
             return f"Error analyzing topics: {str(e)}"
+    
+    async def generate_channel_activity_chart(self, channel_name: str) -> str:
+        """Generate a chart showing channel activity patterns"""
+        try:
+            await self.initialize()
+            
+            # Get hourly activity data for the channel
+            async with self.pool.execute(f"""
+                WITH filtered_messages AS (
+                    SELECT *
+                    FROM messages
+                    WHERE channel_name = ? AND {self.base_filter}
+                )
+                SELECT 
+                    strftime('%H', timestamp) as hour,
+                    COUNT(*) as message_count
+                FROM filtered_messages
+                GROUP BY hour
+                ORDER BY hour
+            """, (channel_name,)) as cursor:
+                hourly_data = await cursor.fetchall()
+            
+            # Get daily activity data for the channel
+            async with self.pool.execute(f"""
+                WITH filtered_messages AS (
+                    SELECT *
+                    FROM messages
+                    WHERE channel_name = ? AND {self.base_filter}
+                )
+                SELECT 
+                    strftime('%w', timestamp) as day_of_week,
+                    COUNT(*) as message_count
+                FROM filtered_messages
+                GROUP BY day_of_week
+                ORDER BY day_of_week
+            """, (channel_name,)) as cursor:
+                daily_data = await cursor.fetchall()
+            
+            if not hourly_data and not daily_data:
+                return None
+            
+            # Create figure with two subplots
+            import matplotlib
+            matplotlib.use('Agg')  # Use non-interactive backend
+            import matplotlib.pyplot as plt
+            
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+            
+            # Plot hourly activity
+            if hourly_data:
+                hours = [int(row[0]) for row in hourly_data]
+                counts = [row[1] for row in hourly_data]
+                
+                # Fill missing hours with 0
+                hour_counts = {h: 0 for h in range(24)}
+                for hour, count in zip(hours, counts):
+                    hour_counts[hour] = count
+                
+                hours = list(hour_counts.keys())
+                counts = list(hour_counts.values())
+                
+                ax1.bar(hours, counts, alpha=0.7, color='steelblue')
+                ax1.set_xlabel('Hour of Day')
+                ax1.set_ylabel('Message Count')
+                ax1.set_title(f'Message Activity by Hour - #{channel_name}')
+                ax1.set_xticks(range(0, 24, 2))
+                ax1.set_xticklabels([f'{h:02d}:00' for h in range(0, 24, 2)])
+                ax1.grid(True, alpha=0.3)
+            
+            # Plot daily activity
+            if daily_data:
+                days = [int(row[0]) for row in daily_data]
+                counts = [row[1] for row in daily_data]
+                
+                # Fill missing days with 0
+                day_counts = {d: 0 for d in range(7)}
+                for day, count in zip(days, counts):
+                    day_counts[day] = count
+                
+                day_names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                counts = [day_counts[d] for d in range(7)]
+                
+                ax2.bar(range(7), counts, alpha=0.7, color='lightcoral')
+                ax2.set_xlabel('Day of Week')
+                ax2.set_ylabel('Message Count')
+                ax2.set_title(f'Message Activity by Day - #{channel_name}')
+                ax2.set_xticks(range(7))
+                ax2.set_xticklabels(day_names)
+                ax2.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            
+            # Save to temp directory
+            import os
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_channel_name = "".join(c for c in channel_name if c.isalnum() or c in ('-', '_'))
+            filename = f"channel_activity_{safe_channel_name}_{timestamp}.png"
+            
+            temp_dir = "temp"
+            if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+            
+            filepath = os.path.join(temp_dir, filename)
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"Channel activity chart saved to: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"Error generating channel activity chart: {e}")
+            return None
