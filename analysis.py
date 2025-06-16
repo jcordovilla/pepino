@@ -64,6 +64,9 @@ class MessageAnalyzer:
         # Base filter to exclude sesh bot and test channels
         self.base_filter = """
             author_id != 'sesh' 
+            AND author_name != 'sesh'
+            AND author_name != 'Pepe'
+            AND author_name != 'Pepino'
             AND channel_name NOT LIKE '%test%' 
             AND channel_name NOT LIKE '%playground%' 
             AND channel_name NOT LIKE '%pg%'
@@ -937,6 +940,8 @@ class MessageAnalyzer:
                 FROM messages 
                 WHERE author_name IS NOT NULL 
                 AND author_name != 'sesh'
+                AND author_name != 'Pepe'
+                AND author_name != 'Pepino'
                 ORDER BY author_name
             """) as cursor:
                 users = await cursor.fetchall()
@@ -956,6 +961,8 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             channel_name NOT LIKE '%test%'
             AND channel_name NOT LIKE '%playground%'
             AND author_name != 'sesh'
+            AND author_name != 'Pepe'
+            AND author_name != 'Pepino'
         """
         # Initialize NLTK resources
         try:
@@ -1476,6 +1483,8 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 FROM messages 
                 WHERE author_name IS NOT NULL 
                 AND author_name != 'sesh'
+                AND author_name != 'Pepe'
+                AND author_name != 'Pepino'
                 ORDER BY author_name
             """) as cursor:
                 all_users = await cursor.fetchall()
