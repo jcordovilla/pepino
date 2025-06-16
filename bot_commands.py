@@ -80,7 +80,7 @@ class AnalysisCommands(commands.Cog):
                     return
                 result = await self.analyzer.get_channel_insights(args)
             elif task == "topics":
-                result = await self.analyzer.analyze_topics()
+                result = await self.analyzer.analyze_topics_spacy()
             elif task == "temporal":
                 result = await self.analyzer.update_temporal_stats()
             elif task == "user":

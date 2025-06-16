@@ -1107,215 +1107,24 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         except Exception as e:
             return f"Error updating user statistics: {str(e)}"
 
-    async def update_temporal_stats(self, args: dict = None) -> str:
-        """Update temporal activity statistics - async wrapper"""
+    async def analyze_topics_spacy(self, args: dict = None) -> str:
+        """Analyze topics in messages using spaCy NLP"""
         try:
             await self.initialize()
             
-            # Get temporal statistics
-            async with self.pool.execute(f"""
-                SELECT 
-                    strftime('%H', timestamp) as hour,
-                    strftime('%w', timestamp) as day,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE {self.base_filter}
-                GROUP BY hour, day
-                ORDER BY day, hour
-            """) as cursor:
-                stats = await cursor.fetchall()
-            
-            if not stats:
-                return "No temporal statistics available"
-            
-            # Process statistics
-            hourly_stats = {}
-            daily_stats = {}
-            
-            for stat in stats:
-                hour = int(stat[0])
-                day = int(stat[1])
-                count = stat[2]
+            # Import spaCy here to avoid loading issues
+            try:
+                import spacy
+                from collections import Counter, defaultdict
                 
-                if hour not in hourly_stats:
-                    hourly_stats[hour] = 0
-                hourly_stats[hour] += count
-                
-                if day not in daily_stats:
-                    daily_stats[day] = 0
-                daily_stats[day] += count
-            
-            # Format results
-            result = "**Temporal Activity Analysis**\n\n"
-            
-            result += "**Activity by Hour:**\n"
-            for hour in sorted(hourly_stats.keys()):
-                result += f"{hour:02d}:00-{hour+1:02d}:00: {hourly_stats[hour]} messages\n"
-            
-            result += "\n**Activity by Day:**\n"
-            days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-            for day in range(7):
-                result += f"{days[day]}: {daily_stats.get(day, 0)} messages\n"
-            
-            return result
-            
-        except Exception as e:
-            return f"Error updating temporal statistics: {str(e)}"
-
-    async def generate_temporal_activity_chart(self, hourly_stats: dict, daily_stats: dict) -> str:
-        """Generate a chart showing temporal activity patterns"""
-        try:
-            # Create figure with two subplots
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
-            
-            # Plot hourly activity
-            hours = sorted(hourly_stats.keys())
-            counts = [hourly_stats[h] for h in hours]
-            ax1.bar(range(len(hours)), counts)  # Use numeric x-axis
-            ax1.set_xlabel('Hour of Day')
-            ax1.set_ylabel('Message Count')
-            ax1.set_title('Message Activity by Hour')
-            ax1.set_xticks(range(len(hours)))
-            ax1.set_xticklabels([f'{h:02d}:00' for h in hours], rotation=45)
-            
-            # Plot daily activity
-            days = list(range(7))
-            day_names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-            counts = [daily_stats.get(d, 0) for d in days]
-            ax2.bar(range(len(days)), counts)  # Use numeric x-axis
-            ax2.set_xlabel('Day of Week')
-            ax2.set_ylabel('Message Count')
-            ax2.set_title('Message Activity by Day')
-            ax2.set_xticks(range(len(days)))
-            ax2.set_xticklabels(day_names)
-            
-            # Adjust layout
-            plt.tight_layout()
-            
-            # Save the plot to a temporary file
-            temp_dir = os.path.join(os.path.dirname(__file__), 'temp')
-            os.makedirs(temp_dir, exist_ok=True)
-            file_path = os.path.join(temp_dir, f'temporal_activity_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
-            plt.savefig(file_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            return file_path
-            
-        except Exception as e:
-            print(f"Error generating temporal activity chart: {e}")
-            return None
-
-    async def generate_channel_activity_chart(self, channel_name: str) -> str:
-        """Generate a chart showing channel activity over time"""
-        try:
-            # Get message counts by day
-            cursor = self.conn.cursor()
-            cursor.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
-                )
-                SELECT 
-                    date(timestamp) as date,
-                    COUNT(*) as message_count
-                FROM filtered_messages
-                GROUP BY date
-                ORDER BY date
-            """, (channel_name,))
-            
-            data = cursor.fetchall()
-            if not data:
-                return None
-            
-            # Create the plot
-            plt.figure(figsize=(12, 6))
-            # Convert dates to datetime objects
-            dates = [datetime.strptime(row['date'], '%Y-%m-%d') for row in data]
-            counts = [row['message_count'] for row in data]
-            
-            plt.plot(dates, counts, marker='o')
-            plt.title(f'Message Activity in #{channel_name}')
-            plt.xlabel('Date')
-            plt.ylabel('Message Count')
-            plt.xticks(rotation=45)
-            plt.grid(True, alpha=0.3)
-            
-            # Save the plot to a temporary file
-            temp_dir = os.path.join(os.path.dirname(__file__), 'temp')
-            os.makedirs(temp_dir, exist_ok=True)
-            file_path = os.path.join(temp_dir, f'channel_activity_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
-            plt.savefig(file_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            return file_path
-            
-        except Exception as e:
-            print(f"Error generating channel activity chart: {e}")
-            return None
-
-    async def generate_user_activity_chart(self, user_name: str, temporal_stats: list) -> str:
-        """Generate a chart showing user activity over time"""
-        try:
-            # Create the plot
-            plt.figure(figsize=(12, 6))
-            
-            # Extract hours and counts
-            hours = [int(stat[0]) for stat in temporal_stats]
-            counts = [stat[1] for stat in temporal_stats]
-            
-            # Create the plot
-            plt.bar(hours, counts)
-            plt.title(f'Message Activity for {user_name}')
-            plt.xlabel('Hour of Day')
-            plt.ylabel('Message Count')
-            plt.xticks(range(24))
-            plt.grid(True, alpha=0.3)
-            
-            # Save to temporary file
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'temp/user_activity_{timestamp}.png'
-            plt.savefig(filename)
-            plt.close()
-            
-            return filename
-            
-        except Exception as e:
-            print(f"Error generating user activity chart: {str(e)}")
-            return None
-
-    async def run_analysis(self, task: str, args: dict = None) -> str:
-        """Run the specified analysis task"""
-        try:
-            # Convert message_id to int if present
-            if args and 'message_id' in args:
+                # Load spaCy model
                 try:
-                    args['message_id'] = int(args['message_id'])
-                except ValueError:
-                    return "Error: message_id must be a number"
-            
-            # Get the analysis method
-            analysis_method = self.analysis_tasks.get(task)
-            if not analysis_method:
-                return f"Unknown analysis task: {task}"
-            
-            # Run the analysis
-            return await analysis_method(args)
-            
-        except Exception as e:
-            return f"Error running analysis: {str(e)}"
-
-    async def get_available_analyses(self) -> str:
-        """Return a formatted list of available analyses"""
-        result = "**Available Analyses:**\n\n"
-        for task, func in self.analysis_tasks.items():
-            result += f"• `{task}`: {func.__doc__ or 'No description available'}\n"
-        return result
-
-    async def analyze_topics(self, args: dict = None) -> str:
-        """Analyze topics using semantic analysis with TF-IDF and n-grams"""
-        try:
-            await self.initialize()
+                    nlp = spacy.load("en_core_web_sm")
+                except OSError:
+                    return "spaCy English model not found. Please install it with: python -m spacy download en_core_web_sm"
+                    
+            except ImportError:
+                return "spaCy not installed. Please install it with: pip install spacy"
             
             # Get channel filter if provided
             channel_filter = None
@@ -1348,7 +1157,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     AND content IS NOT NULL AND content != ''
                     AND LENGTH(content) > 20
                     ORDER BY timestamp DESC 
-                    LIMIT 2000
+                    LIMIT 500
                 """, (channel_filter,)) as cursor:
                     messages = await cursor.fetchall()
             else:
@@ -1359,392 +1168,134 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     AND content IS NOT NULL AND content != ''
                     AND LENGTH(content) > 20
                     ORDER BY timestamp DESC 
-                    LIMIT 2000
+                    LIMIT 500
                 """) as cursor:
                     messages = await cursor.fetchall()
             
             if not messages:
                 return "No messages found for topic analysis."
             
-            # Process messages into documents
-            documents = []
+            # Process messages with spaCy
+            docs = []
+            entities = Counter()
+            noun_phrases = Counter()
+            keywords = Counter()
+            verb_phrases = []
+            
             for msg in messages:
-                content = msg[0].lower() if msg[0] else ""
-                # Basic cleaning
-                content = self._clean_text(content)
-                if len(content.split()) >= 3:  # At least 3 words
-                    documents.append(content)
+                content = msg[0]
+                if not content or len(content.split()) < 3:
+                    continue
+                    
+                # Clean content (remove URLs, mentions)
+                content = ' '.join([word for word in content.split() if not word.startswith(('http', '@', '#'))])
+                
+                try:
+                    doc = nlp(content)
+                    docs.append(doc)
+                    
+                    # Extract named entities
+                    for ent in doc.ents:
+                        if ent.label_ in ['PERSON', 'ORG', 'PRODUCT', 'TECH', 'WORK_OF_ART']:
+                            entities[ent.text.lower()] += 1
+                    
+                    # Extract noun phrases
+                    for chunk in doc.noun_chunks:
+                        if len(chunk.text.split()) >= 2 and len(chunk.text) > 4:
+                            noun_phrases[chunk.text.lower().strip()] += 1
+                    
+                    # Extract keywords (important nouns, adjectives)
+                    for token in doc:
+                        if (token.pos_ in ['NOUN', 'ADJ', 'PROPN'] and 
+                            not token.is_stop and 
+                            not token.is_punct and 
+                            len(token.text) > 3 and
+                            token.text.isalpha()):
+                            keywords[token.lemma_.lower()] += 1
+                    
+                    # Extract verb phrases for action topics
+                    for token in doc:
+                        if token.pos_ == 'VERB' and not token.is_stop:
+                            # Get verb + direct object
+                            verb_obj = [token.lemma_]
+                            for child in token.children:
+                                if child.dep_ in ['dobj', 'pobj'] and child.pos_ == 'NOUN':
+                                    verb_obj.append(child.lemma_)
+                            if len(verb_obj) > 1:
+                                verb_phrases.append(' '.join(verb_obj))
+                
+                except Exception as e:
+                    print(f"Error processing message: {e}")
+                    continue
             
-            if len(documents) < 10:
-                return "Not enough suitable messages for semantic analysis."
+            if not docs:
+                return "No messages could be processed for analysis."
             
-            # Perform semantic topic analysis
-            topics = self._extract_semantic_topics(documents)
+            # Analyze similarity between documents for clustering
+            similar_groups = defaultdict(list)
+            for i, doc1 in enumerate(docs[:50]):  # Limit for performance
+                doc1_keywords = [token.lemma_.lower() for token in doc1 if token.pos_ in ['NOUN', 'ADJ'] and not token.is_stop]
+                for j, doc2 in enumerate(docs[:50]):
+                    if i >= j:
+                        continue
+                    doc2_keywords = [token.lemma_.lower() for token in doc2 if token.pos_ in ['NOUN', 'ADJ'] and not token.is_stop]
+                    
+                    # Simple Jaccard similarity
+                    set1, set2 = set(doc1_keywords), set(doc2_keywords)
+                    if len(set1.union(set2)) > 0:
+                        similarity = len(set1.intersection(set2)) / len(set1.union(set2))
+                        if similarity > 0.3:
+                            key = tuple(sorted(set1.intersection(set2)))[:3]  # Top 3 common words
+                            if key:
+                                similar_groups[key].extend([i, j])
             
             # Format results
-            result = "**Semantic Topic Analysis**\n\n"
+            result = "**Topic Analysis with spaCy NLP**\n\n"
             if channel_filter:
                 result += f"**Channel: #{channel_filter}**\n\n"
             
-            result += f"**Analyzed {len(documents)} messages**\n\n"
+            result += f"**Analyzed {len([d for d in docs if d])} messages**\n\n"
             
-            for i, topic in enumerate(topics, 1):
-                result += f"**Topic {i}: {topic['theme']}**\n"
-                result += f"Key phrases: {', '.join(topic['key_phrases'])}\n"
-                result += f"Related terms: {', '.join(topic['related_terms'])}\n"
-                result += f"Relevance score: {topic['score']:.2f}\n\n"
+            # Top entities (people, organizations, products)
+            if entities:
+                result += "**🏷️ Named Entities & Key Topics:**\n"
+                for entity, count in entities.most_common(10):
+                    result += f"• {entity.title()} ({count} mentions)\n"
+                result += "\n"
+            
+            # Key noun phrases (concepts)
+            if noun_phrases:
+                result += "**💡 Key Concepts & Phrases:**\n"
+                for phrase, count in noun_phrases.most_common(15):
+                    result += f"• {phrase.title()} ({count} times)\n"
+                result += "\n"
+            
+            # Action topics (what people are doing)
+            if verb_phrases:
+                verb_counter = Counter(verb_phrases)
+                if verb_counter:
+                    result += "**🎯 Action Topics:**\n"
+                    for action, count in verb_counter.most_common(10):
+                        result += f"• {action.title()} ({count} times)\n"
+                    result += "\n"
+            
+            # Semantic clusters
+            if similar_groups:
+                result += "**🔗 Related Discussion Clusters:**\n"
+                for i, (key_words, doc_indices) in enumerate(list(similar_groups.items())[:5]):
+                    if len(set(doc_indices)) >= 3:  # At least 3 different messages
+                        result += f"**Cluster {i+1}:** {', '.join(key_words)}\n"
+                        result += f"  {len(set(doc_indices))} related messages\n\n"
+            
+            # Most important keywords
+            result += "**🔑 Core Keywords:**\n"
+            for keyword, count in keywords.most_common(20):
+                result += f"• {keyword} ({count}), "
+            result = result.rstrip(", ") + "\n"
             
             return result
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"Error analyzing topics: {str(e)}"
-    
-    def _clean_text(self, text: str) -> str:
-        """Clean text for semantic analysis"""
-        import re
-        
-        # Remove URLs, mentions, emojis, and special characters
-        text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
-        text = re.sub(r'@\w+', '', text)
-        text = re.sub(r'<:[^:]+:\d+>', '', text)  # Discord emojis
-        text = re.sub(r'[^\w\s]', ' ', text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        # Remove common stop words
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'her', 'its', 'our', 'their'}
-        words = [word for word in text.split() if word.lower() not in stop_words and len(word) > 2]
-        
-        return ' '.join(words)
-    
-    def _extract_semantic_topics(self, documents: list) -> list:
-        """Extract semantic topics using TF-IDF and n-gram analysis"""
-        from collections import defaultdict, Counter
-        import math
-        
-        # Calculate TF-IDF for words and phrases
-        vocab = set()
-        word_doc_count = defaultdict(int)
-        
-        # Build vocabulary and document frequency
-        for doc in documents:
-            words = set(doc.split())
-            vocab.update(words)
-            for word in words:
-                word_doc_count[word] += 1
-        
-        # Calculate TF-IDF scores
-        tfidf_scores = {}
-        for doc_idx, doc in enumerate(documents):
-            words = doc.split()
-            word_count = Counter(words)
-            doc_length = len(words)
-            
-            for word in set(words):
-                tf = word_count[word] / doc_length
-                idf = math.log(len(documents) / word_doc_count[word])
-                tfidf = tf * idf
-                
-                if word not in tfidf_scores:
-                    tfidf_scores[word] = []
-                tfidf_scores[word].append(tfidf)
-        
-        # Get average TF-IDF for each term
-        avg_tfidf = {word: sum(scores) / len(scores) for word, scores in tfidf_scores.items()}
-        
-        # Extract n-grams (bigrams and trigrams)
-        bigrams = Counter()
-        trigrams = Counter()
-        
-        for doc in documents:
-            words = doc.split()
-            # Bigrams
-            for i in range(len(words) - 1):
-                if len(words[i]) > 2 and len(words[i+1]) > 2:
-                    bigrams[f"{words[i]} {words[i+1]}"] += 1
-            # Trigrams
-            for i in range(len(words) - 2):
-                if all(len(w) > 2 for w in words[i:i+3]):
-                    trigrams[f"{words[i]} {words[i+1]} {words[i+2]}"] += 1
-        
-        # Find word co-occurrences (semantic relationships)
-        cooccurrence = defaultdict(lambda: defaultdict(int))
-        for doc in documents:
-            words = doc.split()
-            for i, word1 in enumerate(words):
-                for j, word2 in enumerate(words):
-                    if i != j and abs(i-j) <= 5:  # Words within 5 positions
-                        cooccurrence[word1][word2] += 1
-        
-        # Create semantic topics
-        topics = []
-        
-        # Topic 1: High TF-IDF terms (technical/specific topics)
-        high_tfidf_terms = sorted(avg_tfidf.items(), key=lambda x: x[1], reverse=True)[:15]
-        if high_tfidf_terms:
-            key_phrases = [phrase for phrase, count in bigrams.most_common(5) if count >= 2]
-            related_terms = [term for term, score in high_tfidf_terms[:8]]
-            topics.append({
-                'theme': 'Technical Discussion',
-                'key_phrases': key_phrases[:5],
-                'related_terms': related_terms,
-                'score': sum(score for _, score in high_tfidf_terms[:5]) / 5
-            })
-        
-        # Topic 2: Most common meaningful phrases (general conversation)
-        common_phrases = [phrase for phrase, count in bigrams.most_common(10) if count >= 3]
-        if common_phrases:
-            # Find related single words
-            phrase_words = set()
-            for phrase in common_phrases[:5]:
-                phrase_words.update(phrase.split())
-            
-            related_singles = []
-            for word in phrase_words:
-                if word in avg_tfidf and avg_tfidf[word] > 0.01:
-                    related_singles.append(word)
-            
-            topics.append({
-                'theme': 'General Conversation',
-                'key_phrases': common_phrases[:5],
-                'related_terms': related_singles[:8],
-                'score': sum(count for _, count in bigrams.most_common(5)) / len(documents)
-            })
-        
-        # Topic 3: Emerging themes (less common but meaningful trigrams)
-        emerging_themes = [phrase for phrase, count in trigrams.most_common(8) if count >= 2]
-        if emerging_themes:
-            # Find words that co-occur with trigram words
-            emerging_words = set()
-            for phrase in emerging_themes[:3]:
-                for word in phrase.split():
-                    if word in cooccurrence:
-                        # Get top co-occurring words
-                        cooccur_words = sorted(cooccurrence[word].items(), key=lambda x: x[1], reverse=True)[:3]
-                        emerging_words.update([w for w, _ in cooccur_words])
-            
-            topics.append({
-                'theme': 'Emerging Themes',
-                'key_phrases': emerging_themes[:5],
-                'related_terms': list(emerging_words)[:8],
-                'score': sum(count for _, count in trigrams.most_common(3)) / len(documents)
-            })
-        
-        # Topic 4: Semantic clusters (words that often appear together)
-        if cooccurrence:
-            # Find strongest semantic relationships
-            semantic_clusters = []
-            processed_words = set()
-            
-            for word1, related in cooccurrence.items():
-                if word1 not in processed_words and len(word1) > 3:
-                    cluster_words = [word1]
-                    sorted_related = sorted(related.items(), key=lambda x: x[1], reverse=True)[:4]
-                    
-                    for word2, strength in sorted_related:
-                        if strength >= 3 and word2 not in processed_words:
-                            cluster_words.append(word2)
-                            processed_words.add(word2)
-                    
-                    if len(cluster_words) >= 3:
-                        semantic_clusters.append(cluster_words)
-                        processed_words.add(word1)
-                        
-                        if len(semantic_clusters) >= 2:
-                            break
-            
-            if semantic_clusters:
-                cluster_phrases = []
-                all_cluster_words = []
-                for cluster in semantic_clusters:
-                    all_cluster_words.extend(cluster[:3])
-                    cluster_phrases.append(' + '.join(cluster[:3]))
-                
-                topics.append({
-                    'theme': 'Semantic Relationships',
-                    'key_phrases': cluster_phrases[:4],
-                    'related_terms': all_cluster_words[:8],
-                    'score': len(semantic_clusters) / 5
-                })
-        
-        # Sort topics by relevance score
-        topics.sort(key=lambda x: x['score'], reverse=True)
-        
-        return topics[:4]  # Return top 4 topics
-
-    async def get_user_insights(self, user_id: str) -> str:
-        """Get insights for a specific user with fuzzy matching"""
-        try:
-            await self.initialize()
-            print(f"Getting insights for user: {user_id}")
-            
-            # Get all available users (both username and display name) for fuzzy matching
-            async with self.pool.execute("""
-                SELECT DISTINCT author_id, author_name, author_display_name
-                FROM messages 
-                WHERE author_name IS NOT NULL 
-                AND author_id != 'sesh'
-                AND author_id != '1362434210895364327'
-                AND author_name != 'sesh'
-                AND LOWER(author_name) != 'pepe'
-                AND LOWER(author_name) != 'pepino'
-                ORDER BY author_name
-            """) as cursor:
-                all_users = await cursor.fetchall()
-            
-            if not all_users:
-                return "No users found in the database."
-            
-            # Try exact matches first
-            user = None
-            
-            # Try exact match on username
-            for u in all_users:
-                if u[1].lower() == user_id.lower():
-                    user = u
-                    print(f"Found exact username match: {user_id}")
-                    break
-            
-            # Try exact match on display name if no username match
-            if not user:
-                for u in all_users:
-                    display_name = u[2] if len(u) > 2 and u[2] else ""
-                    if display_name and display_name.lower() == user_id.lower():
-                        user = u
-                        print(f"Found exact display name match: {user_id}")
-                        break
-            
-            # If no exact match, use fuzzy matching on both username and display name
-            if not user:
-                from fuzzywuzzy import fuzz
-                
-                # Find the best fuzzy match across both usernames and display names
-                best_match = None
-                best_ratio = 0
-                
-                for u in all_users:
-                    # Check username fuzzy match
-                    username_ratio = fuzz.ratio(user_id.lower(), u[1].lower())
-                    if username_ratio > best_ratio:
-                        best_ratio = username_ratio
-                        best_match = u
-                    
-                    # Check display name fuzzy match
-                    display_name = u[2] if len(u) > 2 and u[2] else ""
-                    if display_name:
-                        display_ratio = fuzz.ratio(user_id.lower(), display_name.lower())
-                        if display_ratio > best_ratio:
-                            best_ratio = display_ratio
-                            best_match = u
-                
-                # Use fuzzy match if similarity is above threshold (70%)
-                if best_ratio >= 70:
-                    user = best_match
-                    print(f"Fuzzy match found: '{user_id}' -> '{user[1]}' (similarity: {best_ratio}%)")
-            
-            if not user:
-                # No good match found, show suggestions
-                from fuzzywuzzy import process
-                
-                # Create list of all searchable names (both usernames and display names)
-                searchable_names = []
-                for u in all_users:
-                    searchable_names.append(u[1])  # username
-                    display_name = u[2] if len(u) > 2 and u[2] else ""
-                    if display_name and display_name != u[1]:
-                        searchable_names.append(display_name)  # display name
-                
-                suggestions = process.extract(user_id, searchable_names, limit=5)
-                suggestion_text = "\n".join([f"• {name} (similarity: {score}%)" for name, score in suggestions])
-                return f"User '{user_id}' not found. Did you mean one of these?\n{suggestion_text}"
-            
-            actual_user_id = user[0]
-            user_name = user[1]
-            print(f"Found user: {user_name} (ID: {actual_user_id})")
-            
-            # Get user statistics
-            async with self.pool.execute("""
-                SELECT 
-                    COUNT(*) as message_count,
-                    MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message
-                FROM messages 
-                WHERE author_id = ?
-                AND channel_name NOT LIKE '%test%'
-                AND channel_name NOT LIKE '%playground%'
-                AND author_name != 'sesh'
-            """, (actual_user_id,)) as cursor:
-                stats = await cursor.fetchone()
-            
-            if not stats or stats[0] == 0:
-                return f"No messages found for user {user_name}"
-            
-            # Get channel activity
-            async with self.pool.execute("""
-                SELECT 
-                    channel_name,
-                    COUNT(*) as message_count
-                FROM messages 
-                WHERE author_id = ?
-                AND channel_name NOT LIKE '%test%'
-                AND channel_name NOT LIKE '%playground%'
-                AND author_name != 'sesh'
-                GROUP BY channel_name
-                ORDER BY message_count DESC
-                LIMIT 5
-            """, (actual_user_id,)) as cursor:
-                channel_stats = await cursor.fetchall()
-            
-            # Get recent messages for word frequency
-            async with self.pool.execute("""
-                SELECT content
-                FROM messages 
-                WHERE author_id = ?
-                AND channel_name NOT LIKE '%test%'
-                AND channel_name NOT LIKE '%playground%'
-                AND author_name != 'sesh'
-                AND content IS NOT NULL AND content != ''
-                ORDER BY timestamp DESC
-                LIMIT 1000
-            """, (actual_user_id,)) as cursor:
-                messages = await cursor.fetchall()
-            
-            # Process word frequency manually
-            word_freq = {}
-            for msg in messages:
-                content = msg[0] if msg else ""
-                if content:
-                    # Simple word processing
-                    words = content.lower().split()
-                    for word in words:
-                        word = word.strip('.,!?";:()[]{}')
-                        if len(word) > 3 and word.isalpha():
-                            word_freq[word] = word_freq.get(word, 0) + 1
-            
-            # Get top 10 words
-            word_stats = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
-            
-            # Format the results
-            result = f"**User Analysis for {user_name}**\n\n"
-            
-            # Basic stats
-            result += f"**Message Statistics:**\n"
-            result += f"• Total Messages: {stats[0]}\n"
-            result += f"• First Message: {stats[1]}\n"
-            result += f"• Last Message: {stats[2]}\n\n"
-            
-            # Channel activity
-            result += f"**Top Channels:**\n"
-            for chan in channel_stats:
-                result += f"• #{chan[0]}: {chan[1]} messages\n"
-            result += "\n"
-            
-            # Word frequency
-            result += f"**Most Used Words:**\n"
-            for word in word_stats:
-                result += f"• {word[0]}: {word[1]} times\n"
-            
-            return result
-            
-        except Exception as e:
-            print(f"Error in get_user_insights: {str(e)}")
-            return f"Error getting user insights: {str(e)}"
