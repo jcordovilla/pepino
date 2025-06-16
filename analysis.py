@@ -1217,74 +1217,211 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             innovation_pattern_list = [
                 r'\b(innovation|transformation|disruption|breakthrough|cutting.edge)\b',
                 r'\b(future|trend|emerging|next.gen|state.of.the.art|revolutionary)\b',
-                r'\b(experiment|prototype|pilot|proof.of.concept|MVP|beta)\b'
+                r'\b(experiment|prototype|pilot|proof.of_concept|MVP|beta)\b'
+            ]
+            
+            # Process messages with advanced spaCy analysis
+            docs = []
+            technical_terms = Counter()
+            business_concepts = Counter()
+            innovation_indicators = Counter()
+            complex_phrases = Counter()
+            semantic_concepts = defaultdict(list)
+            discussion_themes = defaultdict(list)
+            temporal_trends = defaultdict(list)
+            sentence_contexts = []
+            
+            # Advanced spaCy patterns for complex phrase detection
+            def extract_complex_concepts(doc):
+                """Extract complex multi-word concepts using dependency parsing"""
+                concepts = []
+                
+                # Extract compound subjects with their predicates
+                for token in doc:
+                    if token.dep_ == "nsubj" and token.pos_ in ["NOUN", "PROPN"]:
+                        # Get the full noun phrase subject
+                        subject_span = doc[token.left_edge.i:token.right_edge.i+1]
+                        
+                        # Get the predicate (verb and its objects)
+                        if token.head.pos_ == "VERB":
+                            verb = token.head
+                            predicate_parts = [verb.text]
+                            
+                            # Add direct objects, prepositional objects
+                            for child in verb.children:
+                                if child.dep_ in ["dobj", "pobj", "attr", "prep"]:
+                                    obj_span = doc[child.left_edge.i:child.right_edge.i+1]
+                                    predicate_parts.append(obj_span.text)
+                            
+                            if len(predicate_parts) > 1:
+                                full_concept = f"{subject_span.text} {' '.join(predicate_parts)}"
+                                if len(full_concept.split()) >= 3 and len(full_concept) > 15:
+                                    concepts.append(full_concept.lower().strip())
+                
+                # Extract complex noun phrases with modifiers
+                for chunk in doc.noun_chunks:
+                    # Get extended noun phrases including prepositional phrases
+                    extended_phrase = chunk.text
+                    
+                    # Look for prepositional phrases attached to this chunk
+                    for token in chunk:
+                        for child in token.children:
+                            if child.dep_ == "prep":
+                                prep_phrase = doc[child.i:child.right_edge.i+1]
+                                extended_phrase += f" {prep_phrase.text}"
+                    
+                    if len(extended_phrase.split()) >= 3 and len(extended_phrase) > 20:
+                        concepts.append(extended_phrase.lower().strip())
+                
+                # Extract technical compounds (noun + noun + noun patterns)
+                for i, token in enumerate(doc[:-2]):
+                    if (token.pos_ in ["NOUN", "PROPN"] and 
+                        doc[i+1].pos_ in ["NOUN", "PROPN", "ADJ"] and 
+                        doc[i+2].pos_ in ["NOUN", "PROPN"]):
+                        
+                        # Check if they form a meaningful technical term
+                        compound = f"{token.text} {doc[i+1].text} {doc[i+2].text}"
+                        
+                        # Look ahead for even longer compounds
+                        j = i + 3
+                        while j < len(doc) and doc[j].pos_ in ["NOUN", "PROPN"] and j < i + 6:
+                            compound += f" {doc[j].text}"
+                            j += 1
+                        
+                        if len(compound.split()) >= 3:
+                            concepts.append(compound.lower())
+                
+                return concepts
+            
+            def extract_semantic_relationships(doc):
+                """Extract semantic relationships using dependency parsing"""
+                relationships = []
+                
+                # Find cause-effect relationships
+                for token in doc:
+                    if token.lemma_ in ["cause", "lead", "result", "enable", "drive", "impact"]:
+                        # Get what causes what
+                        cause = None
+                        effect = None
+                        
+                        for child in token.children:
+                            if child.dep_ in ["nsubj", "nsubjpass"]:
+                                cause_span = doc[child.left_edge.i:child.right_edge.i+1]
+                                cause = cause_span.text
+                            elif child.dep_ in ["dobj", "attr"]:
+                                effect_span = doc[child.left_edge.i:child.right_edge.i+1]
+                                effect = effect_span.text
+                        
+                        if cause and effect and len(f"{cause} → {effect}") > 10:
+                            relationships.append(f"{cause} → {effect}")
+                
+                # Find comparative relationships
+                for token in doc:
+                    if token.pos_ == "ADJ" and token.dep_ == "acomp":
+                        # Get what's being compared
+                        subject = None
+                        for sibling in token.head.children:
+                            if sibling.dep_ == "nsubj":
+                                subj_span = doc[sibling.left_edge.i:sibling.right_edge.i+1]
+                                subject = subj_span.text
+                        
+                        if subject:
+                            comparison = f"{subject} is {token.text}"
+                            if len(comparison) > 8:
+                                relationships.append(comparison)
+                
+                return relationships
+            
+            # Define advanced domain patterns
+            tech_patterns = [
+                r'\b(AI|ML|LLM|GPT|algorithm|model|neural|API|cloud|automation|pipeline|framework)\b',
+                r'\b(python|javascript|typescript|react|node|docker|kubernetes|aws|azure)\b',
+                r'\b(database|sql|nosql|analytics|visualization|dashboard|metrics)\b'
+            ]
+            
+            business_patterns = [
+                r'\b(strategy|roadmap|KPI|ROI|revenue|growth|market|customer|client)\b',
+                r'\b(product|service|solution|platform|integration|deployment|scale)\b',
+                r'\b(team|collaboration|workflow|process|efficiency|optimization)\b'
+            ]
+            
+            innovation_pattern_list = [
+                r'\b(innovation|transformation|disruption|breakthrough|cutting.edge)\b',
+                r'\b(future|trend|emerging|next.gen|state.of.the.art|revolutionary)\b',
+                r'\b(experiment|prototype|pilot|proof.of_concept|MVP|beta)\b'
             ]
             
             for i, msg in enumerate(messages):
                 content, timestamp, author = msg[0], msg[1], msg[2]
                 
                 # Skip very short or formulaic messages
-                if len(content.split()) < 5:
+                if len(content.split()) < 6:
                     continue
                     
                 cleaned_content = clean_content(content)
-                if len(cleaned_content.split()) < 3:
+                if len(cleaned_content.split()) < 4:
                     continue
                 
                 try:
                     doc = nlp(cleaned_content)
+                    
+                    # Store sentence-level context for later analysis
+                    for sent in doc.sents:
+                        if len(sent.text.split()) >= 5:
+                            sentence_contexts.append({
+                                'text': sent.text,
+                                'author': author,
+                                'timestamp': timestamp,
+                                'main_concepts': [token.lemma_ for token in sent if token.pos_ in ['NOUN', 'PROPN'] and not token.is_stop]
+                            })
+                    
                     docs.append((doc, timestamp, author, content))
                     
-                    # Extract technical concepts
+                    # Extract complex concepts using advanced spaCy features
+                    complex_concepts = extract_complex_concepts(doc)
+                    for concept in complex_concepts:
+                        if len(concept.split()) >= 3:
+                            complex_phrases[concept] += 1
+                            
+                            # Categorize by semantic content
+                            if any(tech in concept for tech in ['ai', 'ml', 'data', 'algorithm', 'api', 'tech', 'system', 'platform', 'tool']):
+                                semantic_concepts['Advanced Technology'].append(concept)
+                            elif any(biz in concept for biz in ['business', 'strategy', 'market', 'customer', 'revenue', 'growth', 'team', 'process']):
+                                semantic_concepts['Business Strategy'].append(concept)
+                            elif any(inn in concept for inn in ['innovation', 'future', 'transform', 'disrupt', 'emerging', 'new', 'next']):
+                                semantic_concepts['Innovation & Future'].append(concept)
+                            else:
+                                semantic_concepts['General Discussion'].append(concept)
+                    
+                    # Extract semantic relationships
+                    relationships = extract_semantic_relationships(doc)
+                    for rel in relationships:
+                        semantic_concepts['Cause & Effect'].append(rel)
+                    
+                    # Extract simple patterns for baseline
                     for pattern in tech_patterns:
                         matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
                         for match in matches:
                             technical_terms[match.lower()] += 1
                     
-                    # Extract business concepts
                     for pattern in business_patterns:
                         matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
                         for match in matches:
                             business_concepts[match.lower()] += 1
                     
-                    # Extract innovation indicators
                     for pattern in innovation_pattern_list:
                         matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
                         for match in matches:
                             innovation_indicators[match.lower()] += 1
                     
-                    # Extract high-value noun phrases (skip common Discord phrases)
-                    for chunk in doc.noun_chunks:
-                        phrase = chunk.text.lower().strip()
-                        if (len(phrase.split()) >= 2 and 
-                            len(phrase) > 6 and
-                            not any(skip in phrase for skip in ['time zone', 'buddy group', 'display name', 'main goal', 'the server', 'the session'])):
-                            
-                            # Categorize themes
-                            if any(tech in phrase for tech in ['ai', 'ml', 'data', 'algorithm', 'model', 'api', 'tech']):
-                                discussion_themes['Technology'].append(phrase)
-                            elif any(biz in phrase for biz in ['business', 'strategy', 'market', 'customer', 'revenue', 'growth']):
-                                discussion_themes['Business'].append(phrase)
-                            elif any(inn in phrase for inn in ['innovation', 'future', 'transform', 'disrupt', 'emerging']):
-                                discussion_themes['Innovation'].append(phrase)
-                            else:
-                                discussion_themes['General'].append(phrase)
-                    
-                    # Time-based trend analysis
+                    # Time-based trend analysis with concepts
                     try:
                         msg_date = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).date()
                         week_key = msg_date.strftime('%Y-W%U')
                         
-                        # Extract key concepts for trend analysis
-                        key_concepts = []
-                        for token in doc:
-                            if (token.pos_ in ['NOUN', 'PROPN'] and 
-                                not token.is_stop and 
-                                len(token.text) > 3 and
-                                token.text.lower() not in ['message', 'channel', 'group', 'topic', 'session']):
-                                key_concepts.append(token.lemma_.lower())
+                        # Add complex concepts to temporal trends
+                        temporal_trends[week_key].extend([concept.split()[0] for concept in complex_concepts if concept])
                         
-                        temporal_trends[week_key].extend(key_concepts)
                     except:
                         pass
                 
@@ -1384,18 +1521,26 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         result += f"• {pattern.title()} ({count} mentions)\n"
                 result += "\n"
             
-            # Thematic Discussion Areas
-            for theme, phrases in discussion_themes.items():
-                if len(phrases) >= 3:
-                    phrase_counts = Counter(phrases)
-                    top_phrases = phrase_counts.most_common(5)
-                    if top_phrases:
-                        result += f"**💭 {theme} Discussions:**\n"
-                        for phrase, count in top_phrases:
-                            if count >= 2:
-                                result += f"• {phrase.title()} ({count}x)\n"
-                        result += "\n"
+            # Complex Multi-word Concepts (NEW!)
+            if complex_phrases:
+                result += "**🎯 Complex Discussion Topics:**\n"
+                for phrase, count in complex_phrases.most_common(12):
+                    if count >= 2 and len(phrase.split()) >= 3:
+                        result += f"• {phrase.title()} ({count} discussions)\n"
+                result += "\n"
             
+            # Semantic Concept Categories (NEW!)
+            for category, concepts in semantic_concepts.items():
+                if len(concepts) >= 3:
+                    concept_counts = Counter(concepts)
+                    top_concepts = concept_counts.most_common(6)
+                    if top_concepts and any(count >= 2 for _, count in top_concepts):
+                        result += f"**🔍 {category}:**\n"
+                        for concept, count in top_concepts:
+                            if count >= 2:
+                                result += f"• {concept.title()} ({count}x)\n"
+                        result += "\n"
+
             # Conversation Flow Analysis
             if conversation_flows:
                 result += "**�️ Key Conversation Flows:**\n"
