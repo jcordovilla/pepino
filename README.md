@@ -48,7 +48,6 @@ A Python application that connects to Discord servers and fetches messages, stor
    Add your Discord bot token to `.env`:
    ```
    DISCORD_TOKEN=your_discord_bot_token_here
-   OPENAI_API_KEY=your_openai_api_key_here  # Optional
    GUILD_ID=your_guild_id_here              # Optional
    ```
 

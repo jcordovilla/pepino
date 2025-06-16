@@ -227,8 +227,16 @@ class DiscordFetcher(discord.Client):
                     logger.info(f"    Last sync: {time_since_sync.total_seconds() / 3600:.1f} hours ago")
 
                 try:
+                    # Get the latest message ID from database for incremental fetching
+                    latest_message_id = get_latest_message_id(str(channel.id))
+                    
+                    if latest_message_id:
+                        logger.info(f"    🔄 Incremental fetch from message ID {latest_message_id}")
+                    else:
+                        logger.info(f"    🆕 Full fetch (no previous messages found)")
+                    
                     # Fetch messages with retry logic
-                    new_messages = await self.fetch_with_retry(channel)
+                    new_messages = await self.fetch_with_retry(channel, latest_message_id)
                     
                     if new_messages:
                         logger.info(f"    ✅ {len(new_messages)} new message(s)")
@@ -284,7 +292,7 @@ class DiscordFetcher(discord.Client):
                     current_time = time.time()
                     # Show progress every 100 messages or every 5 seconds
                     if message_count % 100 == 0 or (current_time - last_progress_time) >= 5:
-                        logger.info(f"Fetched {message_count} messages from #{channel.name}")
+                        logger.info(f"      Fetched {message_count} messages from #{channel.name}")
                         last_progress_time = current_time
                     messages.append(await self._convert_message_to_dict(message))
                 # Only sleep after the channel is done
@@ -954,6 +962,30 @@ def update_discord_messages():
         print(f"📝 Total messages synced: {client.sync_log_entry['total_messages_synced']}")
     else:
         print("\n✅ No new messages found.")
+
+def get_latest_message_id(channel_id: str, db_path='discord_messages.db') -> Optional[int]:
+    """Get the latest message ID for a channel from the database"""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id FROM messages 
+            WHERE channel_id = ? 
+            ORDER BY timestamp DESC 
+            LIMIT 1
+        ''', (channel_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return int(result[0])
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting latest message ID for channel {channel_id}: {e}")
+        return None
 
 if __name__ == "__main__":
     update_discord_messages()
