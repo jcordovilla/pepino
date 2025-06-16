@@ -187,11 +187,14 @@ class AnalysisCommands(commands.Cog):
     ) -> List[app_commands.Choice[str]]:
         """Autocomplete for channel names"""
         try:
+            print(f"Channel autocomplete called with current='{current}'")
+            
             # Ensure analyzer is initialized
             await self.analyzer.initialize()
             
             # Get available channels
             channels = await self.analyzer.get_available_channels()
+            print(f"Found {len(channels)} channels")
             
             # Filter channels based on current input
             if current:
@@ -200,20 +203,28 @@ class AnalysisCommands(commands.Cog):
                     channel for channel in channels 
                     if current.lower() in channel.lower()
                 ]
+                print(f"Filtered to {len(filtered_channels)} channels matching '{current}'")
             else:
                 filtered_channels = channels
+                print(f"No filter, showing all {len(filtered_channels)} channels")
             
             # Limit to 25 choices (Discord limit)
             filtered_channels = filtered_channels[:25]
             
             # Return choices
-            return [
+            choices = [
                 app_commands.Choice(name=channel, value=channel)
                 for channel in filtered_channels
+                if channel  # Skip empty channel names
             ]
+            
+            print(f"Returning {len(choices)} choices")
+            return choices
             
         except Exception as e:
             print(f"Error in channel autocomplete: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     @analyze.autocomplete('user')
@@ -224,11 +235,14 @@ class AnalysisCommands(commands.Cog):
     ) -> List[app_commands.Choice[str]]:
         """Autocomplete for user names"""
         try:
+            print(f"User autocomplete called with current='{current}'")
+            
             # Ensure analyzer is initialized
             await self.analyzer.initialize()
             
             # Get available users
             users = await self.analyzer.get_available_users()
+            print(f"Found {len(users)} users")
             
             # Filter users based on current input
             if current:
@@ -237,20 +251,28 @@ class AnalysisCommands(commands.Cog):
                     user for user in users 
                     if current.lower() in user.lower()
                 ]
+                print(f"Filtered to {len(filtered_users)} users matching '{current}'")
             else:
                 filtered_users = users
+                print(f"No filter, showing all {len(filtered_users)} users")
             
             # Limit to 25 choices (Discord limit)
             filtered_users = filtered_users[:25]
             
             # Return choices
-            return [
+            choices = [
                 app_commands.Choice(name=user, value=user)
                 for user in filtered_users
+                if user  # Skip empty usernames
             ]
+            
+            print(f"Returning {len(choices)} user choices")
+            return choices
             
         except Exception as e:
             print(f"Error in user autocomplete: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     async def cog_unload(self):
