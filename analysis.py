@@ -1313,167 +1313,100 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         return result
 
     async def analyze_topics(self, args: dict = None) -> str:
-        """Analyze topics in messages using LDA"""
+        """Analyze topics in messages using simple word frequency analysis"""
         try:
-            await self.ensure_model_loaded()
+            await self.initialize()
             
             # Get channel filter if provided
             channel_filter = None
             if args and "channel_name" in args:
                 channel_filter = args["channel_name"]
-                # Get all channel names for fuzzy matching
-                cursor = self.conn.cursor()
-                cursor.execute(f"""
+                
+                # Get all available channels
+                async with self.pool.execute(f"""
                     SELECT DISTINCT channel_name 
                     FROM messages 
                     WHERE {self.base_filter}
-                """)
-                channels = [row[0] for row in cursor.fetchall()]
+                """) as cursor:
+                    channels = await cursor.fetchall()
+                    channel_names = [ch[0] for ch in channels]
                 
-                # Find best matching channel
-                best_match = None
-                best_score = 0
-                for channel in channels:
-                    score = fuzz.ratio(channel.lower(), channel_filter.lower())
-                    if score > best_score and score > 80:  # Require 80% similarity
-                        best_score = score
-                        best_match = channel
-                
-                if not best_match:
-                    return f"Channel '{channel_filter}' not found. Available channels: {', '.join(channels)}"
-                
-                channel_filter = best_match
+                # Simple matching for channel name
+                if channel_filter not in channel_names:
+                    # Try case-insensitive partial matching
+                    matches = [ch for ch in channel_names if channel_filter.lower() in ch.lower()]
+                    if matches:
+                        channel_filter = matches[0]
+                    else:
+                        return f"Channel '{channel_filter}' not found. Available channels: {', '.join(channel_names[:10])}"
             
             # Get messages
-            cursor = self.conn.cursor()
             if channel_filter:
-                cursor.execute(f"""
-                    WITH filtered_messages AS (
-                        SELECT content, author_id, channel_name, timestamp 
-                        FROM messages 
-                        WHERE channel_name = ? AND {self.base_filter}
-                    )
-                    SELECT * FROM filtered_messages
+                async with self.pool.execute(f"""
+                    SELECT content
+                    FROM messages 
+                    WHERE channel_name = ? AND {self.base_filter}
+                    AND content IS NOT NULL AND content != ''
                     ORDER BY timestamp DESC 
                     LIMIT 1000
-                """, (channel_filter,))
+                """, (channel_filter,)) as cursor:
+                    messages = await cursor.fetchall()
             else:
-                cursor.execute(f"""
-                    WITH filtered_messages AS (
-                        SELECT content, author_id, channel_name, timestamp 
-                        FROM messages 
-                        WHERE {self.base_filter}
-                    )
-                    SELECT * FROM filtered_messages
+                async with self.pool.execute(f"""
+                    SELECT content
+                    FROM messages 
+                    WHERE {self.base_filter}
+                    AND content IS NOT NULL AND content != ''
                     ORDER BY timestamp DESC 
                     LIMIT 1000
-                """)
+                """) as cursor:
+                    messages = await cursor.fetchall()
             
-            messages = cursor.fetchall()
             if not messages:
-                return "No messages found to analyze."
+                return "No messages found for topic analysis."
             
-            # Get user display names
-            user_names = {}
+            # Simple topic analysis using word frequency
+            word_freq = {}
             for msg in messages:
-                if msg[1] not in user_names:
-                    cursor.execute("""
-                        SELECT display_name 
-                        FROM users 
-                        WHERE user_id = ?
-                    """, (msg[1],))
-                    result = cursor.fetchone()
-                    user_names[msg[1]] = result[0] if result else msg[1]
+                content = msg[0].lower() if msg[0] else ""
+                words = content.split()
+                for word in words:
+                    # Clean word and filter
+                    word = word.strip('.,!?";:()[]{}')
+                    if len(word) > 4 and word.isalpha():
+                        word_freq[word] = word_freq.get(word, 0) + 1
             
-            # Prepare text for analysis
-            texts = []
-            for msg in messages:
-                if msg[0] and len(msg[0].split()) > 3:  # Only use messages with more than 3 words
-                    texts.append(msg[0])
+            # Get top words
+            top_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:30]
             
-            if not texts:
-                return "No suitable messages found for topic analysis."
+            # Group words into topics (simple clustering by frequency)
+            result = "**Topic Analysis**\n\n"
+            if channel_filter:
+                result += f"**Channel: #{channel_filter}**\n\n"
             
-            # Get embeddings
-            embeddings = []
-            for text in texts:
-                try:
-                    embedding = await self.get_embedding(text)
-                    if embedding is not None:
-                        embeddings.append(embedding)
-                except Exception as e:
-                    print(f"Error getting embedding: {e}")
-                    continue
+            result += f"**Analyzed {len(messages)} recent messages**\n\n"
             
-            if not embeddings:
-                return "Failed to generate embeddings for messages."
-            
-            # Convert to numpy array
-            X = np.array(embeddings)
-            
-            # Perform LDA
-            n_topics = min(5, len(texts))  # Number of topics (up to 5)
-            lda = LatentDirichletAllocation(
-                n_components=n_topics,
-                max_iter=10,
-                learning_method='online',
-                random_state=42
-            )
-            
-            # Fit LDA
-            lda.fit(X)
-            
-            # Get top words for each topic
-            feature_names = [f"word_{i}" for i in range(X.shape[1])]
-            topics = []
-            for topic_idx, topic in enumerate(lda.components_):
-                top_words_idx = topic.argsort()[:-10-1:-1]
-                top_words = [feature_names[i] for i in top_words_idx]
-                topics.append(f"Topic {topic_idx + 1}: {' '.join(top_words)}")
-            
-            # Get topic distribution for each message
-            topic_dist = lda.transform(X)
-            
-            # Find most representative messages for each topic
-            representative_messages = []
-            for topic_idx in range(n_topics):
-                # Get messages with highest probability for this topic
-                topic_probs = topic_dist[:, topic_idx]
-                top_msg_idx = topic_probs.argsort()[-3:][::-1]  # Top 3 messages
+            # Create simple topics based on word frequency tiers
+            if len(top_words) >= 15:
+                result += "**High-frequency topics:**\n"
+                for word, freq in top_words[:10]:
+                    result += f"• {word} ({freq} mentions)\n"
                 
-                for idx in top_msg_idx:
-                    msg = messages[idx]
-                    prob = topic_probs[idx]
-                    if prob > 0.3:  # Only include if probability > 30%
-                        representative_messages.append({
-                            'topic': topic_idx + 1,
-                            'content': msg[0],
-                            'author': user_names[msg[1]],
-                            'channel': msg[2],
-                            'timestamp': self.format_timestamp(msg[3]),
-                            'probability': f"{prob:.2%}"
-                        })
-            
-            # Format results
-            result = f"**Topic Analysis{' for ' + channel_filter if channel_filter else ''}**\n\n"
-            
-            # Add topics
-            result += "**Identified Topics:**\n"
-            for topic in topics:
-                result += f"- {topic}\n"
-            
-            # Add representative messages
-            if representative_messages:
-                result += "\n**Representative Messages:**\n"
-                for msg in representative_messages:
-                    result += f"\nTopic {msg['topic']} ({msg['probability']}):\n"
-                    result += f"From: {msg['author']} in {msg['channel']} at {msg['timestamp']}\n"
-                    result += f"Message: {msg['content']}\n"
+                result += "\n**Medium-frequency topics:**\n"
+                for word, freq in top_words[10:20]:
+                    result += f"• {word} ({freq} mentions)\n"
+                
+                result += "\n**Emerging topics:**\n"
+                for word, freq in top_words[20:30]:
+                    result += f"• {word} ({freq} mentions)\n"
+            else:
+                result += "**Key topics:**\n"
+                for word, freq in top_words:
+                    result += f"• {word} ({freq} mentions)\n"
             
             return result
             
         except Exception as e:
-            print(f"Error in topic analysis: {e}")
             return f"Error analyzing topics: {str(e)}"
 
     async def get_user_insights(self, user_id: str) -> str:
