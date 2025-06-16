@@ -779,43 +779,31 @@ def load_existing_data(db_path='discord_messages.db'):
     conn.close()
     return data
 
-def save_messages_to_db(messages):
+def save_messages_to_db(messages_data, db_path='discord_messages.db'):
     """Save messages to database with proper error handling and batching"""
-    if not messages:
+    if not messages_data:
         return
         
     try:
         # Initialize database connection
-        conn = sqlite3.connect('discord_messages.db')
+        conn = sqlite3.connect(db_path)
         
-        # Get all unique user IDs from messages
-        user_ids = set()
-        for msg in messages:
-            try:
-                if isinstance(msg, dict) and msg.get('author_id'):
-                    user_ids.add(str(msg['author_id']))  # Convert to string to ensure hashability
-            except Exception as e:
-                logger.warning(f"Error processing message for user ID: {str(e)}")
-                continue
+        # Flatten the nested structure to get all messages
+        all_messages = []
+        for guild_name, channels in messages_data.items():
+            for channel_name, messages in channels.items():
+                all_messages.extend(messages)
         
-        # Fetch user presences in bulk
-        user_presences = {}
-        for user_id in user_ids:
-            try:
-                member = client.get_guild(GUILD_ID).get_member(int(user_id))
-                if member:
-                    user_presences[user_id] = {
-                        'status': str(member.status) if member.status else None,
-                        'activities': [str(activity.name) for activity in member.activities] if member.activities else []
-                    }
-            except Exception as e:
-                logger.warning(f"Failed to get presence for user {user_id}: {str(e)}")
-                user_presences[user_id] = None
+        if not all_messages:
+            logger.info("No messages to save")
+            return
+            
+        logger.info(f"Saving {len(all_messages)} messages to database...")
         
         # Process messages in batches
         batch_size = 100
-        for i in range(0, len(messages), batch_size):
-            batch = messages[i:i + batch_size]
+        for i in range(0, len(all_messages), batch_size):
+            batch = all_messages[i:i + batch_size]
             message_data = []
             
             for msg in batch:
@@ -824,34 +812,24 @@ def save_messages_to_db(messages):
                         logger.warning(f"Skipping invalid message format: {type(msg)}")
                         continue
                         
-                    # Get user presence, defaulting to None if not found
-                    author_id = str(msg.get('author_id')) if msg.get('author_id') else None
-                    user_presence = user_presences.get(author_id) if author_id else None
-                    
-                    # Extract presence data safely
-                    author_status = None
-                    author_activities = []
-                    if user_presence:
-                        author_status = user_presence.get('status')
-                        author_activities = user_presence.get('activities', [])
-                    
+                    # Extract basic message data
                     message_data.append({
-                        'message_id': str(msg['id']),  # Ensure ID is string
-                        'channel_id': str(msg['channel_id']),  # Ensure ID is string
-                        'author_id': author_id,
+                        'message_id': str(msg.get('id', '')),
+                        'channel_id': str(msg.get('channel', {}).get('id', '')),
+                        'author_id': str(msg.get('author', {}).get('id', '')),
                         'content': msg.get('content', ''),
-                        'timestamp': msg.get('timestamp'),
+                        'timestamp': msg.get('timestamp', ''),
                         'edited_timestamp': msg.get('edited_timestamp'),
-                        'is_bot': msg.get('is_bot', False),
-                        'has_attachments': bool(msg.get('attachments')),
-                        'has_embeds': bool(msg.get('embeds')),
-                        'has_reactions': bool(msg.get('reactions')),
-                        'has_stickers': bool(msg.get('sticker')),
-                        'reference_message_id': str(msg.get('reference', {}).get('message_id')) if msg.get('reference', {}).get('message_id') else None,
-                        'reference_channel_id': str(msg.get('reference', {}).get('channel_id')) if msg.get('reference', {}).get('channel_id') else None,
-                        'reference_guild_id': str(msg.get('reference', {}).get('guild_id')) if msg.get('reference', {}).get('guild_id') else None,
-                        'author_status': author_status,
-                        'author_activities': json.dumps(author_activities)
+                        'is_bot': msg.get('author', {}).get('is_bot', False),
+                        'has_attachments': bool(msg.get('attachments', [])),
+                        'has_embeds': bool(msg.get('embeds', [])),
+                        'has_reactions': bool(msg.get('reactions', [])),
+                        'has_stickers': bool(msg.get('stickers', [])),
+                        'reference_message_id': str(msg.get('referenced_message_id', '')) if msg.get('referenced_message_id') else None,
+                        'reference_channel_id': None,  # Not available in current structure
+                        'reference_guild_id': None,    # Not available in current structure
+                        'author_status': msg.get('user_presence', {}).get('status') if msg.get('user_presence') else None,
+                        'author_activities': json.dumps(msg.get('user_presence', {}).get('activity', [])) if msg.get('user_presence') else json.dumps([])
                     })
                 except Exception as e:
                     logger.error(f"Error processing message {msg.get('id', 'unknown')}: {str(e)}")
@@ -859,32 +837,48 @@ def save_messages_to_db(messages):
             
             if message_data:
                 try:
-                    # Use bulk insert for better performance
+                    # Use bulk insert for better performance with correct schema
                     conn.executemany('''
                         INSERT OR REPLACE INTO messages (
-                            id, channel_id, author_id, content, timestamp,
-                            edited_timestamp, author_is_bot, has_attachments, has_embeds,
-                            has_reactions, has_stickers, referenced_message_id,
-                            referenced_channel_id, referenced_guild_id, author_status,
-                            author_activity
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            id, content, timestamp, edited_timestamp, jump_url,
+                            author_id, author_name, author_display_name, author_is_bot,
+                            channel_id, channel_name, channel_type,
+                            guild_id, guild_name,
+                            mentions, mention_everyone, mention_roles,
+                            referenced_message_id, attachments, embeds, reactions,
+                            emoji_stats, pinned, flags, nonce, type, is_system,
+                            mentions_everyone, has_reactions
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', [(
-                        msg['message_id'],
-                        msg['channel_id'],
-                        msg['author_id'],
-                        msg['content'],
-                        msg['timestamp'],
-                        msg['edited_timestamp'],
-                        msg['is_bot'],
-                        msg['has_attachments'],
-                        msg['has_embeds'],
-                        msg['has_reactions'],
-                        msg['has_stickers'],
-                        msg['reference_message_id'],
-                        msg['reference_channel_id'],
-                        msg['reference_guild_id'],
-                        msg['author_status'],
-                        msg['author_activities']
+                        msg.get('message_id', ''),
+                        msg.get('content', ''),
+                        msg.get('timestamp', ''),
+                        msg.get('edited_timestamp'),
+                        '', # jump_url - not available in current structure
+                        msg.get('author_id', ''),
+                        '', # author_name - not directly available
+                        '', # author_display_name - not directly available  
+                        msg.get('is_bot', False),
+                        msg.get('channel_id', ''),
+                        '', # channel_name - not directly available
+                        '', # channel_type - not directly available
+                        '', # guild_id - not directly available
+                        '', # guild_name - not directly available
+                        json.dumps([]), # mentions - placeholder
+                        False, # mention_everyone - placeholder
+                        json.dumps([]), # mention_roles - placeholder
+                        msg.get('reference_message_id'),
+                        json.dumps(msg.get('attachments', [])),
+                        json.dumps(msg.get('embeds', [])),
+                        json.dumps(msg.get('reactions', [])),
+                        json.dumps({}), # emoji_stats - placeholder
+                        False, # pinned - placeholder
+                        None, # flags - placeholder
+                        None, # nonce - placeholder
+                        '', # type - placeholder
+                        False, # is_system - placeholder
+                        False, # mentions_everyone - placeholder
+                        msg.get('has_reactions', False)
                     ) for msg in message_data])
                     
                     conn.commit()
@@ -956,7 +950,7 @@ def update_discord_messages():
 
     if client.new_data:
         print("💾 Saving messages to database...")
-        save_messages_to_db(client.new_data)
+        save_messages_to_db(client.new_data, 'discord_messages.db')
         save_sync_log_to_db(client.sync_log_entry)
         print("\n📂 Data updated in database.")
         print(f"📝 Total messages synced: {client.sync_log_entry['total_messages_synced']}")
