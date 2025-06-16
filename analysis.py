@@ -1197,7 +1197,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             docs = []
             technical_terms = Counter()
             business_concepts = Counter()
-            innovation_patterns = Counter()
+            innovation_indicators = Counter()
             discussion_themes = defaultdict(list)
             temporal_trends = defaultdict(list)
             
@@ -1214,7 +1214,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 r'\b(team|collaboration|workflow|process|efficiency|optimization)\b'
             ]
             
-            innovation_patterns = [
+            innovation_pattern_list = [
                 r'\b(innovation|transformation|disruption|breakthrough|cutting.edge)\b',
                 r'\b(future|trend|emerging|next.gen|state.of.the.art|revolutionary)\b',
                 r'\b(experiment|prototype|pilot|proof.of.concept|MVP|beta)\b'
@@ -1248,10 +1248,10 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                             business_concepts[match.lower()] += 1
                     
                     # Extract innovation indicators
-                    for pattern in innovation_patterns:
+                    for pattern in innovation_pattern_list:
                         matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
                         for match in matches:
-                            innovation_patterns[match.lower()] += 1
+                            innovation_indicators[match.lower()] += 1
                     
                     # Extract high-value noun phrases (skip common Discord phrases)
                     for chunk in doc.noun_chunks:
@@ -1377,9 +1377,9 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 result += "\n"
             
             # Innovation Indicators
-            if innovation_patterns:
+            if innovation_indicators:
                 result += "**� Innovation & Future Focus:**\n"
-                for pattern, count in innovation_patterns.most_common(6):
+                for pattern, count in innovation_indicators.most_common(6):
                     if count >= 2:
                         result += f"• {pattern.title()} ({count} mentions)\n"
                 result += "\n"
