@@ -33,110 +33,6 @@ class AnalysisCommands(commands.Cog):
         print(f'Analysis commands loaded!')
     
     @app_commands.command(
-        name="analyze",
-        description="General analysis tasks (use dedicated commands for better autocomplete)"
-    )
-    @app_commands.describe(
-        task="The analysis task to perform",
-        channel="Channel name (better to use /channel_analysis or /topics_analysis)",
-        user="Username (better to use /user_analysis)"
-    )
-    @app_commands.choices(task=[
-        app_commands.Choice(name="wordfreq - Word frequency analysis", value="wordfreq"),
-        app_commands.Choice(name="userstats - User statistics", value="userstats"),
-        app_commands.Choice(name="channel - Channel analysis (use /channel_analysis)", value="channel"),
-        app_commands.Choice(name="topics - Topic analysis (use /topics_analysis)", value="topics"),
-        app_commands.Choice(name="temporal - Temporal analysis", value="temporal"),
-        app_commands.Choice(name="user - User analysis (use /user_analysis)", value="user")
-    ])
-    async def analyze(
-        self,
-        interaction: discord.Interaction,
-        task: str,
-        channel: str = None,
-        user: str = None
-    ):
-        """Analyze Discord messages with various tasks"""
-        try:
-            print(f"Analyze command called with task='{task}', channel='{channel}', user='{user}'")
-            
-            # Ensure analyzer is initialized
-            try:
-                await self.analyzer.initialize()
-            except Exception as e:
-                await interaction.response.send_message(f"Error initializing database: {str(e)}")
-                return
-            
-            # Defer the response since analysis might take a moment
-            await interaction.response.defer()
-            
-            # Handle different tasks
-            if task == "wordfreq":
-                result = await self.analyzer.update_word_frequencies()
-            elif task == "userstats":
-                result = await self.analyzer.update_user_statistics()
-            elif task == "channel":
-                print(f"Channel task: channel parameter = '{channel}' (type: {type(channel)})")
-                if not channel:
-                    await interaction.followup.send(f"❌ **Channel parameter missing!**\n\n**For better experience, use the dedicated command:**\n`/channel_analysis` - Select channel from autocomplete dropdown\n\n**Or provide channel parameter:**\nChannel parameter received: `{repr(channel)}`")
-                    return
-                print(f"Calling get_channel_insights with channel: '{channel}'")
-                result = await self.analyzer.get_channel_insights(channel)
-            elif task == "topics":
-                args_dict = {}
-                if channel:
-                    print(f"Topics with channel filter: '{channel}'")
-                    args_dict["channel_name"] = channel
-                else:
-                    print("Topics without channel filter")
-                result = await self.analyzer.analyze_topics_spacy(args_dict)
-            elif task == "temporal":
-                result = await self.analyzer.update_temporal_stats()
-            elif task == "user":
-                print(f"User task: user parameter = '{user}' (type: {type(user)})")
-                if not user:
-                    await interaction.followup.send(f"❌ **User parameter missing!**\n\n**For better experience, use the dedicated command:**\n`/user_analysis` - Select user from autocomplete dropdown\n\n**Or provide user parameter:**\nUser parameter received: `{repr(user)}`")
-                    return
-                print(f"Calling get_user_insights with user: '{user}'")
-                result = await self.analyzer.get_user_insights(user)
-            else:
-                await interaction.followup.send(f"Unknown task: {task}")
-                return
-            
-            # Handle the result
-            if isinstance(result, tuple):
-                # If result is a tuple (text, file_path)
-                text, file_path = result
-                await interaction.followup.send(text, file=discord.File(file_path))
-                # Clean up the temporary file
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-            elif isinstance(result, str) and os.path.isfile(result):
-                # If result is just a file path
-                await interaction.followup.send(file=discord.File(result))
-                # Clean up the temporary file
-                try:
-                    os.remove(result)
-                except:
-                    pass
-            else:
-                # If result is text, split it if too long
-                if len(result) > 2000:
-                    chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
-                    for chunk in chunks:
-                        await interaction.followup.send(chunk)
-                else:
-                    await interaction.followup.send(result)
-                    
-        except Exception as e:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"Error during analysis: {str(e)}")
-            else:
-                await interaction.followup.send(f"Error during analysis: {str(e)}")
-
-    @app_commands.command(
         name="list_users",
         description="List all available users for analysis"
     )
@@ -182,7 +78,6 @@ class AnalysisCommands(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"Error listing channels: {str(e)}")
 
-    @analyze.autocomplete('channel')
     async def channel_autocomplete(
         self,
         interaction: discord.Interaction,
@@ -230,7 +125,6 @@ class AnalysisCommands(commands.Cog):
             traceback.print_exc()
             return []
     
-    @analyze.autocomplete('user')
     async def user_autocomplete(
         self,
         interaction: discord.Interaction,
@@ -424,6 +318,93 @@ class AnalysisCommands(commands.Cog):
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(
+        name="wordfreq_analysis",
+        description="Analyze word frequency across all messages"
+    )
+    async def wordfreq_analysis(self, interaction: discord.Interaction):
+        """Update word frequency statistics"""
+        try:
+            await self.analyzer.initialize()
+            await interaction.response.defer()
+            
+            result = await self.analyzer.update_word_frequencies()
+            
+            if len(result) > 2000:
+                chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                for chunk in chunks:
+                    await interaction.followup.send(chunk)
+            else:
+                await interaction.followup.send(result)
+                
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Error during word frequency analysis: {str(e)}")
+            else:
+                await interaction.followup.send(f"Error during word frequency analysis: {str(e)}")
+
+    @app_commands.command(
+        name="userstats_analysis",
+        description="Analyze user activity statistics across all channels"
+    )
+    async def userstats_analysis(self, interaction: discord.Interaction):
+        """Update user activity statistics"""
+        try:
+            await self.analyzer.initialize()
+            await interaction.response.defer()
+            
+            result = await self.analyzer.update_user_statistics()
+            
+            if len(result) > 2000:
+                chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                for chunk in chunks:
+                    await interaction.followup.send(chunk)
+            else:
+                await interaction.followup.send(result)
+                
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Error during user statistics analysis: {str(e)}")
+            else:
+                await interaction.followup.send(f"Error during user statistics analysis: {str(e)}")
+
+    @app_commands.command(
+        name="temporal_analysis",
+        description="Analyze temporal patterns of message activity"
+    )
+    async def temporal_analysis(self, interaction: discord.Interaction):
+        """Update temporal activity patterns"""
+        try:
+            await self.analyzer.initialize()
+            await interaction.response.defer()
+            
+            result = await self.analyzer.update_temporal_stats()
+            
+            # Handle the result (might be a file path or text)
+            if isinstance(result, tuple):
+                text, file_path = result
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        file = discord.File(f, filename=os.path.basename(file_path))
+                        await interaction.followup.send(text, file=file)
+                else:
+                    await interaction.followup.send(text)
+            elif isinstance(result, str) and os.path.isfile(result):
+                await interaction.followup.send(file=discord.File(result))
+            else:
+                if len(result) > 2000:
+                    chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                    for chunk in chunks:
+                        await interaction.followup.send(chunk)
+                else:
+                    await interaction.followup.send(result)
+                    
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Error during temporal analysis: {str(e)}")
+            else:
+                await interaction.followup.send(f"Error during temporal analysis: {str(e)}")
+
+    @app_commands.command(
         name="help_analysis",
         description="Show available analysis commands and their usage"
     )
@@ -432,15 +413,15 @@ class AnalysisCommands(commands.Cog):
         help_text = """
 **🧠 Discord Analysis Bot Commands**
 
-**🎯 Recommended Commands (with autocomplete):**
+**🎯 Analysis Commands (with autocomplete):**
 • `/channel_analysis` - Analyze a specific channel (autocomplete available)
 • `/user_analysis` - Analyze a specific user (autocomplete available)  
 • `/topics_analysis` - Analyze discussion topics, optionally by channel (autocomplete available)
 
-**📊 General Analysis Commands:**
-• `/analyze wordfreq` - Update word frequency statistics
-• `/analyze userstats` - Update user activity statistics
-• `/analyze temporal` - Analyze temporal patterns
+**📊 Statistical Analysis Commands:**
+• `/wordfreq_analysis` - Analyze word frequency across all messages
+• `/userstats_analysis` - Analyze user activity statistics across all channels
+• `/temporal_analysis` - Analyze temporal patterns of message activity
 
 **📋 Utility Commands:**
 • `/list_users` - Show all available users
@@ -448,9 +429,9 @@ class AnalysisCommands(commands.Cog):
 • `/help_analysis` - Show this help message
 
 **💡 Pro Tips:**
-- Use the dedicated commands (`/channel_analysis`, `/user_analysis`, `/topics_analysis`) for the best experience
-- These commands have autocomplete - just start typing and select from the dropdown!
-- The general `/analyze` command is available but dedicated commands work better
+- Commands with autocomplete make it easy to find channels and users - just start typing!
+- All commands are now dedicated and focused on specific analysis types
+- Use `/list_users` or `/list_channels` if you need to see what's available
         """
         await interaction.response.send_message(help_text)
         

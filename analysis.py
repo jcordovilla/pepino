@@ -737,6 +737,177 @@ class MessageAnalyzer:
         except Exception as e:
             return f"Error getting user insights by display name: {str(e)}"
 
+    async def get_user_insights(self, user_identifier: str) -> str:
+        """Get detailed insights for a specific user by username, display name, or user ID"""
+        try:
+            await self.initialize()
+            print(f"Getting insights for user: {user_identifier}")
+
+            # Try to find the user by different identifiers
+            user_query = f"""
+                SELECT DISTINCT 
+                    author_id,
+                    author_name,
+                    author_display_name,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE (
+                    author_name = ? OR 
+                    author_display_name = ? OR 
+                    author_id = ? OR
+                    LOWER(author_name) = LOWER(?) OR
+                    LOWER(author_display_name) = LOWER(?)
+                ) AND {self.base_filter}
+                GROUP BY author_id, author_name, author_display_name
+                ORDER BY message_count DESC
+                LIMIT 1
+            """
+            
+            async with self.pool.execute(user_query, (user_identifier, user_identifier, user_identifier, user_identifier, user_identifier)) as cursor:
+                user_info = await cursor.fetchone()
+
+            if not user_info:
+                return f"User '{user_identifier}' not found in the database."
+
+            author_id = user_info[0]
+            author_name = user_info[1]
+            display_name = user_info[2] if user_info[2] else author_name
+            total_messages = user_info[3]
+
+            # Get detailed user statistics
+            stats_query = f"""
+                SELECT 
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT channel_name) as channels_active,
+                    AVG(LENGTH(content)) as avg_message_length,
+                    MIN(timestamp) as first_message,
+                    MAX(timestamp) as last_message,
+                    COUNT(DISTINCT DATE(timestamp)) as active_days
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+            """
+            
+            async with self.pool.execute(stats_query, (author_id,)) as cursor:
+                stats = await cursor.fetchone()
+
+            # Get channel activity breakdown
+            channel_query = f"""
+                SELECT 
+                    channel_name,
+                    COUNT(*) as message_count,
+                    AVG(LENGTH(content)) as avg_length
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                GROUP BY channel_name
+                ORDER BY message_count DESC
+                LIMIT 10
+            """
+            
+            async with self.pool.execute(channel_query, (author_id,)) as cursor:
+                channels = await cursor.fetchall()
+
+            # Get activity by time of day
+            time_query = f"""
+                SELECT 
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                GROUP BY hour
+                ORDER BY hour
+            """
+            
+            async with self.pool.execute(time_query, (author_id,)) as cursor:
+                hourly_activity = await cursor.fetchall()
+
+            # Get most common words from user's messages
+            content_query = f"""
+                SELECT content
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                AND content IS NOT NULL 
+                AND LENGTH(content) > 10
+                LIMIT 1000
+            """
+            
+            async with self.pool.execute(content_query, (author_id,)) as cursor:
+                messages = await cursor.fetchall()
+
+            # Process word frequency
+            word_freq = Counter()
+            if messages:
+                stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cant', 'wont', 'dont', 'im', 'youre', 'hes', 'shes', 'its', 'were', 'theyre', 'ive', 'youve', 'weve', 'theyve', 'ill', 'youll', 'hell', 'shell', 'well', 'theyll'])
+                
+                for msg in messages:
+                    content = msg[0].lower()
+                    # Remove URLs, mentions, and special characters
+                    content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
+                    content = re.sub(r'<@[!&]?[0-9]+>', '', content)
+                    content = re.sub(r'[^\w\s]', ' ', content)
+                    
+                    words = content.split()
+                    for word in words:
+                        if len(word) > 2 and word not in stop_words and not word.isdigit():
+                            word_freq[word] += 1
+
+            # Format the results
+            result = f"**User Analysis: {display_name}**\n\n"
+            
+            if stats:
+                result += "**📊 General Statistics:**\n"
+                result += f"• Total Messages: {stats[0]:,}\n"
+                result += f"• Active Channels: {stats[1]}\n"
+                result += f"• Average Message Length: {stats[2]:.1f} characters\n"
+                result += f"• Active Days: {stats[5]}\n"
+                
+                if stats[3] and stats[4]:
+                    first_msg = self.format_timestamp(stats[3])
+                    last_msg = self.format_timestamp(stats[4])
+                    result += f"• First Message: {first_msg}\n"
+                    result += f"• Last Message: {last_msg}\n"
+                result += "\n"
+
+            if channels:
+                result += "**📍 Channel Activity:**\n"
+                for channel in channels[:5]:  # Top 5 channels
+                    channel_name = channel[0]
+                    msg_count = channel[1]
+                    avg_len = channel[2] if channel[2] else 0
+                    result += f"• #{channel_name}: {msg_count} messages (avg {avg_len:.0f} chars)\n"
+                result += "\n"
+
+            if hourly_activity:
+                result += "**🕐 Activity by Time of Day:**\n"
+                # Group hours into time periods
+                periods = {'Night (00-05)': 0, 'Morning (06-11)': 0, 'Afternoon (12-17)': 0, 'Evening (18-23)': 0}
+                for hour_data in hourly_activity:
+                    hour = hour_data[0]
+                    count = hour_data[1]
+                    if 0 <= hour <= 5:
+                        periods['Night (00-05)'] += count
+                    elif 6 <= hour <= 11:
+                        periods['Morning (06-11)'] += count
+                    elif 12 <= hour <= 17:
+                        periods['Afternoon (12-17)'] += count
+                    elif 18 <= hour <= 23:
+                        periods['Evening (18-23)'] += count
+                
+                for period, count in periods.items():
+                    if count > 0:
+                        result += f"• {period}: {count} messages\n"
+                result += "\n"
+
+            if word_freq:
+                result += "**💬 Most Used Words:**\n"
+                top_words = word_freq.most_common(10)
+                for word, count in top_words:
+                    result += f"• {word}: {count} times\n"
+
+            return result
+
+        except Exception as e:
+            return f"Error getting user insights: {str(e)}"
+
     def run_all_analyses(self) -> Dict[str, Any]:
         """Run all analysis updates and return a comprehensive summary"""
         summary = {}
@@ -931,28 +1102,36 @@ class MessageAnalyzer:
             pass
 
     async def get_available_channels(self) -> List[str]:
-        """Get list of available channels in the database"""
+        """Get list of available channels in the database (ordered by activity)"""
         try:
             await self.initialize()
             async with self.pool.execute("""
-                SELECT DISTINCT channel_name 
+                SELECT 
+                    channel_name,
+                    COUNT(*) as message_count
                 FROM messages 
-                WHERE channel_name NOT LIKE '%test%'
+                WHERE channel_name IS NOT NULL 
+                AND channel_name != ''
+                AND channel_name NOT LIKE '%test%'
                 AND channel_name NOT LIKE '%playground%'
-                ORDER BY channel_name
+                AND channel_name NOT LIKE '%pg%'
+                GROUP BY channel_name
+                ORDER BY message_count DESC, channel_name
             """) as cursor:
                 channels = await cursor.fetchall()
-                return [channel[0] for channel in channels]
+                return [channel[0] for channel in channels if channel[0]]
         except Exception as e:
             print(f"Error getting available channels: {str(e)}")
             return []
 
     async def get_available_users(self) -> List[str]:
-        """Get list of available users in the database"""
+        """Get list of available users in the database (display names preferred)"""
         try:
             await self.initialize()
             async with self.pool.execute("""
-                SELECT DISTINCT author_name 
+                SELECT DISTINCT 
+                    COALESCE(author_display_name, author_name) as display_name,
+                    COUNT(*) as message_count
                 FROM messages 
                 WHERE author_name IS NOT NULL 
                 AND author_id != 'sesh'
@@ -960,10 +1139,12 @@ class MessageAnalyzer:
                 AND author_name != 'sesh'
                 AND LOWER(author_name) != 'pepe'
                 AND LOWER(author_name) != 'pepino'
-                ORDER BY author_name
+                AND COALESCE(author_display_name, author_name) IS NOT NULL
+                GROUP BY COALESCE(author_display_name, author_name)
+                ORDER BY message_count DESC, display_name
             """) as cursor:
                 users = await cursor.fetchall()
-                return [user[0] for user in users]
+                return [user[0] for user in users if user[0]]
         except Exception as e:
             print(f"Error getting available users: {str(e)}")
             return []

@@ -50,76 +50,11 @@ async def on_ready():
 async def on_command_error(ctx, error):
     """Handle command errors"""
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send("Command not found. Use !analyze list to see available commands.")
+        await ctx.send("Command not found. Use /help_analysis to see available slash commands.")
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send(f"Missing required argument: {error.param.name}")
     else:
         await ctx.send(f"An error occurred: {str(error)}")
-
-@bot.command(name="analyze")
-async def analyze(ctx, task: str = None, *args):
-    """Run various analysis tasks on the message database"""
-    try:
-        if not task:
-            await ctx.send("""
-**Available Analysis Tasks:**
-- `channel <channel_name>`: Get insights about a specific channel
-- `user <user_id or name>`: Get insights about a specific user
-- `wordfreq`: Show most common words
-- `userstats`: Show user activity statistics
-- `temporal`: Show temporal activity patterns
-- `topics [channel_name]`: Analyze topics in messages (optionally specify a channel)
-- `similar <message_id>`: Find similar messages
-- `conversations`: Analyze conversation chains
-- `runall`: Run all analyses at once
-
-Example: `/analyze channel general` or `/analyze user Jose Cordovilla`
-            """)
-            return
-
-        # Initialize analyzer
-        analyzer = MessageAnalyzer('discord_messages.db')
-        
-        # Parse arguments
-        args_dict = {}
-        if args:
-            if task == 'channel':
-                args_dict['channel_name'] = ' '.join(args)
-            elif task == 'user':
-                args_dict['user_id'] = ' '.join(args)  # Join all args for user name
-            elif task == 'similar':
-                try:
-                    args_dict['message_id'] = int(args[0])
-                except ValueError:
-                    await ctx.send("Error: message_id must be a number")
-                    return
-            elif task == 'topics' and args:
-                args_dict['channel_name'] = ' '.join(args)
-        
-        # Run analysis
-        result = await analyzer.run_analysis(task, args_dict)
-        
-        # Check if result contains a base64 image
-        if result and result.startswith('data:image/png;base64,'):
-            # Extract the base64 data
-            base64_data = result.split(',')[1]
-            image_data = base64.b64decode(base64_data)
-            
-            # Create a file-like object
-            image_file = io.BytesIO(image_data)
-            image_file.name = f'analysis_{task}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
-            
-            # Send the image
-            await ctx.send(file=discord.File(image_file, filename=image_file.name))
-        else:
-            # Send text result
-            await ctx.send(result)
-            
-    except Exception as e:
-        await ctx.send(f"Error running analysis: {str(e)}")
-    finally:
-        if 'analyzer' in locals():
-            analyzer.close()
 
 @bot.command(name='sync')
 async def sync(ctx):
