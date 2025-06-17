@@ -7,13 +7,6 @@
 *.key
 *.pem
 
-# Database files (contain sensitive message data)
-*.db
-*.sqlite
-*.sqlite3
-discord_messages.db
-data/
-
 # Project directories to ignore
 archive/
 temp/
