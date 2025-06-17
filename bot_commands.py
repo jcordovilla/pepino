@@ -36,7 +36,10 @@ class AnalysisCommands(commands.Cog):
         name="list_users",
         description="List all available users for analysis"
     )
-    async def list_users(self, interaction: discord.Interaction):
+    @app_commands.describe(
+        limit="Number of users to show (default: 50, use 'all' or 999 for all users)"
+    )
+    async def list_users(self, interaction: discord.Interaction, limit: int = 50):
         """List all available users for analysis"""
         try:
             await interaction.response.defer()
@@ -45,13 +48,71 @@ class AnalysisCommands(commands.Cog):
             except Exception as e:
                 await interaction.followup.send(f"Error initializing database: {str(e)}")
                 return
-                
+            
             users = await self.analyzer.get_available_users()
-            if users:
-                user_list = "\n".join([f"• {u}" for u in users])
-                await interaction.followup.send(f"**Available Users:**\n{user_list}")
-            else:
+            if not users:
                 await interaction.followup.send("No users found in the database.")
+                return
+            
+            total_users = len(users)
+            
+            # Handle 'all users' request
+            if limit >= 999 or limit >= total_users:
+                users_to_show = users
+                show_all = True
+            else:
+                # Validate limit
+                if limit < 1:
+                    limit = 50
+                users_to_show = users[:limit]
+                show_all = False
+            
+            # Split users into chunks that fit Discord's message limit
+            def chunk_users(user_list, max_length=1800):
+                chunks = []
+                current_chunk = []
+                current_length = 0
+                
+                for user in user_list:
+                    user_line = f"• {user}\n"
+                    if current_length + len(user_line) > max_length and current_chunk:
+                        chunks.append(current_chunk)
+                        current_chunk = [user]
+                        current_length = len(user_line)
+                    else:
+                        current_chunk.append(user)
+                        current_length += len(user_line)
+                
+                if current_chunk:
+                    chunks.append(current_chunk)
+                
+                return chunks
+            
+            user_chunks = chunk_users(users_to_show)
+            
+            # Send the chunks
+            for i, chunk in enumerate(user_chunks):
+                if i == 0:
+                    # First message with header
+                    if show_all:
+                        header = f"**All Available Users ({total_users} total):**\n"
+                    else:
+                        header = f"**Available Users ({len(users_to_show)} of {total_users} total):**\n"
+                else:
+                    # Subsequent messages
+                    header = f"**Users (continued - part {i+1}):**\n"
+                
+                user_list = "\n".join([f"• {u}" for u in chunk])
+                message = header + user_list
+                
+                # Add footer to last message
+                if i == len(user_chunks) - 1 and not show_all:
+                    message += f"\n\n*💡 Tip: Use `/list_users 999` to see all {total_users} users, or use autocomplete in analysis commands.*"
+                elif i == len(user_chunks) - 1 and show_all:
+                    message += f"\n\n*💡 Tip: Use autocomplete in analysis commands to quickly find users.*"
+                
+                await interaction.followup.send(message)
+                
         except Exception as e:
             await interaction.followup.send(f"Error listing users: {str(e)}")
 
@@ -59,7 +120,10 @@ class AnalysisCommands(commands.Cog):
         name="list_channels",
         description="List all available channels for analysis"
     )
-    async def list_channels(self, interaction: discord.Interaction):
+    @app_commands.describe(
+        limit="Number of channels to show (default: 25, max: 50)"
+    )
+    async def list_channels(self, interaction: discord.Interaction, limit: int = 25):
         """List all available channels for analysis"""
         try:
             await interaction.response.defer()
@@ -68,11 +132,41 @@ class AnalysisCommands(commands.Cog):
             except Exception as e:
                 await interaction.followup.send(f"Error initializing database: {str(e)}")
                 return
+            
+            # Validate limit
+            if limit > 50:
+                limit = 50
+            elif limit < 1:
+                limit = 25
                 
             channels = await self.analyzer.get_available_channels()
             if channels:
-                channel_list = "\n".join([f"• {c}" for c in channels])
-                await interaction.followup.send(f"**Available Channels:**\n{channel_list}")
+                total_channels = len(channels)
+                limited_channels = channels[:limit]
+                
+                # Create the channel list
+                channel_list = "\n".join([f"• {c}" for c in limited_channels])
+                
+                # Check message length
+                header = f"**Available Channels ({len(limited_channels)} of {total_channels} total):**\n"
+                message = header + channel_list
+                
+                if len(message) > 1900:  # Leave some buffer
+                    # Truncate the list to fit in message
+                    truncated_channels = []
+                    current_length = len(header)
+                    
+                    for channel in limited_channels:
+                        channel_line = f"• {channel}\n"
+                        if current_length + len(channel_line) > 1800:
+                            break
+                        truncated_channels.append(channel)
+                        current_length += len(channel_line)
+                    
+                    channel_list = "\n".join([f"• {c}" for c in truncated_channels])
+                    message = header + channel_list + f"\n\n*Showing {len(truncated_channels)} channels. Use autocomplete in analysis commands to find specific channels.*"
+                
+                await interaction.followup.send(message)
             else:
                 await interaction.followup.send("No channels found in the database.")
         except Exception as e:

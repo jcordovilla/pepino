@@ -479,18 +479,16 @@ class MessageAnalyzer:
         try:
             # Get temporal statistics
             cursor = self.conn.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE {self.base_filter}
-                )
                 SELECT 
-                    strftime('%H', timestamp) as hour,
-                    strftime('%w', timestamp) as day,
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
+                    DATE(timestamp) as date,
                     COUNT(*) as message_count
-                FROM filtered_messages
-                GROUP BY hour, day
-                ORDER BY day, hour
+                FROM messages
+                WHERE {self.base_filter}
+                AND timestamp IS NOT NULL
+                GROUP BY hour, day_of_week, date
+                ORDER BY date, hour
             """)
             
             stats = cursor.fetchall()
@@ -500,413 +498,76 @@ class MessageAnalyzer:
             # Process statistics
             hourly_stats = {}
             daily_stats = {}
+            weekly_stats = {}
+            
+            day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
             
             for stat in stats:
-                hour = int(stat['hour'])
-                day = int(stat['day'])
-                count = stat['message_count']
+                hour = stat[0]
+                day_of_week = stat[1]
+                message_count = stat[3]
                 
+                # Hourly aggregation
                 if hour not in hourly_stats:
                     hourly_stats[hour] = 0
-                hourly_stats[hour] += count
+                hourly_stats[hour] += message_count
                 
-                if day not in daily_stats:
-                    daily_stats[day] = 0
-                daily_stats[day] += count
-            
-            # Generate temporal activity chart
-            chart_path = await self.generate_temporal_activity_chart(hourly_stats, daily_stats)
+                # Daily aggregation
+                day_name = day_names[day_of_week]
+                if day_name not in daily_stats:
+                    daily_stats[day_name] = 0
+                daily_stats[day_name] += message_count
+                
+                # Weekly pattern
+                if day_of_week not in weekly_stats:
+                    weekly_stats[day_of_week] = 0
+                weekly_stats[day_of_week] += message_count
             
             # Format results
-            result = "**Temporal Activity Analysis**\n\n"
+            result = "**📊 Temporal Activity Analysis**\n\n"
             
-            result += "**Activity by Hour:**\n"
-            for hour in sorted(hourly_stats.keys()):
-                result += f"{hour:02d}:00 - {hour+1:02d}:00: {hourly_stats[hour]} messages\n"
+            # Peak hours
+            if hourly_stats:
+                sorted_hours = sorted(hourly_stats.items(), key=lambda x: x[1], reverse=True)
+                result += "**🕐 Peak Activity Hours:**\n"
+                for hour, count in sorted_hours[:5]:
+                    time_str = f"{hour:02d}:00-{hour:02d}:59"
+                    result += f"• {time_str}: {count:,} messages\n"
+                result += "\n"
             
-            result += "\n**Activity by Day:**\n"
-            days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-            for day in range(7):
-                result += f"{days[day]}: {daily_stats.get(day, 0)} messages\n"
+            # Daily distribution
+            if daily_stats:
+                result += "**📅 Activity by Day of Week:**\n"
+                for day in day_names:
+                    if day in daily_stats:
+                        count = daily_stats[day]
+                        result += f"• {day}: {count:,} messages\n"
+                result += "\n"
             
-            # Add chart information
-            if chart_path:
-                result += f"\n**Activity Chart:**\nChart has been generated and saved to: {chart_path}\n"
+            # Activity patterns
+            if hourly_stats:
+                result += "**⏰ Activity Patterns:**\n"
+                
+                # Morning (6-11)
+                morning = sum(hourly_stats.get(h, 0) for h in range(6, 12))
+                # Afternoon (12-17)
+                afternoon = sum(hourly_stats.get(h, 0) for h in range(12, 18))
+                # Evening (18-23)
+                evening = sum(hourly_stats.get(h, 0) for h in range(18, 24))
+                # Night (0-5)
+                night = sum(hourly_stats.get(h, 0) for h in range(0, 6))
+                
+                total = morning + afternoon + evening + night
+                if total > 0:
+                    result += f"• Morning (06-11): {morning:,} messages ({morning/total*100:.1f}%)\n"
+                    result += f"• Afternoon (12-17): {afternoon:,} messages ({afternoon/total*100:.1f}%)\n"
+                    result += f"• Evening (18-23): {evening:,} messages ({evening/total*100:.1f}%)\n"
+                    result += f"• Night (00-05): {night:,} messages ({night/total*100:.1f}%)\n"
             
             return result
             
         except Exception as e:
             return f"Error updating temporal statistics: {str(e)}"
-
-    async def generate_temporal_activity_chart(self, hourly_stats: dict, daily_stats: dict) -> str:
-        """Generate a chart showing temporal activity patterns"""
-        try:
-            # Create figure with two subplots
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
-            
-            # Plot hourly activity
-            hours = sorted(hourly_stats.keys())
-            counts = [hourly_stats[h] for h in hours]
-            ax1.bar(range(len(hours)), counts)  # Use numeric x-axis
-            ax1.set_xlabel('Hour of Day')
-            ax1.set_ylabel('Message Count')
-            ax1.set_title('Message Activity by Hour')
-            ax1.set_xticks(range(len(hours)))
-            ax1.set_xticklabels([f'{h:02d}:00' for h in hours], rotation=45)
-            
-            # Plot daily activity
-            days = list(range(7))
-            day_names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-            counts = [daily_stats.get(d, 0) for d in days]
-            ax2.bar(range(len(days)), counts)  # Use numeric x-axis
-            ax2.set_xlabel('Day of Week')
-            ax2.set_ylabel('Message Count')
-            ax2.set_title('Message Activity by Day')
-            ax2.set_xticks(range(len(days)))
-            ax2.set_xticklabels(day_names)
-            
-            # Adjust layout
-            plt.tight_layout()
-            
-            # Save the plot to a temporary file
-            temp_dir = os.path.join(os.path.dirname(__file__), 'temp')
-            os.makedirs(temp_dir, exist_ok=True)
-            file_path = os.path.join(temp_dir, f'temporal_activity_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
-            plt.savefig(file_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            return file_path
-            
-        except Exception as e:
-            print(f"Error generating temporal activity chart: {e}")
-            return None
-
-    async def get_channel_insights(self, channel_name_or_args) -> str:
-        """Get insights for a specific channel"""
-        try:
-            # Handle both old dict format and new string format
-            if isinstance(channel_name_or_args, dict):
-                # Old format: args dictionary
-                if not channel_name_or_args or "channel_name" not in channel_name_or_args:
-                    return "Please specify a channel name. Usage: /analyze channel <channel_name>"
-                channel_name = channel_name_or_args["channel_name"]
-            elif isinstance(channel_name_or_args, str):
-                # New format: direct string
-                if not channel_name_or_args:
-                    return "Please specify a channel name."
-                channel_name = channel_name_or_args
-            else:
-                return "Please specify a channel name."
-            await self.initialize()
-            
-            # Get all channel names for matching
-            async with self.pool.execute(f"""
-                SELECT DISTINCT channel_name 
-                FROM messages 
-                WHERE {self.base_filter}
-            """) as cursor:
-                channels = await cursor.fetchall()
-                channel_names = [row[0] for row in channels]
-            
-            # Find best matching channel (simple case-insensitive search)
-            best_match = None
-            channel_name_lower = channel_name.lower()
-            
-            # Try exact match first
-            for channel in channel_names:
-                if channel.lower() == channel_name_lower:
-                    best_match = channel
-                    break
-            
-            # Try partial match if no exact match
-            if not best_match:
-                for channel in channel_names:
-                    if channel_name_lower in channel.lower():
-                        best_match = channel
-                        break
-            
-            if not best_match:
-                available_channels = [ch for ch in channel_names if ch][:20]  # Limit display
-                return f"Channel '{channel_name}' not found. Available channels: {', '.join(available_channels)}"
-            
-            # Get channel statistics
-            async with self.pool.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
-                )
-                SELECT 
-                    COUNT(*) as total_messages,
-                    COUNT(DISTINCT author_id) as unique_users,
-                    MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message
-                FROM filtered_messages
-            """, (str(best_match),)) as cursor:
-                stats = await cursor.fetchone()
-            
-            # Get top contributors
-            async with self.pool.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
-                )
-                SELECT 
-                    COALESCE(author_display_name, author_name, author_id) as display_name,
-                    COUNT(*) as message_count
-                FROM filtered_messages
-                GROUP BY author_id, author_display_name, author_name
-                ORDER BY message_count DESC
-                LIMIT 5
-            """, (str(best_match),)) as cursor:
-                top_users = await cursor.fetchall()
-            
-            # Get activity by hour
-            async with self.pool.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
-                )
-                SELECT 
-                    strftime('%H', timestamp) as hour,
-                    COUNT(*) as message_count
-                FROM filtered_messages
-                GROUP BY hour
-                ORDER BY hour
-            """, (str(best_match),)) as cursor:
-                hourly_activity = await cursor.fetchall()
-            
-            # Generate activity chart
-            chart_path = await self.generate_channel_activity_chart(best_match)
-            
-            # Format results
-            result = f"**Channel Analysis: {best_match}**\n\n"
-            
-            # Basic statistics
-            result += "**Basic Statistics:**\n"
-            result += f"Total Messages: {stats[0]}\n"
-            result += f"Unique Users: {stats[1]}\n"
-            result += f"First Message: {self.format_timestamp(stats[2])}\n"
-            result += f"Last Message: {self.format_timestamp(stats[3])}\n\n"
-            
-            # Top contributors
-            result += "**Top Contributors:**\n"
-            for user in top_users:
-                result += f"{user[0]}: {user[1]} messages\n"
-            
-            # Activity by hour
-            result += "\n**Activity by Hour:**\n"
-            for hour in hourly_activity:
-                result += f"{hour[0]}:00 - {hour[0]}:59: {hour[1]} messages\n"
-            
-            # Add chart information
-            if chart_path:
-                result += f"\n**Activity Chart:**\nChart has been generated and saved to: {chart_path}\n"
-            
-            return result
-            
-        except Exception as e:
-            return f"Error getting channel insights: {str(e)}"
-
-    async def get_user_insights_by_display_name(self, display_name: str) -> str:
-        """Get insights for a specific user by their display name"""
-        try:
-            await self.initialize()
-            print(f"Getting insights for display name: {display_name}")
-
-            # Find the username corresponding to the display name
-            async with self.pool.execute("""
-                SELECT DISTINCT author_name
-                FROM messages
-                WHERE author_display_name = ?
-                LIMIT 1
-            """, (display_name,)) as cursor:
-                user = await cursor.fetchone()
-
-            if not user:
-                return f"Display name '{display_name}' not found."
-
-            author_name = user[0]
-            print(f"Matched display name '{display_name}' to username '{author_name}'")
-
-            # Use existing method to get insights by username
-            return await self.get_user_insights(author_name)
-
-        except Exception as e:
-            return f"Error getting user insights by display name: {str(e)}"
-
-    async def get_user_insights(self, user_identifier: str) -> str:
-        """Get detailed insights for a specific user by username, display name, or user ID"""
-        try:
-            await self.initialize()
-            print(f"Getting insights for user: {user_identifier}")
-
-            # Try to find the user by different identifiers
-            user_query = f"""
-                SELECT DISTINCT 
-                    author_id,
-                    author_name,
-                    author_display_name,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE (
-                    author_name = ? OR 
-                    author_display_name = ? OR 
-                    author_id = ? OR
-                    LOWER(author_name) = LOWER(?) OR
-                    LOWER(author_display_name) = LOWER(?)
-                ) AND {self.base_filter}
-                GROUP BY author_id, author_name, author_display_name
-                ORDER BY message_count DESC
-                LIMIT 1
-            """
-            
-            async with self.pool.execute(user_query, (user_identifier, user_identifier, user_identifier, user_identifier, user_identifier)) as cursor:
-                user_info = await cursor.fetchone()
-
-            if not user_info:
-                return f"User '{user_identifier}' not found in the database."
-
-            author_id = user_info[0]
-            author_name = user_info[1]
-            display_name = user_info[2] if user_info[2] else author_name
-            total_messages = user_info[3]
-
-            # Get detailed user statistics
-            stats_query = f"""
-                SELECT 
-                    COUNT(*) as total_messages,
-                    COUNT(DISTINCT channel_name) as channels_active,
-                    AVG(LENGTH(content)) as avg_message_length,
-                    MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message,
-                    COUNT(DISTINCT DATE(timestamp)) as active_days
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-            """
-            
-            async with self.pool.execute(stats_query, (author_id,)) as cursor:
-                stats = await cursor.fetchone()
-
-            # Get channel activity breakdown
-            channel_query = f"""
-                SELECT 
-                    channel_name,
-                    COUNT(*) as message_count,
-                    AVG(LENGTH(content)) as avg_length
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-                GROUP BY channel_name
-                ORDER BY message_count DESC
-                LIMIT 10
-            """
-            
-            async with self.pool.execute(channel_query, (author_id,)) as cursor:
-                channels = await cursor.fetchall()
-
-            # Get activity by time of day
-            time_query = f"""
-                SELECT 
-                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-                GROUP BY hour
-                ORDER BY hour
-            """
-            
-            async with self.pool.execute(time_query, (author_id,)) as cursor:
-                hourly_activity = await cursor.fetchall()
-
-            # Get most common words from user's messages
-            content_query = f"""
-                SELECT content
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-                AND content IS NOT NULL 
-                AND LENGTH(content) > 10
-                LIMIT 1000
-            """
-            
-            async with self.pool.execute(content_query, (author_id,)) as cursor:
-                messages = await cursor.fetchall()
-
-            # Process word frequency
-            word_freq = Counter()
-            if messages:
-                stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cant', 'wont', 'dont', 'im', 'youre', 'hes', 'shes', 'its', 'were', 'theyre', 'ive', 'youve', 'weve', 'theyve', 'ill', 'youll', 'hell', 'shell', 'well', 'theyll'])
-                
-                for msg in messages:
-                    content = msg[0].lower()
-                    # Remove URLs, mentions, and special characters
-                    content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
-                    content = re.sub(r'<@[!&]?[0-9]+>', '', content)
-                    content = re.sub(r'[^\w\s]', ' ', content)
-                    
-                    words = content.split()
-                    for word in words:
-                        if len(word) > 2 and word not in stop_words and not word.isdigit():
-                            word_freq[word] += 1
-
-            # Format the results
-            result = f"**User Analysis: {display_name}**\n\n"
-            
-            if stats:
-                result += "**📊 General Statistics:**\n"
-                result += f"• Total Messages: {stats[0]:,}\n"
-                result += f"• Active Channels: {stats[1]}\n"
-                result += f"• Average Message Length: {stats[2]:.1f} characters\n"
-                result += f"• Active Days: {stats[5]}\n"
-                
-                if stats[3] and stats[4]:
-                    first_msg = self.format_timestamp(stats[3])
-                    last_msg = self.format_timestamp(stats[4])
-                    result += f"• First Message: {first_msg}\n"
-                    result += f"• Last Message: {last_msg}\n"
-                result += "\n"
-
-            if channels:
-                result += "**📍 Channel Activity:**\n"
-                for channel in channels[:5]:  # Top 5 channels
-                    channel_name = channel[0]
-                    msg_count = channel[1]
-                    avg_len = channel[2] if channel[2] else 0
-                    result += f"• #{channel_name}: {msg_count} messages (avg {avg_len:.0f} chars)\n"
-                result += "\n"
-
-            if hourly_activity:
-                result += "**🕐 Activity by Time of Day:**\n"
-                # Group hours into time periods
-                periods = {'Night (00-05)': 0, 'Morning (06-11)': 0, 'Afternoon (12-17)': 0, 'Evening (18-23)': 0}
-                for hour_data in hourly_activity:
-                    hour = hour_data[0]
-                    count = hour_data[1]
-                    if 0 <= hour <= 5:
-                        periods['Night (00-05)'] += count
-                    elif 6 <= hour <= 11:
-                        periods['Morning (06-11)'] += count
-                    elif 12 <= hour <= 17:
-                        periods['Afternoon (12-17)'] += count
-                    elif 18 <= hour <= 23:
-                        periods['Evening (18-23)'] += count
-                
-                for period, count in periods.items():
-                    if count > 0:
-                        result += f"• {period}: {count} messages\n"
-                result += "\n"
-
-            if word_freq:
-                result += "**💬 Most Used Words:**\n"
-                top_words = word_freq.most_common(10)
-                for word, count in top_words:
-                    result += f"• {word}: {count} times\n"
-
-            return result
-
-        except Exception as e:
-            return f"Error getting user insights: {str(e)}"
 
     def run_all_analyses(self) -> Dict[str, Any]:
         """Run all analysis updates and return a comprehensive summary"""
@@ -1771,6 +1432,103 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             traceback.print_exc()
             return f"Error analyzing topics: {str(e)}"
     
+    async def update_temporal_stats(self, args: dict = None) -> str:
+        """Update temporal activity statistics - async version for DiscordBotAnalyzer"""
+        try:
+            await self.initialize()
+            
+            # Get temporal statistics
+            async with self.pool.execute(f"""
+                SELECT 
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
+                    DATE(timestamp) as date,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE {self.base_filter}
+                AND timestamp IS NOT NULL
+                GROUP BY hour, day_of_week, date
+                ORDER BY date, hour
+            """) as cursor:
+                stats = await cursor.fetchall()
+            
+            if not stats:
+                return "No temporal statistics available"
+            
+            # Process statistics
+            hourly_stats = {}
+            daily_stats = {}
+            weekly_stats = {}
+            
+            day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+            
+            for stat in stats:
+                hour = stat[0]
+                day_of_week = stat[1]
+                message_count = stat[3]
+                
+                # Hourly aggregation
+                if hour not in hourly_stats:
+                    hourly_stats[hour] = 0
+                hourly_stats[hour] += message_count
+                
+                # Daily aggregation
+                day_name = day_names[day_of_week]
+                if day_name not in daily_stats:
+                    daily_stats[day_name] = 0
+                daily_stats[day_name] += message_count
+                
+                # Weekly pattern
+                if day_of_week not in weekly_stats:
+                    weekly_stats[day_of_week] = 0
+                weekly_stats[day_of_week] += message_count
+            
+            # Format results
+            result = "**📊 Temporal Activity Analysis**\n\n"
+            
+            # Peak hours
+            if hourly_stats:
+                sorted_hours = sorted(hourly_stats.items(), key=lambda x: x[1], reverse=True)
+                result += "**🕐 Peak Activity Hours:**\n"
+                for hour, count in sorted_hours[:5]:
+                    time_str = f"{hour:02d}:00-{hour:02d}:59"
+                    result += f"• {time_str}: {count:,} messages\n"
+                result += "\n"
+            
+            # Daily distribution
+            if daily_stats:
+                result += "**📅 Activity by Day of Week:**\n"
+                for day in day_names:
+                    if day in daily_stats:
+                        count = daily_stats[day]
+                        result += f"• {day}: {count:,} messages\n"
+                result += "\n"
+            
+            # Activity patterns
+            if hourly_stats:
+                result += "**⏰ Activity Patterns:**\n"
+                
+                # Morning (6-11)
+                morning = sum(hourly_stats.get(h, 0) for h in range(6, 12))
+                # Afternoon (12-17)
+                afternoon = sum(hourly_stats.get(h, 0) for h in range(12, 18))
+                # Evening (18-23)
+                evening = sum(hourly_stats.get(h, 0) for h in range(18, 24))
+                # Night (0-5)
+                night = sum(hourly_stats.get(h, 0) for h in range(0, 6))
+                
+                total = morning + afternoon + evening + night
+                if total > 0:
+                    result += f"• Morning (06-11): {morning:,} messages ({morning/total*100:.1f}%)\n"
+                    result += f"• Afternoon (12-17): {afternoon:,} messages ({afternoon/total*100:.1f}%)\n"
+                    result += f"• Evening (18-23): {evening:,} messages ({evening/total*100:.1f}%)\n"
+                    result += f"• Night (00-05): {night:,} messages ({night/total*100:.1f}%)\n"
+            
+            return result
+            
+        except Exception as e:
+            return f"Error updating temporal statistics: {str(e)}"
+    
     async def generate_channel_activity_chart(self, channel_name: str) -> str:
         """Generate a chart showing channel activity patterns"""
         try:
@@ -1883,3 +1641,330 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         except Exception as e:
             print(f"Error generating channel activity chart: {e}")
             return None
+    
+    async def get_channel_insights(self, channel_name: str) -> str:
+        """Get detailed insights for a specific channel"""
+        try:
+            await self.initialize()
+            print(f"Getting insights for channel: {channel_name}")
+
+            # Basic channel statistics
+            basic_query = f"""
+                SELECT 
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT author_id) as unique_users,
+                    AVG(LENGTH(content)) as avg_message_length,
+                    MIN(timestamp) as first_message,
+                    MAX(timestamp) as last_message
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+            """
+            
+            async with self.pool.execute(basic_query, (channel_name,)) as cursor:
+                basic_stats = await cursor.fetchone()
+
+            if not basic_stats or basic_stats[0] == 0:
+                return f"Channel '{channel_name}' not found or has no messages."
+
+            # Top contributors
+            contributors_query = f"""
+                SELECT 
+                    COALESCE(author_display_name, author_name) as display_name,
+                    COUNT(*) as message_count,
+                    AVG(LENGTH(content)) as avg_length
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+                GROUP BY author_id, author_display_name, author_name
+                ORDER BY message_count DESC
+                LIMIT 10
+            """
+            
+            async with self.pool.execute(contributors_query, (channel_name,)) as cursor:
+                contributors = await cursor.fetchall()
+
+            # Activity by time of day
+            time_query = f"""
+                SELECT 
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+                GROUP BY hour
+                ORDER BY hour
+            """
+            
+            async with self.pool.execute(time_query, (channel_name,)) as cursor:
+                hourly_activity = await cursor.fetchall()
+
+            # Activity by day of week
+            day_query = f"""
+                SELECT 
+                    CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+                GROUP BY day_of_week
+                ORDER BY day_of_week
+            """
+            
+            async with self.pool.execute(day_query, (channel_name,)) as cursor:
+                daily_activity = await cursor.fetchall()
+
+            # Recent activity (last 30 days)
+            recent_query = f"""
+                SELECT 
+                    DATE(timestamp) as date,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE channel_name = ? 
+                AND {self.base_filter}
+                AND date(timestamp) >= date('now', '-30 days')
+                GROUP BY date
+                ORDER BY date DESC
+                LIMIT 10
+            """
+            
+            async with self.pool.execute(recent_query, (channel_name,)) as cursor:
+                recent_activity = await cursor.fetchall()
+
+            # Format results
+            result = f"**📊 Channel Analysis: {channel_name}**\n\n"
+            
+            # Basic statistics
+            total_messages = basic_stats[0]
+            unique_users = basic_stats[1]
+            avg_length = basic_stats[2] if basic_stats[2] else 0
+            first_msg = self.format_timestamp(basic_stats[3]) if basic_stats[3] else "Unknown"
+            last_msg = self.format_timestamp(basic_stats[4]) if basic_stats[4] else "Unknown"
+            
+            result += "**Basic Statistics:**\n"
+            result += f"• Total Messages: {total_messages:,}\n"
+            result += f"• Unique Users: {unique_users}\n"
+            result += f"• Average Message Length: {avg_length:.1f} characters\n"
+            result += f"• First Message: {first_msg}\n"
+            result += f"• Last Message: {last_msg}\n\n"
+
+            # Top contributors
+            if contributors:
+                result += "**Top Contributors:**\n"
+                for i, contributor in enumerate(contributors[:5], 1):
+                    display_name = contributor[0] if contributor[0] else "Unknown"
+                    msg_count = contributor[1]
+                    avg_len = contributor[2] if contributor[2] else 0
+                    result += f"• {display_name}: {msg_count} messages (avg {avg_len:.0f} chars)\n"
+                result += "\n"
+
+            # Peak activity hours
+            if hourly_activity:
+                # Find top 3 peak hours
+                sorted_hours = sorted(hourly_activity, key=lambda x: x[1], reverse=True)
+                result += "**Peak Activity Hours:**\n"
+                for hour, count in sorted_hours[:3]:
+                    time_str = f"{hour:02d}:00-{hour:02d}:59"
+                    result += f"• {time_str}: {count} messages\n"
+                result += "\n"
+
+            # Activity by day of week
+            if daily_activity:
+                day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                result += "**Activity by Day:**\n"
+                day_totals = {day: 0 for day in range(7)}
+                for day_num, count in daily_activity:
+                    day_totals[day_num] = count
+                
+                # Show top 3 most active days
+                sorted_days = sorted(day_totals.items(), key=lambda x: x[1], reverse=True)
+                for day_num, count in sorted_days[:3]:
+                    if count > 0:
+                        result += f"• {day_names[day_num]}: {count} messages\n"
+                result += "\n"
+
+            # Recent activity trend
+            if recent_activity:
+                result += "**Recent Activity (Last 10 Days):**\n"
+                for date, count in recent_activity[:5]:
+                    result += f"• {date}: {count} messages\n"
+
+            # Generate chart if possible
+            try:
+                chart_path = await self.generate_channel_activity_chart(channel_name)
+                if chart_path:
+                    result = (result, chart_path)
+            except Exception as e:
+                print(f"Could not generate chart: {e}")
+
+            return result
+
+        except Exception as e:
+            return f"Error getting channel insights: {str(e)}"
+    
+    async def get_user_insights(self, user_identifier: str) -> str:
+        """Get detailed insights for a specific user by username, display name, or user ID"""
+        try:
+            await self.initialize()
+            print(f"Getting insights for user: {user_identifier}")
+
+            # Try to find the user by different identifiers
+            user_query = f"""
+                SELECT DISTINCT 
+                    author_id,
+                    author_name,
+                    author_display_name,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE (
+                    author_name = ? OR 
+                    author_display_name = ? OR 
+                    author_id = ? OR
+                    LOWER(author_name) = LOWER(?) OR
+                    LOWER(author_display_name) = LOWER(?)
+                ) AND {self.base_filter}
+                GROUP BY author_id, author_name, author_display_name
+                ORDER BY message_count DESC
+                LIMIT 1
+            """
+            
+            async with self.pool.execute(user_query, (user_identifier, user_identifier, user_identifier, user_identifier, user_identifier)) as cursor:
+                user_info = await cursor.fetchone()
+
+            if not user_info:
+                return f"User '{user_identifier}' not found in the database."
+
+            author_id = user_info[0]
+            author_name = user_info[1]
+            display_name = user_info[2] if user_info[2] else author_name
+            total_messages = user_info[3]
+
+            # Get detailed user statistics
+            stats_query = f"""
+                SELECT 
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT channel_name) as channels_active,
+                    AVG(LENGTH(content)) as avg_message_length,
+                    MIN(timestamp) as first_message,
+                    MAX(timestamp) as last_message,
+                    COUNT(DISTINCT DATE(timestamp)) as active_days
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+            """
+            
+            async with self.pool.execute(stats_query, (author_id,)) as cursor:
+                stats = await cursor.fetchone()
+
+            # Get channel activity breakdown
+            channel_query = f"""
+                SELECT 
+                    channel_name,
+                    COUNT(*) as message_count,
+                    AVG(LENGTH(content)) as avg_length
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                GROUP BY channel_name
+                ORDER BY message_count DESC
+                LIMIT 10
+            """
+            
+            async with self.pool.execute(channel_query, (author_id,)) as cursor:
+                channels = await cursor.fetchall()
+
+            # Get activity by time of day
+            time_query = f"""
+                SELECT 
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    COUNT(*) as message_count
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                GROUP BY hour
+                ORDER BY hour
+            """
+            
+            async with self.pool.execute(time_query, (author_id,)) as cursor:
+                hourly_activity = await cursor.fetchall()
+
+            # Get most common words from user's messages
+            content_query = f"""
+                SELECT content
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                AND content IS NOT NULL 
+                AND LENGTH(content) > 10
+                LIMIT 1000
+            """
+            
+            async with self.pool.execute(content_query, (author_id,)) as cursor:
+                messages = await cursor.fetchall()
+
+            # Process word frequency
+            word_freq = Counter()
+            if messages:
+                stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cant', 'wont', 'dont', 'im', 'youre', 'hes', 'shes', 'its', 'were', 'theyre', 'ive', 'youve', 'weve', 'theyve', 'ill', 'youll', 'hell', 'shell', 'well', 'theyll'])
+                
+                for msg in messages:
+                    content = msg[0].lower()
+                    # Remove URLs, mentions, and special characters
+                    content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
+                    content = re.sub(r'<@[!&]?[0-9]+>', '', content)
+                    content = re.sub(r'[^\w\s]', ' ', content)
+                    
+                    words = content.split()
+                    for word in words:
+                        if len(word) > 2 and word not in stop_words and not word.isdigit():
+                            word_freq[word] += 1
+
+            # Format the results
+            result = f"**👤 User Analysis: {display_name}**\n\n"
+            
+            if stats:
+                result += "**📊 General Statistics:**\n"
+                result += f"• Total Messages: {stats[0]:,}\n"
+                result += f"• Active Channels: {stats[1]}\n"
+                result += f"• Average Message Length: {stats[2]:.1f} characters\n"
+                result += f"• Active Days: {stats[5]}\n"
+                
+                if stats[3] and stats[4]:
+                    first_msg = self.format_timestamp(stats[3])
+                    last_msg = self.format_timestamp(stats[4])
+                    result += f"• First Message: {first_msg}\n"
+                    result += f"• Last Message: {last_msg}\n"
+                result += "\n"
+
+            if channels:
+                result += "**📍 Channel Activity:**\n"
+                for channel in channels[:5]:  # Top 5 channels
+                    channel_name = channel[0]
+                    msg_count = channel[1]
+                    avg_len = channel[2] if channel[2] else 0
+                    result += f"• #{channel_name}: {msg_count} messages (avg {avg_len:.0f} chars)\n"
+                result += "\n"
+
+            if hourly_activity:
+                result += "**🕐 Activity by Time of Day:**\n"
+                # Group hours into time periods
+                periods = {'Night (00-05)': 0, 'Morning (06-11)': 0, 'Afternoon (12-17)': 0, 'Evening (18-23)': 0}
+                for hour_data in hourly_activity:
+                    hour = hour_data[0]
+                    count = hour_data[1]
+                    if 0 <= hour <= 5:
+                        periods['Night (00-05)'] += count
+                    elif 6 <= hour <= 11:
+                        periods['Morning (06-11)'] += count
+                    elif 12 <= hour <= 17:
+                        periods['Afternoon (12-17)'] += count
+                    elif 18 <= hour <= 23:
+                        periods['Evening (18-23)'] += count
+                
+                for period, count in periods.items():
+                    if count > 0:
+                        result += f"• {period}: {count} messages\n"
+                result += "\n"
+
+            if word_freq:
+                result += "**💬 Most Used Words:**\n"
+                top_words = word_freq.most_common(10)
+                for word, count in top_words:
+                    result += f"• {word}: {count} times\n"
+
+            return result
+
+        except Exception as e:
+            return f"Error getting user insights: {str(e)}"
