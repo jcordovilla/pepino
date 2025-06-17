@@ -879,55 +879,102 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             return timestamp
 
     async def update_word_frequencies(self, args: dict = None) -> str:
-        """Update word frequency statistics - async wrapper"""
+        """Enhanced concept analysis across all messages (replaces simple word frequency)"""
         try:
             await self.initialize()
             
-            # Get all messages
+            # Get all messages for concept analysis
             async with self.pool.execute(f"""
-                SELECT content
+                SELECT content, channel_name, author_display_name, author_name
                 FROM messages
                 WHERE content IS NOT NULL 
                 AND content != ''
+                AND LENGTH(content) > 20
                 AND {self.base_filter}
+                ORDER BY timestamp DESC
+                LIMIT 1000
             """) as cursor:
                 messages = await cursor.fetchall()
             
             if not messages:
-                return "No messages found for word frequency analysis"
+                return "No messages found for concept analysis"
             
-            # Process messages
-            word_freq = {}
-            for msg in messages:
-                content = msg[0] if msg else ""
-                if content:
-                    words = content.lower().split()
-                    for word in words:
-                        # Clean word and filter
-                        word = word.strip('.,!?";:()[]{}')
-                        if len(word) > 3 and word.isalpha():
-                            word_freq[word] = word_freq.get(word, 0) + 1
+            # Extract concepts from all messages
+            message_content = [msg[0] for msg in messages]
+            global_concepts = await self.extract_concepts_from_content(message_content)
             
-            # Sort by frequency
-            sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+            if not global_concepts:
+                return "No meaningful concepts could be extracted from messages"
             
-            # Format results
-            result = "**Word Frequency Analysis**\n\n"
-            result += "**Most Common Words:**\n"
-            for word, freq in sorted_words[:20]:  # Top 20 words
-                result += f"{word}: {freq} occurrences\n"
+            # Analyze concept distribution by channel
+            concept_by_channel = defaultdict(Counter)
+            concept_by_user = defaultdict(Counter)
+            
+            # Process messages for channel and user concept mapping
+            try:
+                import spacy
+                nlp = spacy.load("en_core_web_sm")
+                
+                for msg in messages[:500]:  # Process subset for performance
+                    content = msg[0]
+                    channel = msg[1] 
+                    display_name = msg[2] if msg[2] else msg[3]
+                    
+                    if len(content) > 20:
+                        try:
+                            doc = nlp(content)
+                            # Extract concepts from this message
+                            for chunk in doc.noun_chunks:
+                                if len(chunk.text.split()) >= 2 and len(chunk.text) > 8:
+                                    concept = chunk.text.lower().strip()
+                                    if concept in global_concepts:
+                                        concept_by_channel[channel][concept] += 1
+                                        concept_by_user[display_name][concept] += 1
+                        except:
+                            continue
+            except:
+                pass  # Fallback if spaCy fails
+            
+            # Format enhanced results
+            result = "**🧠 Concept Analysis Across All Messages**\n\n"
+            
+            result += "**💡 Most Discussed Concepts:**\n"
+            for i, concept in enumerate(global_concepts[:12], 1):
+                result += f"{i}. {concept.title()}\n"
+            result += "\n"
+            
+            # Top channels by concept diversity
+            if concept_by_channel:
+                channel_diversity = {ch: len(concepts) for ch, concepts in concept_by_channel.items()}
+                sorted_channels = sorted(channel_diversity.items(), key=lambda x: x[1], reverse=True)
+                
+                result += "**📺 Most Conceptually Active Channels:**\n"
+                for channel, concept_count in sorted_channels[:5]:
+                    if concept_count > 0:
+                        result += f"• #{channel}: {concept_count} different concepts discussed\n"
+                result += "\n"
+            
+            # Top users by concept diversity  
+            if concept_by_user:
+                user_diversity = {user: len(concepts) for user, concepts in concept_by_user.items()}
+                sorted_users = sorted(user_diversity.items(), key=lambda x: x[1], reverse=True)
+                
+                result += "**👥 Most Conceptually Diverse Contributors:**\n"
+                for user, concept_count in sorted_users[:5]:
+                    if concept_count > 0 and user and user != "Unknown":
+                        result += f"• {user}: {concept_count} different concepts\n"
             
             return result
             
         except Exception as e:
-            return f"Error updating word frequencies: {str(e)}"
+            return f"Error in concept analysis: {str(e)}"
 
     async def update_user_statistics(self, args: dict = None) -> str:
-        """Update user activity statistics - async wrapper"""
+        """Enhanced user statistics with concept analysis and collaboration patterns"""
         try:
             await self.initialize()
             
-            # Get user statistics
+            # Get user statistics with concept data
             async with self.pool.execute(f"""
                 SELECT 
                     author_id,
@@ -939,30 +986,80 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 WHERE {self.base_filter}
                 GROUP BY author_id, author_display_name, author_name
                 ORDER BY message_count DESC
-                LIMIT 20
+                LIMIT 15
             """) as cursor:
                 users = await cursor.fetchall()
             
             if not users:
                 return "No user statistics available"
             
-            # Format results
-            result = "**User Activity Statistics**\n\n"
-            for user in users:
+            # Get content for top users to analyze their concepts
+            user_concepts = {}
+            for user in users[:8]:  # Only analyze top 8 users for performance
+                author_id = user[0]
+                display_name = user[1] if user[1] else user[0]
+                
+                # Get user's messages for concept analysis
+                async with self.pool.execute(f"""
+                    SELECT content
+                    FROM messages
+                    WHERE author_id = ? AND {self.base_filter}
+                    AND content IS NOT NULL 
+                    AND LENGTH(content) > 20
+                    LIMIT 200
+                """, (author_id,)) as cursor:
+                    user_messages = await cursor.fetchall()
+                
+                if user_messages:
+                    concepts = await self.extract_concepts_from_content(user_messages)
+                    user_concepts[display_name] = concepts[:5]  # Top 5 concepts per user
+            
+            # Format enhanced results
+            result = "**👥 Enhanced User Activity & Contribution Analysis**\n\n"
+            
+            result += "**📊 Top Contributors by Activity:**\n"
+            for i, user in enumerate(users[:10], 1):
                 display_name = user[1] if user[1] else user[0]
                 message_count = user[2]
                 channels_active = user[3]
                 avg_length = user[4] if user[4] else 0
                 
-                result += f"**{display_name}:**\n"
-                result += f"• Total Messages: {message_count}\n"
-                result += f"• Active Channels: {channels_active}\n"
-                result += f"• Average Message Length: {avg_length:.1f} characters\n\n"
+                result += f"**{i}. {display_name}:**\n"
+                result += f"   • Messages: {message_count:,} | Channels: {channels_active} | Avg Length: {avg_length:.0f} chars\n"
+                
+                # Add concepts if available
+                if display_name in user_concepts and user_concepts[display_name]:
+                    concepts_str = ", ".join([c.title() for c in user_concepts[display_name][:3]])
+                    result += f"   • Key Topics: {concepts_str}\n"
+                result += "\n"
+            
+            # Concept diversity analysis
+            if user_concepts:
+                result += "**💡 Most Conceptually Diverse Contributors:**\n"
+                concept_diversity = {user: len(concepts) for user, concepts in user_concepts.items() if concepts}
+                sorted_diversity = sorted(concept_diversity.items(), key=lambda x: x[1], reverse=True)
+                
+                for user, concept_count in sorted_diversity[:5]:
+                    if concept_count > 0:
+                        result += f"• **{user}**: {concept_count} distinct concept types\n"
+                        if user in user_concepts:
+                            concepts_preview = ", ".join([c.title() for c in user_concepts[user][:3]])
+                            result += f"  ↳ {concepts_preview}\n"
+                result += "\n"
+            
+            # Activity patterns summary
+            total_messages = sum(user[2] for user in users)
+            active_users = len([user for user in users if user[2] >= 10])
+            
+            result += "**📈 Community Overview:**\n"
+            result += f"• Total Messages Analyzed: {total_messages:,}\n"
+            result += f"• Active Contributors (10+ messages): {active_users}\n"
+            result += f"• Average Messages per Active User: {total_messages/active_users:.1f}\n"
             
             return result
             
         except Exception as e:
-            return f"Error updating user statistics: {str(e)}"
+            return f"Error in enhanced user statistics: {str(e)}"
 
     async def analyze_topics_spacy(self, args: dict = None) -> str:
         """Analyze topics in messages using advanced spaCy NLP with trend analysis"""
@@ -1433,7 +1530,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             return f"Error analyzing topics: {str(e)}"
     
     async def update_temporal_stats(self, args: dict = None) -> str:
-        """Update temporal activity statistics - async version for DiscordBotAnalyzer"""
+        """Enhanced temporal activity analysis with concepts by time period"""
         try:
             await self.initialize()
             
@@ -1483,8 +1580,37 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     weekly_stats[day_of_week] = 0
                 weekly_stats[day_of_week] += message_count
             
+            # Get concepts by time period
+            time_periods = {
+                "Morning (06-11)": (6, 11),
+                "Afternoon (12-17)": (12, 17),
+                "Evening (18-23)": (18, 23),
+                "Night (00-05)": (0, 5)
+            }
+            
+            period_concepts = {}
+            
+            for period, (start_hour, end_hour) in time_periods.items():
+                # Get messages from this time period
+                async with self.pool.execute(f"""
+                    SELECT content
+                    FROM messages
+                    WHERE {self.base_filter}
+                    AND timestamp IS NOT NULL
+                    AND CAST(strftime('%H', timestamp) AS INTEGER) >= ?
+                    AND CAST(strftime('%H', timestamp) AS INTEGER) <= ?
+                    AND LENGTH(content) > 20
+                    ORDER BY timestamp DESC
+                    LIMIT 300
+                """, (start_hour, end_hour)) as cursor:
+                    period_messages = await cursor.fetchall()
+                
+                if period_messages:
+                    concepts = await self.extract_concepts_from_content(period_messages)
+                    period_concepts[period] = concepts[:5]  # Top 5 concepts per period
+            
             # Format results
-            result = "**📊 Temporal Activity Analysis**\n\n"
+            result = "**📊 Enhanced Temporal Activity Analysis**\n\n"
             
             # Peak hours
             if hourly_stats:
@@ -1504,9 +1630,9 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         result += f"• {day}: {count:,} messages\n"
                 result += "\n"
             
-            # Activity patterns
+            # Activity patterns with concepts
             if hourly_stats:
-                result += "**⏰ Activity Patterns:**\n"
+                result += "**⏰ Activity Patterns with Topics:**\n"
                 
                 # Morning (6-11)
                 morning = sum(hourly_stats.get(h, 0) for h in range(6, 12))
@@ -1519,10 +1645,46 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 
                 total = morning + afternoon + evening + night
                 if total > 0:
-                    result += f"• Morning (06-11): {morning:,} messages ({morning/total*100:.1f}%)\n"
-                    result += f"• Afternoon (12-17): {afternoon:,} messages ({afternoon/total*100:.1f}%)\n"
-                    result += f"• Evening (18-23): {evening:,} messages ({evening/total*100:.1f}%)\n"
-                    result += f"• Night (00-05): {night:,} messages ({night/total*100:.1f}%)\n"
+                    # Morning
+                    result += f"• **Morning (06-11):** {morning:,} messages ({morning/total*100:.1f}%)\n"
+                    if "Morning (06-11)" in period_concepts and period_concepts["Morning (06-11)"]:
+                        concepts_str = ", ".join(c.title() for c in period_concepts["Morning (06-11)"][:3])
+                        result += f"  ↳ Morning Topics: {concepts_str}\n"
+                    
+                    # Afternoon
+                    result += f"• **Afternoon (12-17):** {afternoon:,} messages ({afternoon/total*100:.1f}%)\n"
+                    if "Afternoon (12-17)" in period_concepts and period_concepts["Afternoon (12-17)"]:
+                        concepts_str = ", ".join(c.title() for c in period_concepts["Afternoon (12-17)"][:3])
+                        result += f"  ↳ Afternoon Topics: {concepts_str}\n"
+                    
+                    # Evening
+                    result += f"• **Evening (18-23):** {evening:,} messages ({evening/total*100:.1f}%)\n"
+                    if "Evening (18-23)" in period_concepts and period_concepts["Evening (18-23)"]:
+                        concepts_str = ", ".join(c.title() for c in period_concepts["Evening (18-23)"][:3])
+                        result += f"  ↳ Evening Topics: {concepts_str}\n"
+                    
+                    # Night
+                    result += f"• **Night (00-05):** {night:,} messages ({night/total*100:.1f}%)\n"
+                    if "Night (00-05)" in period_concepts and period_concepts["Night (00-05)"]:
+                        concepts_str = ", ".join(c.title() for c in period_concepts["Night (00-05)"][:3])
+                        result += f"  ↳ Night Topics: {concepts_str}\n"
+            
+            # Add unique concepts by time period summary
+            unique_concepts = {}
+            for period, concepts in period_concepts.items():
+                for concept in concepts:
+                    if concept not in unique_concepts:
+                        unique_concepts[concept] = []
+                    unique_concepts[concept].append(period)
+            
+            # Identify concepts that only appear in specific time periods
+            time_specific_concepts = {concept: periods for concept, periods in unique_concepts.items() if len(periods) == 1}
+            
+            if time_specific_concepts:
+                result += "\n**🧠 Time-Specific Topics:**\n"
+                time_sorted = sorted(time_specific_concepts.items(), key=lambda x: x[1][0])
+                for concept, periods in time_sorted[:6]:  # Show top 6 time-specific concepts
+                    result += f"• {concept.title()} - Only discussed during {periods[0]}\n"
             
             return result
             
@@ -1784,6 +1946,30 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 result += "**Recent Activity (Last 10 Days):**\n"
                 for date, count in recent_activity[:5]:
                     result += f"• {date}: {count} messages\n"
+                result += "\n"
+
+            # Get content for concept analysis
+            concepts_query = f"""
+                SELECT content
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+                AND content IS NOT NULL 
+                AND LENGTH(content) > 20
+                ORDER BY timestamp DESC
+                LIMIT 300
+            """
+            
+            async with self.pool.execute(concepts_query, (channel_name,)) as cursor:
+                channel_messages = await cursor.fetchall()
+
+            # Extract key topics and concepts
+            if channel_messages:
+                channel_concepts = await self.extract_concepts_from_content(channel_messages)
+                if channel_concepts:
+                    result += "**💡 Key Topics & Concepts Discussed:**\n"
+                    for concept in channel_concepts[:8]:
+                        result += f"• {concept.title()}\n"
+                    result += "\n"
 
             # Generate chart if possible
             try:
@@ -1798,6 +1984,91 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         except Exception as e:
             return f"Error getting channel insights: {str(e)}"
     
+    async def extract_concepts_from_content(self, messages: list) -> list:
+        """Extract meaningful concepts from message content using spaCy NLP"""
+        try:
+            import spacy
+            from collections import Counter
+            
+            # Load spaCy model
+            try:
+                nlp = spacy.load("en_core_web_sm")
+            except OSError:
+                return []  # Fallback if spaCy model not available
+            
+            concepts = Counter()
+            
+            def clean_content(text):
+                """Clean Discord-specific noise from text"""
+                text = re.sub(r'<@[!&]?\d+>', '', text)  # Remove mentions
+                text = re.sub(r'<#\d+>', '', text)  # Remove channel references  
+                text = re.sub(r'<:\w+:\d+>', '', text)  # Remove custom emojis
+                text = re.sub(r'https?://\S+', '', text)  # Remove URLs
+                text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)  # Remove code blocks
+                text = re.sub(r'`[^`]+`', '', text)  # Remove inline code
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text
+            
+            def extract_advanced_concepts(doc):
+                """Extract sophisticated concepts from spaCy doc"""
+                concepts = []
+                
+                # Extract subject-verb-object patterns
+                for token in doc:
+                    if token.dep_ == "nsubj" and token.head.pos_ == "VERB":
+                        subject_span = doc[token.left_edge.i:token.right_edge.i+1]
+                        
+                        if token.head.pos_ == "VERB":
+                            verb = token.head
+                            predicate_parts = [verb.text]
+                            
+                            for child in verb.children:
+                                if child.dep_ in ["dobj", "pobj", "attr", "prep"]:
+                                    obj_span = doc[child.left_edge.i:child.right_edge.i+1]
+                                    predicate_parts.append(obj_span.text)
+                            
+                            if len(predicate_parts) > 1:
+                                full_concept = f"{subject_span.text} {' '.join(predicate_parts)}"
+                                if len(full_concept.split()) >= 2 and len(full_concept) > 10:
+                                    concepts.append(full_concept.lower().strip())
+                
+                # Extract complex noun phrases
+                for chunk in doc.noun_chunks:
+                    if len(chunk.text.split()) >= 2 and len(chunk.text) > 8:
+                        concepts.append(chunk.text.lower().strip())
+                
+                # Extract technical compounds
+                for i, token in enumerate(doc[:-1]):
+                    if (token.pos_ in ["NOUN", "PROPN"] and 
+                        doc[i+1].pos_ in ["NOUN", "PROPN", "ADJ"]):
+                        compound = f"{token.text} {doc[i+1].text}"
+                        if len(compound) > 6:
+                            concepts.append(compound.lower())
+                
+                return concepts
+            
+            # Process messages
+            for message in messages[:200]:  # Limit for performance
+                content = clean_content(message[0] if isinstance(message, tuple) else str(message))
+                if len(content) > 20:  # Only process substantial content
+                    try:
+                        doc = nlp(content)
+                        message_concepts = extract_advanced_concepts(doc)
+                        for concept in message_concepts:
+                            # Filter out common noise words
+                            if not any(noise in concept for noise in ['the ', 'a ', 'an ', 'this ', 'that ', 'these ', 'those ']):
+                                concepts[concept] += 1
+                    except:
+                        continue  # Skip problematic messages
+            
+            # Return top concepts
+            return [concept for concept, count in concepts.most_common(10) if count >= 2]
+            
+        except ImportError:
+            return []  # Fallback if spaCy not available
+        except Exception:
+            return []  # Fallback for any other errors
+
     async def get_user_insights(self, user_identifier: str) -> str:
         """Get detailed insights for a specific user by username, display name, or user ID"""
         try:
@@ -1881,35 +2152,21 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             async with self.pool.execute(time_query, (author_id,)) as cursor:
                 hourly_activity = await cursor.fetchall()
 
-            # Get most common words from user's messages
+            # Get content for concept analysis
             content_query = f"""
                 SELECT content
                 FROM messages
                 WHERE author_id = ? AND {self.base_filter}
                 AND content IS NOT NULL 
-                AND LENGTH(content) > 10
-                LIMIT 1000
+                AND LENGTH(content) > 20
+                LIMIT 500
             """
             
             async with self.pool.execute(content_query, (author_id,)) as cursor:
                 messages = await cursor.fetchall()
 
-            # Process word frequency
-            word_freq = Counter()
-            if messages:
-                stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cant', 'wont', 'dont', 'im', 'youre', 'hes', 'shes', 'its', 'were', 'theyre', 'ive', 'youve', 'weve', 'theyve', 'ill', 'youll', 'hell', 'shell', 'well', 'theyll'])
-                
-                for msg in messages:
-                    content = msg[0].lower()
-                    # Remove URLs, mentions, and special characters
-                    content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
-                    content = re.sub(r'<@[!&]?[0-9]+>', '', content)
-                    content = re.sub(r'[^\w\s]', ' ', content)
-                    
-                    words = content.split()
-                    for word in words:
-                        if len(word) > 2 and word not in stop_words and not word.isdigit():
-                            word_freq[word] += 1
+            # Extract concepts instead of single words
+            user_concepts = await self.extract_concepts_from_content(messages) if messages else []
 
             # Format the results
             result = f"**👤 User Analysis: {display_name}**\n\n"
@@ -1958,11 +2215,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         result += f"• {period}: {count} messages\n"
                 result += "\n"
 
-            if word_freq:
-                result += "**💬 Most Used Words:**\n"
-                top_words = word_freq.most_common(10)
-                for word, count in top_words:
-                    result += f"• {word}: {count} times\n"
+            if user_concepts:
+                result += "**� Key Topics & Concepts:**\n"
+                for i, concept in enumerate(user_concepts[:8], 1):
+                    result += f"• {concept.title()}\n"
+                result += "\n"
 
             return result
 

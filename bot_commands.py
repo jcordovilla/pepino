@@ -412,11 +412,11 @@ class AnalysisCommands(commands.Cog):
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(
-        name="wordfreq_analysis",
-        description="Analyze word frequency across all messages"
+        name="concepts_analysis",
+        description="Analyze key concepts and topics across all messages (enhanced word analysis)"
     )
-    async def wordfreq_analysis(self, interaction: discord.Interaction):
-        """Update word frequency statistics"""
+    async def concepts_analysis(self, interaction: discord.Interaction):
+        """Enhanced concept analysis across all messages"""
         try:
             await self.analyzer.initialize()
             await interaction.response.defer()
@@ -432,16 +432,16 @@ class AnalysisCommands(commands.Cog):
                 
         except Exception as e:
             if not interaction.response.is_done():
-                await interaction.response.send_message(f"Error during word frequency analysis: {str(e)}")
+                await interaction.response.send_message(f"Error during concept analysis: {str(e)}")
             else:
-                await interaction.followup.send(f"Error during word frequency analysis: {str(e)}")
+                await interaction.followup.send(f"Error during concept analysis: {str(e)}")
 
     @app_commands.command(
-        name="userstats_analysis",
-        description="Analyze user activity statistics across all channels"
+        name="userstats_analysis", 
+        description="Enhanced user statistics with topic contributions and collaboration patterns"
     )
     async def userstats_analysis(self, interaction: discord.Interaction):
-        """Update user activity statistics"""
+        """Enhanced user activity statistics with concept analysis"""
         try:
             await self.analyzer.initialize()
             await interaction.response.defer()
@@ -508,14 +508,14 @@ class AnalysisCommands(commands.Cog):
 **🧠 Discord Analysis Bot Commands**
 
 **🎯 Analysis Commands (with autocomplete):**
-• `/channel_analysis` - Analyze a specific channel (autocomplete available)
-• `/user_analysis` - Analyze a specific user (autocomplete available)  
-• `/topics_analysis` - Analyze discussion topics, optionally by channel (autocomplete available)
+• `/channel_analysis` - Detailed channel insights with key topics & concepts
+• `/user_analysis` - User insights with contribution analysis & key topics
+• `/topics_analysis` - Topic analysis with trends, optionally filtered by channel
 
-**📊 Statistical Analysis Commands:**
-• `/wordfreq_analysis` - Analyze word frequency across all messages
-• `/userstats_analysis` - Analyze user activity statistics across all channels
-• `/temporal_analysis` - Analyze temporal patterns of message activity
+**📊 Enhanced Statistical Analysis Commands:**
+• `/concepts_analysis` - Key concepts & topics across all messages
+• `/userstats_analysis` - Enhanced user statistics with topic contributions
+• `/temporal_analysis` - Activity patterns with time-based topic analysis
 
 **📋 Utility Commands:**
 • `/list_users` - Show all available users
