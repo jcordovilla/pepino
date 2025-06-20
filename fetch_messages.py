@@ -169,7 +169,7 @@ class DiscordFetcher(discord.Client):
         self.data_store = data_store
         self.new_data = {}
         self.state_manager = FetchStateManager()
-        self.rate_limit_delay = 1.0  # Delay between requests to avoid rate limits
+        self.rate_limit_delay = 0.1  # Minimal delay between channels (100ms) to respect rate limits
         self.max_retries = 3  # Maximum number of retries for failed requests
         self.sync_log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
