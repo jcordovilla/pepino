@@ -25,6 +25,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
+intents.reactions = True  # Enable reactions intent to capture reaction data
 
 def extract_emojis(text):
     # Fixed regex for Unicode emojis to capture common emoji ranges
@@ -106,69 +107,11 @@ def extract_role_subscription_data(message):
         }
     return None
 
-class FetchStateManager:
-    """Manages the state of message fetching for incremental updates"""
-    
-    def __init__(self, state_file: str = "data/fetch_state.json"):
-        self.state_file = Path(state_file)
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        self.state = self._load_state()
-    
-    def _load_state(self) -> Dict[str, Any]:
-        """Load state from file or return empty state"""
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading state file: {e}")
-                return {}
-        return {}
-    
-    def _save_state(self):
-        """Save current state to file"""
-        try:
-            with open(self.state_file, 'w', encoding='utf-8') as f:
-                json.dump(self.state, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"Error saving state file: {e}")
-    
-    def get_channel_last_fetch(self, guild_id: str, channel_id: str) -> Optional[datetime]:
-        """Get the last fetch time for a channel"""
-        channel_state = self.state.get(guild_id, {}).get(channel_id, {})
-        last_fetch = channel_state.get('last_fetch_time')
-        if last_fetch:
-            return datetime.fromisoformat(last_fetch)
-        return None
-    
-    def update_channel_state(
-        self,
-        guild_id: str,
-        channel_id: str,
-        channel_name: str,
-        last_message_timestamp: str,
-        message_count: int,
-        fetch_mode: str = "incremental"
-    ):
-        """Update the state for a channel after fetching"""
-        if guild_id not in self.state:
-            self.state[guild_id] = {}
-        
-        self.state[guild_id][channel_id] = {
-            'channel_name': channel_name,
-            'last_fetch_time': datetime.now(timezone.utc).isoformat(),
-            'last_message_timestamp': last_message_timestamp,
-            'message_count': message_count,
-            'fetch_mode': fetch_mode
-        }
-        self._save_state()
-
 class DiscordFetcher(discord.Client):
     def __init__(self, data_store, **kwargs):
         super().__init__(**kwargs)
         self.data_store = data_store
         self.new_data = {}
-        self.state_manager = FetchStateManager()
         self.rate_limit_delay = 0.1  # Minimal delay between channels (100ms) to respect rate limits
         self.max_retries = 3  # Maximum number of retries for failed requests
         self.sync_log_entry = {
@@ -220,41 +163,18 @@ class DiscordFetcher(discord.Client):
             for channel in accessible_channels:
                 logger.info(f"  📄 Channel: #{channel.name} (ID: {channel.id})")
                 
-                # Get last fetch state
-                last_fetch_time = self.state_manager.get_channel_last_fetch(str(guild.id), str(channel.id))
-                if last_fetch_time:
-                    time_since_sync = datetime.now(timezone.utc) - last_fetch_time
-                    logger.info(f"    Last sync: {time_since_sync.total_seconds() / 3600:.1f} hours ago")
-
                 try:
-                    # Get the latest message ID from database for incremental fetching
-                    latest_message_id = get_latest_message_id(str(channel.id))
+                    logger.info(f"    🆕 Full fetch from beginning of channel history")
                     
-                    if latest_message_id:
-                        logger.info(f"    🔄 Incremental fetch from message ID {latest_message_id}")
-                    else:
-                        logger.info(f"    🆕 Full fetch (no previous messages found)")
-                    
-                    # Fetch messages with retry logic
-                    new_messages = await self.fetch_with_retry(channel, latest_message_id)
+                    # Always fetch all messages (no incremental logic)
+                    new_messages = await self.fetch_with_retry(channel, None)
                     
                     if new_messages:
-                        logger.info(f"    ✅ {len(new_messages)} new message(s)")
+                        logger.info(f"    ✅ {len(new_messages)} message(s) fetched")
                         self.sync_log_entry["total_messages_synced"] += len(new_messages)
                         self.new_data[guild.name].setdefault(channel.name, []).extend(new_messages)
-                        
-                        # Update state
-                        if new_messages:
-                            newest_message = new_messages[-1]  # Messages are in chronological order
-                            self.state_manager.update_channel_state(
-                                guild_id=str(guild.id),
-                                channel_id=str(channel.id),
-                                channel_name=channel.name,
-                                last_message_timestamp=newest_message['timestamp'],
-                                message_count=len(new_messages)
-                            )
                     else:
-                        logger.info(f"    📫 No new messages")
+                        logger.info(f"    📫 No messages found")
                         
                 except Exception as e:
                     logger.error(f"    ❌ Error fetching channel #{channel.name}: {str(e)}")
@@ -816,10 +736,17 @@ def save_messages_to_db(messages_data, db_path='discord_messages.db'):
                     message_data.append({
                         'message_id': str(msg.get('id', '')),
                         'channel_id': str(msg.get('channel', {}).get('id', '')),
+                        'channel_name': msg.get('channel', {}).get('name', ''),
+                        'channel_type': str(msg.get('channel', {}).get('type', '')),
+                        'guild_id': str(msg.get('guild', {}).get('id', '')),
+                        'guild_name': msg.get('guild', {}).get('name', ''),
                         'author_id': str(msg.get('author', {}).get('id', '')),
+                        'author_name': msg.get('author', {}).get('name', ''),
+                        'author_display_name': msg.get('author', {}).get('display_name', ''),
                         'content': msg.get('content', ''),
                         'timestamp': msg.get('timestamp', ''),
                         'edited_timestamp': msg.get('edited_timestamp'),
+                        'jump_url': msg.get('jump_url', ''),
                         'is_bot': msg.get('author', {}).get('is_bot', False),
                         'has_attachments': bool(msg.get('attachments', [])),
                         'has_embeds': bool(msg.get('embeds', [])),
@@ -854,16 +781,16 @@ def save_messages_to_db(messages_data, db_path='discord_messages.db'):
                         msg.get('content', ''),
                         msg.get('timestamp', ''),
                         msg.get('edited_timestamp'),
-                        '', # jump_url - not available in current structure
+                        msg.get('jump_url', ''),
                         msg.get('author_id', ''),
-                        '', # author_name - not directly available
-                        '', # author_display_name - not directly available  
+                        msg.get('author_name', ''),
+                        msg.get('author_display_name', ''),
                         msg.get('is_bot', False),
                         msg.get('channel_id', ''),
-                        '', # channel_name - not directly available
-                        '', # channel_type - not directly available
-                        '', # guild_id - not directly available
-                        '', # guild_name - not directly available
+                        msg.get('channel_name', ''),
+                        msg.get('channel_type', ''),
+                        msg.get('guild_id', ''),
+                        msg.get('guild_name', ''),
                         json.dumps([]), # mentions - placeholder
                         False, # mention_everyone - placeholder
                         json.dumps([]), # mention_roles - placeholder
@@ -957,30 +884,30 @@ def update_discord_messages():
     else:
         print("\n✅ No new messages found.")
 
-def get_latest_message_id(channel_id: str, db_path='discord_messages.db') -> Optional[int]:
-    """Get the latest message ID for a channel from the database"""
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT id FROM messages 
-            WHERE channel_id = ? 
-            ORDER BY timestamp DESC 
-            LIMIT 1
-        ''', (channel_id,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result:
-            return int(result[0])
-        return None
-        
-    except Exception as e:
-        logger.error(f"Error getting latest message ID for channel {channel_id}: {e}")
-        return None
-
 if __name__ == "__main__":
+    print("🗑️ Full refresh mode - clearing database and fetch state...")
+    
+    # Always clear database
+    try:
+        conn = sqlite3.connect('discord_messages.db')
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM messages')
+        cursor.execute('DELETE FROM sqlite_sequence WHERE name="messages"')
+        conn.commit()
+        conn.close()
+        print("✅ Database cleared")
+    except Exception as e:
+        print(f"❌ Error clearing database: {e}")
+    
+    # Always clear fetch state
+    try:
+        import os
+        if os.path.exists('data/fetch_state.json'):
+            os.remove('data/fetch_state.json')
+        print("✅ Fetch state cleared")
+    except Exception as e:
+        print(f"❌ Error clearing fetch state: {e}")
+    
+    print("🚀 Starting full re-fetch from beginning...")
     update_discord_messages()
     print("🔌 Disconnecting from Discord...")

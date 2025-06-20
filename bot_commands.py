@@ -177,16 +177,17 @@ class AnalysisCommands(commands.Cog):
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete for channel names"""
+        """Autocomplete for channel names with current Discord channel mapping"""
         try:
             print(f"Channel autocomplete called with current='{current}'")
             
             # Ensure analyzer is initialized
             await self.analyzer.initialize()
             
-            # Get available channels
-            channels = await self.analyzer.get_available_channels()
-            print(f"Found {len(channels)} channels")
+            # Get available channels with current Discord names when possible
+            bot_guilds = interaction.client.guilds if hasattr(interaction.client, 'guilds') else None
+            channels = await self.analyzer.get_available_channels_with_mapping(bot_guilds)
+            print(f"Found {len(channels)} channels (with current names)")
             
             # Filter channels based on current input
             if current:

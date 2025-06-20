@@ -214,7 +214,15 @@ class MessageAnalyzer:
         self.conn.commit()
 
     def __del__(self):
-        self.conn.close()
+        """Cleanup method to handle connection cleanup safely"""
+        try:
+            # For DiscordBotAnalyzer, we use async connections (self.pool)
+            # The pool should be closed via the async close() method
+            # We don't have a self.conn attribute, so we override the base class __del__
+            pass
+        except:
+            # Ignore any errors during cleanup
+            pass
 
     def preprocess_text(self, text: str) -> str:
         """Clean and preprocess text for analysis"""
@@ -405,7 +413,7 @@ class MessageAnalyzer:
                 )
                 SELECT 
                     author_id,
-                    COALESCE(author_display_name, author_name, author_id) as display_name,
+                    COALESCE(author_display_name, author_name) as display_name,
                     COUNT(*) as message_count,
                     COUNT(DISTINCT channel_name) as channels_active,
                     AVG(LENGTH(content)) as avg_message_length
@@ -810,6 +818,7 @@ class MessageAnalyzer:
             print(f"Error getting available users: {str(e)}")
             return []
 
+
 class DiscordBotAnalyzer(MessageAnalyzer):
     """Advanced Discord message analyzer with statistical and semantic analysis"""
     
@@ -828,21 +837,27 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         """
         # Initialize NLTK resources
         try:
+            import nltk
             nltk.data.find('tokenizers/punkt')
         except LookupError:
+            import nltk
             nltk.download('punkt')
         try:
+            import nltk
             nltk.data.find('corpora/stopwords')
         except LookupError:
+            import nltk
             nltk.download('stopwords')
         
         # Create temp directory if it doesn't exist
+        import os
         os.makedirs('temp', exist_ok=True)
 
     async def initialize(self):
         """Initialize the database connection pool"""
         if self.pool is None:
             try:
+                import aiosqlite
                 self.pool = await aiosqlite.connect(self.db_path)
                 print(f"Database connection established to {self.db_path}")
             except Exception as e:
@@ -865,134 +880,129 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         """Async context manager exit"""
         await self.close()
 
-    def __del__(self):
-        """Cleanup when the object is destroyed"""
-        if self.pool:
-            asyncio.create_task(self.close())
-
     def format_timestamp(self, timestamp: str) -> str:
         """Format a timestamp string to a readable format"""
         try:
-            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            from datetime import datetime
+            # Handle different timestamp formats
+            if 'T' in timestamp:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            else:
+                dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
             return dt.strftime('%Y-%m-%d %H:%M')
         except:
             return timestamp
 
-    async def update_user_statistics(self, args: dict = None) -> str:
-        """Enhanced user statistics with concept analysis and collaboration patterns"""
+    async def get_channel_name_mapping(self, bot_guilds=None) -> Dict[str, str]:
+        """Create a mapping of old database channel names to current Discord channel names"""
         try:
             await self.initialize()
             
-            # Get user statistics with concept data
-            async with self.pool.execute(f"""
-                SELECT 
-                    author_id,
-                    COALESCE(author_display_name, author_name, author_id) as display_name,
-                    COUNT(*) as message_count,
-                    COUNT(DISTINCT channel_name) as channels_active,
-                    AVG(LENGTH(content)) as avg_message_length
-                FROM messages
-                WHERE {self.base_filter}
-                GROUP BY author_id, author_display_name, author_name
-                ORDER BY message_count DESC
-                LIMIT 15
+            # Get all channel names from database
+            async with self.pool.execute("""
+                SELECT DISTINCT channel_name
+                FROM messages 
+                WHERE channel_name IS NOT NULL 
+                AND channel_name != ''
+                ORDER BY channel_name
             """) as cursor:
-                users = await cursor.fetchall()
+                db_channels = await cursor.fetchall()
+                db_channel_names = [ch[0] for ch in db_channels if ch[0]]
             
-            if not users:
-                return "No user statistics available"
+            # If bot guilds are provided, get current Discord channel names
+            current_channels = {}
+            if bot_guilds:
+                for guild in bot_guilds:
+                    for channel in guild.channels:
+                        if hasattr(channel, 'name'):
+                            current_channels[channel.name] = channel.name
+                            # Also map with common prefixes that might be used
+                            current_channels[f"#{channel.name}"] = channel.name
+                            current_channels[f"🏛{channel.name}"] = channel.name
+                            current_channels[f"🦾{channel.name}"] = channel.name
+                            current_channels[f"🏘{channel.name}"] = channel.name
             
-            # Get content for top users to analyze their concepts
-            user_concepts = {}
-            for user in users[:8]:  # Only analyze top 8 users for performance
-                author_id = user[0]
-                display_name = user[1] if user[1] else user[0]
+            # Create mapping: old_name -> new_name
+            channel_mapping = {}
+            for db_name in db_channel_names:
+                # First, try exact match
+                if db_name in current_channels:
+                    channel_mapping[db_name] = current_channels[db_name]
+                    continue
                 
-                # Get user's messages for concept analysis
-                async with self.pool.execute(f"""
-                    SELECT content
-                    FROM messages
-                    WHERE author_id = ? AND {self.base_filter}
-                    AND content IS NOT NULL 
-                    AND LENGTH(content) > 20
-                    LIMIT 200
-                """, (author_id,)) as cursor:
-                    user_messages = await cursor.fetchall()
+                # Try without emoji prefixes
+                clean_db_name = db_name
+                for prefix in ['🏛', '🦾', '🏘', '#']:
+                    if clean_db_name.startswith(prefix):
+                        clean_db_name = clean_db_name[len(prefix):]
+                        break
                 
-                if user_messages:
-                    concepts = await self.extract_concepts_from_content(user_messages)
-                    user_concepts[display_name] = concepts[:5]  # Top 5 concepts per user
-            
-            # Format enhanced results
-            result = "**👥 Enhanced User Activity & Contribution Analysis**\n\n"
-            
-            result += "**📊 Top Contributors by Activity:**\n"
-            for i, user in enumerate(users[:10], 1):
-                display_name = user[1] if user[1] else user[0]
-                message_count = user[2]
-                channels_active = user[3]
-                avg_length = user[4] if user[4] else 0
+                # Look for matches in current channels
+                best_match = None
+                for current_name in current_channels.values():
+                    if clean_db_name == current_name:
+                        best_match = current_name
+                        break
+                    elif clean_db_name.lower() == current_name.lower():
+                        best_match = current_name
+                        break
+                    elif clean_db_name in current_name or current_name in clean_db_name:
+                        best_match = current_name
                 
-                result += f"**{i}. {display_name}:**\n"
-                result += f"   • Messages: {message_count:,} | Channels: {channels_active} | Avg Length: {avg_length:.0f} chars\n"
-                
-                # Add concepts if available
-                if display_name in user_concepts and user_concepts[display_name]:
-                    concepts_str = ", ".join([c.title() for c in user_concepts[display_name][:3]])
-                    result += f"   • Key Topics: {concepts_str}\n"
-                result += "\n"
+                if best_match:
+                    channel_mapping[db_name] = best_match
+                else:
+                    # Keep original name if no match found
+                    channel_mapping[db_name] = db_name
             
-            # Concept diversity analysis
-            if user_concepts:
-                result += "**💡 Most Conceptually Diverse Contributors:**\n"
-                concept_diversity = {user: len(concepts) for user, concepts in user_concepts.items() if concepts}
-                sorted_diversity = sorted(concept_diversity.items(), key=lambda x: x[1], reverse=True)
-                
-                for user, concept_count in sorted_diversity[:5]:
-                    if concept_count > 0:
-                        result += f"• **{user}**: {concept_count} distinct concept types\n"
-                        if user in user_concepts:
-                            concepts_preview = ", ".join([c.title() for c in user_concepts[user][:3]])
-                            result += f"  ↳ {concepts_preview}\n"
-                result += "\n"
-            
-            # Activity patterns summary with AMP calculation
-            total_messages = sum(user[2] for user in users)
-            active_users = len([user for user in users if user[2] >= 10])
-            
-            # Calculate Active Member Percentage (AMP) - members who post at least once per week
-            # Get members who posted in the last 7 days
-            async with self.pool.execute(f"""
-                SELECT COUNT(DISTINCT author_id) as weekly_active
-                FROM messages
-                WHERE {self.base_filter}
-                AND date(timestamp) >= date('now', '-7 days')
-            """) as cursor:
-                weekly_active_result = await cursor.fetchone()
-                weekly_active = weekly_active_result[0] if weekly_active_result else 0
-            
-            # Get total unique members in the database
-            async with self.pool.execute(f"""
-                SELECT COUNT(DISTINCT author_id) as total_members
-                FROM messages
-                WHERE {self.base_filter}
-            """) as cursor:
-                total_members_result = await cursor.fetchone()
-                total_members = total_members_result[0] if total_members_result else 1
-            
-            # Calculate AMP
-            amp = (weekly_active / total_members * 100) if total_members > 0 else 0
-            
-            result += "**📈 Community Overview:**\n"
-            result += f"• Total Messages Analyzed: {total_messages:,}\n"
-            result += f"• Active Contributors (10+ messages): {active_users}\n"
-            result += f"• Average Messages per Active User: {total_messages/active_users:.1f}\n"
-            result += f"• **Active Member Percentage (AMP)**: {amp:.1f}% ({weekly_active}/{total_members} members posted this week)\n"
-            
-            return result
+            return channel_mapping
             
         except Exception as e:
-            return f"Error in enhanced user statistics: {str(e)}"
+            print(f"Error creating channel name mapping: {str(e)}")
+            return {}
+
+    async def get_available_channels_with_mapping(self, bot_guilds=None) -> List[str]:
+        """Get available channels with current Discord names when possible"""
+        try:
+            await self.initialize()
+            
+            # Get channel mapping
+            channel_mapping = await self.get_channel_name_mapping(bot_guilds)
+            
+            # Get channels ordered by activity from database
+            async with self.pool.execute("""
+                SELECT 
+                    channel_name,
+                    COUNT(*) as message_count
+                FROM messages 
+                WHERE channel_name IS NOT NULL 
+                AND channel_name != ''
+                AND channel_name NOT LIKE '%test%'
+                AND channel_name NOT LIKE '%playground%'
+                AND channel_name NOT LIKE '%pg%'
+                GROUP BY channel_name
+                ORDER BY message_count DESC, channel_name
+            """) as cursor:
+                channels = await cursor.fetchall()
+            
+            # Map to current names and deduplicate
+            mapped_channels = []
+            seen = set()
+            
+            for channel, count in channels:
+                if channel:
+                    # Use mapped name if available, otherwise original
+                    current_name = channel_mapping.get(channel, channel)
+                    if current_name not in seen:
+                        mapped_channels.append(current_name)
+                        seen.add(current_name)
+            
+            return mapped_channels
+            
+        except Exception as e:
+            print(f"Error getting available channels with mapping: {str(e)}")
+            # Fallback to original method
+            return await self.get_available_channels()
 
     async def analyze_topics_spacy(self, args: dict = None) -> str:
         """Analyze topics in messages using advanced spaCy NLP with trend analysis"""
@@ -1391,7 +1401,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     SELECT 
                         COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
                         COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
-                        COUNT(CASE WHEN reactions IS NOT NULL AND reactions != '' THEN 1 END) as posts_with_reactions,
+                        COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions,
                         COUNT(*) as total_messages
                     FROM messages
                     WHERE channel_name = ? AND {self.base_filter}
@@ -1772,6 +1782,10 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             await self.initialize()
             print(f"Getting insights for channel: {channel_name}")
 
+            # Resolve channel name to database channel name  
+            resolved_channel_name = await self.resolve_channel_name(channel_name)
+            print(f"Resolved channel name: {resolved_channel_name}")
+
             # Basic channel statistics
             basic_query = f"""
                 SELECT 
@@ -1784,7 +1798,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 WHERE channel_name = ? AND {self.base_filter}
             """
             
-            async with self.pool.execute(basic_query, (channel_name,)) as cursor:
+            async with self.pool.execute(basic_query, (resolved_channel_name,)) as cursor:
                 basic_stats = await cursor.fetchone()
 
             if not basic_stats or basic_stats[0] == 0:
@@ -1803,7 +1817,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 LIMIT 10
             """
             
-            async with self.pool.execute(contributors_query, (channel_name,)) as cursor:
+            async with self.pool.execute(contributors_query, (resolved_channel_name,)) as cursor:
                 contributors = await cursor.fetchall()
 
             # Activity by time of day
@@ -1817,7 +1831,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 ORDER BY hour
             """
             
-            async with self.pool.execute(time_query, (channel_name,)) as cursor:
+            async with self.pool.execute(time_query, (resolved_channel_name,)) as cursor:
                 hourly_activity = await cursor.fetchall()
 
             # Activity by day of week
@@ -1831,7 +1845,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 ORDER BY day_of_week
             """
             
-            async with self.pool.execute(day_query, (channel_name,)) as cursor:
+            async with self.pool.execute(day_query, (resolved_channel_name,)) as cursor:
                 daily_activity = await cursor.fetchall()
 
             # Recent activity (last 30 days)
@@ -1848,7 +1862,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 LIMIT 10
             """
             
-            async with self.pool.execute(recent_query, (channel_name,)) as cursor:
+            async with self.pool.execute(recent_query, (resolved_channel_name,)) as cursor:
                 recent_activity = await cursor.fetchall()
 
             # Format results
@@ -1873,12 +1887,12 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 SELECT 
                     COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
                     COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
-                    COUNT(CASE WHEN reactions IS NOT NULL AND reactions != '' THEN 1 END) as posts_with_reactions
+                    COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions
                 FROM messages
                 WHERE channel_name = ? AND {self.base_filter}
             """
             
-            async with self.pool.execute(engagement_query, (channel_name,)) as cursor:
+            async with self.pool.execute(engagement_query, (resolved_channel_name,)) as cursor:
                 engagement_stats = await cursor.fetchone()
             
             if engagement_stats:
@@ -1936,28 +1950,37 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     result += f"• {date}: {count} messages\n"
                 result += "\n"
 
-            # Get content for concept analysis
-            concepts_query = f"""
-                SELECT content
+            # Calculate Channel-Specific Active Member Percentage (AMP)
+            # Get unique users who posted in this channel in the last 7 days
+            channel_amp_query = f"""
+                SELECT COUNT(DISTINCT author_id) as weekly_active_in_channel
                 FROM messages
                 WHERE channel_name = ? AND {self.base_filter}
-                AND content IS NOT NULL 
-                AND LENGTH(content) > 20
-                ORDER BY timestamp DESC
-                LIMIT 300
+                AND date(timestamp) >= date('now', '-7 days')
             """
             
-            async with self.pool.execute(concepts_query, (channel_name,)) as cursor:
-                channel_messages = await cursor.fetchall()
-
-            # Extract key topics and concepts
-            if channel_messages:
-                channel_concepts = await self.extract_concepts_from_content(channel_messages)
-                if channel_concepts:
-                    result += "**💡 Key Topics & Concepts Discussed:**\n"
-                    for concept in channel_concepts[:8]:
-                        result += f"• {concept.title()}\n"
-                    result += "\n"
+            async with self.pool.execute(channel_amp_query, (resolved_channel_name,)) as cursor:
+                weekly_active_result = await cursor.fetchone()
+                weekly_active_in_channel = weekly_active_result[0] if weekly_active_result else 0
+            
+            # Get total unique users who have ever posted in this channel
+            total_channel_users_query = f"""
+                SELECT COUNT(DISTINCT author_id) as total_channel_users
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+            """
+            
+            async with self.pool.execute(total_channel_users_query, (resolved_channel_name,)) as cursor:
+                total_channel_users_result = await cursor.fetchone()
+                total_channel_users = total_channel_users_result[0] if total_channel_users_result else 1
+            
+            # Calculate Channel AMP
+            channel_amp = (weekly_active_in_channel / total_channel_users * 100) if total_channel_users > 0 else 0
+            
+            result += "**📈 Channel Health Metrics:**\n"
+            result += f"• **Channel AMP**: {channel_amp:.1f}% ({weekly_active_in_channel}/{total_channel_users} members active this week)\n"
+            result += f"• Total Members Ever Active: {total_channel_users}\n"
+            result += f"• Weekly Active Members: {weekly_active_in_channel}\n\n"
 
             # Generate chart if possible
             try:
@@ -1972,91 +1995,6 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         except Exception as e:
             return f"Error getting channel insights: {str(e)}"
     
-    async def extract_concepts_from_content(self, messages: list) -> list:
-        """Extract meaningful concepts from message content using spaCy NLP"""
-        try:
-            import spacy
-            from collections import Counter
-            
-            # Load spaCy model
-            try:
-                nlp = spacy.load("en_core_web_sm")
-            except OSError:
-                return []  # Fallback if spaCy model not available
-            
-            concepts = Counter()
-            
-            def clean_content(text):
-                """Clean Discord-specific noise from text"""
-                text = re.sub(r'<@[!&]?\d+>', '', text)  # Remove mentions
-                text = re.sub(r'<#\d+>', '', text)  # Remove channel references  
-                text = re.sub(r'<:\w+:\d+>', '', text)  # Remove custom emojis
-                text = re.sub(r'https?://\S+', '', text)  # Remove URLs
-                text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)  # Remove code blocks
-                text = re.sub(r'`[^`]+`', '', text)  # Remove inline code
-                text = re.sub(r'\s+', ' ', text).strip()
-                return text
-            
-            def extract_advanced_concepts(doc):
-                """Extract sophisticated concepts from spaCy doc"""
-                concepts = []
-                
-                # Extract subject-verb-object patterns
-                for token in doc:
-                    if token.dep_ == "nsubj" and token.head.pos_ == "VERB":
-                        subject_span = doc[token.left_edge.i:token.right_edge.i+1]
-                        
-                        if token.head.pos_ == "VERB":
-                            verb = token.head
-                            predicate_parts = [verb.text]
-                            
-                            for child in verb.children:
-                                if child.dep_ in ["dobj", "pobj", "attr", "prep"]:
-                                    obj_span = doc[child.left_edge.i:child.right_edge.i+1]
-                                    predicate_parts.append(obj_span.text)
-                            
-                            if len(predicate_parts) > 1:
-                                full_concept = f"{subject_span.text} {' '.join(predicate_parts)}"
-                                if len(full_concept.split()) >= 2 and len(full_concept) > 10:
-                                    concepts.append(full_concept.lower().strip())
-                
-                # Extract complex noun phrases
-                for chunk in doc.noun_chunks:
-                    if len(chunk.text.split()) >= 2 and len(chunk.text) > 8:
-                        concepts.append(chunk.text.lower().strip())
-                
-                # Extract technical compounds
-                for i, token in enumerate(doc[:-1]):
-                    if (token.pos_ in ["NOUN", "PROPN"] and 
-                        doc[i+1].pos_ in ["NOUN", "PROPN", "ADJ"]):
-                        compound = f"{token.text} {doc[i+1].text}"
-                        if len(compound) > 6:
-                            concepts.append(compound.lower())
-                
-                return concepts
-            
-            # Process messages
-            for message in messages[:200]:  # Limit for performance
-                content = clean_content(message[0] if isinstance(message, tuple) else str(message))
-                if len(content) > 20:  # Only process substantial content
-                    try:
-                        doc = nlp(content)
-                        message_concepts = extract_advanced_concepts(doc)
-                        for concept in message_concepts:
-                            # Filter out common noise words
-                            if not any(noise in concept for noise in ['the ', 'a ', 'an ', 'this ', 'that ', 'these ', 'those ']):
-                                concepts[concept] += 1
-                    except:
-                        continue  # Skip problematic messages
-            
-            # Return top concepts
-            return [concept for concept, count in concepts.most_common(10) if count >= 2]
-            
-        except ImportError:
-            return []  # Fallback if spaCy not available
-        except Exception:
-            return []  # Fallback for any other errors
-
     async def get_user_insights(self, user_identifier: str) -> str:
         """Get detailed insights for a specific user by username, display name, or user ID"""
         try:
@@ -2213,3 +2151,58 @@ class DiscordBotAnalyzer(MessageAnalyzer):
 
         except Exception as e:
             return f"Error getting user insights: {str(e)}"
+    
+    async def resolve_channel_name(self, user_input: str, bot_guilds=None) -> str:
+        """Resolve user input to the actual database channel name"""
+        try:
+            await self.initialize()
+            
+            # Get channel mapping (current -> old)
+            channel_mapping = await self.get_channel_name_mapping(bot_guilds)
+            
+            # Create reverse mapping (current -> database_name)
+            reverse_mapping = {}
+            for db_name, current_name in channel_mapping.items():
+                reverse_mapping[current_name] = db_name
+            
+            # Try to find the database channel name
+            # 1. Direct match with database name
+            async with self.pool.execute("""
+                SELECT DISTINCT channel_name
+                FROM messages 
+                WHERE channel_name = ?
+                LIMIT 1
+            """, (user_input,)) as cursor:
+                exact_match = await cursor.fetchone()
+                if exact_match:
+                    return user_input
+            
+            # 2. Try reverse mapping (current name -> database name)
+            if user_input in reverse_mapping:
+                return reverse_mapping[user_input]
+            
+            # 3. Try fuzzy matching with database names
+            async with self.pool.execute("""
+                SELECT DISTINCT channel_name
+                FROM messages 
+                WHERE channel_name IS NOT NULL
+            """) as cursor:
+                all_channels = await cursor.fetchall()
+                db_channel_names = [ch[0] for ch in all_channels if ch[0]]
+            
+            # Case-insensitive exact match
+            for db_channel in db_channel_names:
+                if user_input.lower() == db_channel.lower():
+                    return db_channel
+            
+            # Partial match
+            for db_channel in db_channel_names:
+                if user_input.lower() in db_channel.lower() or db_channel.lower() in user_input.lower():
+                    return db_channel
+            
+            # If no match found, return original input
+            return user_input
+            
+        except Exception as e:
+            print(f"Error resolving channel name: {str(e)}")
+            return user_input
