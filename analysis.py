@@ -878,97 +878,6 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         except:
             return timestamp
 
-    async def update_word_frequencies(self, args: dict = None) -> str:
-        """Enhanced concept analysis across all messages (replaces simple word frequency)"""
-        try:
-            await self.initialize()
-            
-            # Get all messages for concept analysis
-            async with self.pool.execute(f"""
-                SELECT content, channel_name, author_display_name, author_name
-                FROM messages
-                WHERE content IS NOT NULL 
-                AND content != ''
-                AND LENGTH(content) > 20
-                AND {self.base_filter}
-                ORDER BY timestamp DESC
-                LIMIT 1000
-            """) as cursor:
-                messages = await cursor.fetchall()
-            
-            if not messages:
-                return "No messages found for concept analysis"
-            
-            # Extract concepts from all messages
-            message_content = [msg[0] for msg in messages]
-            global_concepts = await self.extract_concepts_from_content(message_content)
-            
-            if not global_concepts:
-                return "No meaningful concepts could be extracted from messages"
-            
-            # Analyze concept distribution by channel
-            concept_by_channel = defaultdict(Counter)
-            concept_by_user = defaultdict(Counter)
-            
-            # Process messages for channel and user concept mapping
-            try:
-                import spacy
-                nlp = spacy.load("en_core_web_sm")
-                
-                for msg in messages[:500]:  # Process subset for performance
-                    content = msg[0]
-                    channel = msg[1] 
-                    display_name = msg[2] if msg[2] else msg[3]
-                    
-                    if len(content) > 20:
-                        try:
-                            doc = nlp(content)
-                            # Extract concepts from this message
-                            for chunk in doc.noun_chunks:
-                                if len(chunk.text.split()) >= 2 and len(chunk.text) > 8:
-                                    concept = chunk.text.lower().strip()
-                                    if concept in global_concepts:
-                                        concept_by_channel[channel][concept] += 1
-                                        concept_by_user[display_name][concept] += 1
-                        except:
-                            continue
-            except:
-                pass  # Fallback if spaCy fails
-            
-            # Format enhanced results
-            result = "**🧠 Concept Analysis Across All Messages**\n\n"
-            
-            result += "**💡 Most Discussed Concepts:**\n"
-            for i, concept in enumerate(global_concepts[:12], 1):
-                result += f"{i}. {concept.title()}\n"
-            result += "\n"
-            
-            # Top channels by concept diversity
-            if concept_by_channel:
-                channel_diversity = {ch: len(concepts) for ch, concepts in concept_by_channel.items()}
-                sorted_channels = sorted(channel_diversity.items(), key=lambda x: x[1], reverse=True)
-                
-                result += "**📺 Most Conceptually Active Channels:**\n"
-                for channel, concept_count in sorted_channels[:5]:
-                    if concept_count > 0:
-                        result += f"• #{channel}: {concept_count} different concepts discussed\n"
-                result += "\n"
-            
-            # Top users by concept diversity  
-            if concept_by_user:
-                user_diversity = {user: len(concepts) for user, concepts in concept_by_user.items()}
-                sorted_users = sorted(user_diversity.items(), key=lambda x: x[1], reverse=True)
-                
-                result += "**👥 Most Conceptually Diverse Contributors:**\n"
-                for user, concept_count in sorted_users[:5]:
-                    if concept_count > 0 and user and user != "Unknown":
-                        result += f"• {user}: {concept_count} different concepts\n"
-            
-            return result
-            
-        except Exception as e:
-            return f"Error in concept analysis: {str(e)}"
-
     async def update_user_statistics(self, args: dict = None) -> str:
         """Enhanced user statistics with concept analysis and collaboration patterns"""
         try:
@@ -1047,14 +956,38 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                             result += f"  ↳ {concepts_preview}\n"
                 result += "\n"
             
-            # Activity patterns summary
+            # Activity patterns summary with AMP calculation
             total_messages = sum(user[2] for user in users)
             active_users = len([user for user in users if user[2] >= 10])
+            
+            # Calculate Active Member Percentage (AMP) - members who post at least once per week
+            # Get members who posted in the last 7 days
+            async with self.pool.execute(f"""
+                SELECT COUNT(DISTINCT author_id) as weekly_active
+                FROM messages
+                WHERE {self.base_filter}
+                AND date(timestamp) >= date('now', '-7 days')
+            """) as cursor:
+                weekly_active_result = await cursor.fetchone()
+                weekly_active = weekly_active_result[0] if weekly_active_result else 0
+            
+            # Get total unique members in the database
+            async with self.pool.execute(f"""
+                SELECT COUNT(DISTINCT author_id) as total_members
+                FROM messages
+                WHERE {self.base_filter}
+            """) as cursor:
+                total_members_result = await cursor.fetchone()
+                total_members = total_members_result[0] if total_members_result else 1
+            
+            # Calculate AMP
+            amp = (weekly_active / total_members * 100) if total_members > 0 else 0
             
             result += "**📈 Community Overview:**\n"
             result += f"• Total Messages Analyzed: {total_messages:,}\n"
             result += f"• Active Contributors (10+ messages): {active_users}\n"
             result += f"• Average Messages per Active User: {total_messages/active_users:.1f}\n"
+            result += f"• **Active Member Percentage (AMP)**: {amp:.1f}% ({weekly_active}/{total_members} members posted this week)\n"
             
             return result
             
@@ -1449,7 +1382,36 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             if channel_filter:
                 result += f"**Channel: #{channel_filter}**\n\n"
             
-            result += f"**📊 Analyzed {len([d for d in docs if d])} substantial messages**\n\n"
+            result += f"**📊 Analyzed {len([d for d in docs if d])} substantial messages**\n"
+            
+            # Add engagement metrics for topics analysis
+            if channel_filter:
+                # Calculate engagement for the specific channel
+                engagement_query = f"""
+                    SELECT 
+                        COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+                        COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
+                        COUNT(CASE WHEN reactions IS NOT NULL AND reactions != '' THEN 1 END) as posts_with_reactions,
+                        COUNT(*) as total_messages
+                    FROM messages
+                    WHERE channel_name = ? AND {self.base_filter}
+                """
+                
+                async with self.pool.execute(engagement_query, (channel_filter,)) as cursor:
+                    engagement_stats = await cursor.fetchone()
+                
+                if engagement_stats:
+                    total_replies = engagement_stats[0] if engagement_stats[0] else 0
+                    original_posts = engagement_stats[1] if engagement_stats[1] else 1
+                    posts_with_reactions = engagement_stats[2] if engagement_stats[2] else 0
+                    total_messages = engagement_stats[3] if engagement_stats[3] else 1
+                    
+                    replies_per_post = total_replies / original_posts if original_posts > 0 else 0
+                    reaction_rate = (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0
+                    
+                    result += f"**📈 Engagement: {replies_per_post:.2f} replies/post, {reaction_rate:.1f}% reaction rate**\n"
+            
+            result += "\n"
             
             # Technical Innovation Topics
             if technical_terms:
@@ -1905,6 +1867,32 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             result += f"• Average Message Length: {avg_length:.1f} characters\n"
             result += f"• First Message: {first_msg}\n"
             result += f"• Last Message: {last_msg}\n\n"
+
+            # Calculate engagement metrics (replies and reactions)
+            engagement_query = f"""
+                SELECT 
+                    COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+                    COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
+                    COUNT(CASE WHEN reactions IS NOT NULL AND reactions != '' THEN 1 END) as posts_with_reactions
+                FROM messages
+                WHERE channel_name = ? AND {self.base_filter}
+            """
+            
+            async with self.pool.execute(engagement_query, (channel_name,)) as cursor:
+                engagement_stats = await cursor.fetchone()
+            
+            if engagement_stats:
+                total_replies = engagement_stats[0] if engagement_stats[0] else 0
+                original_posts = engagement_stats[1] if engagement_stats[1] else 1
+                posts_with_reactions = engagement_stats[2] if engagement_stats[2] else 0
+                
+                replies_per_post = total_replies / original_posts if original_posts > 0 else 0
+                reaction_rate = (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0
+                
+                result += "**📈 Engagement Metrics:**\n"
+                result += f"• Average Replies per Original Post: {replies_per_post:.2f}\n"
+                result += f"• Posts with Reactions: {reaction_rate:.1f}% ({posts_with_reactions}/{total_messages})\n"
+                result += f"• Total Replies: {total_replies:,} | Original Posts: {original_posts:,}\n\n"
 
             # Top contributors
             if contributors:

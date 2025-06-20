@@ -1,98 +1,31 @@
-# Discord Analysis Bot - Core Files Only
-# This .gitignore ensures only essential files are tracked
+# Discord Analysis Bot - Essential Files Only
 
-# Environment and secrets
+# Sensitive data
 .env
 .env.*
-*.key
-*.pem
 
-# Project directories to ignore
+# Database and data files (contain sensitive message data)
+*.db
+*.sqlite*
+discord_messages.db
+data/
+
+# Generated content and temporary files
 archive/
 temp/
 tmp/
-
-# Python cache and compiled files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-
-# Virtual environments
-venv/
-.venv/
-env/
-.env/
-ENV/
-env.bak/
-venv.bak/
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-
-# OS files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Logs and temporary files
-*.log
-logs/
-temp/
-tmp/
-*.tmp
-*.temp
-
-# Generated analysis files and charts
 *.png
 *.jpg
-*.jpeg
-*.gif
-*.pdf
 *.csv
-*.xlsx
+*.log
 
-# Test output and cache
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.cache
-nosetests.xml
-coverage.xml
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
 
-# Backup files
-*.backup
-*.bak
-*.orig
-archive/*.backup
-
-# User-specific files that shouldn't be shared
-config.local.json
-settings.local.json
-
-# Only track these core files:
-# ✅ README.md
-# ✅ requirements.txt  
-# ✅ .gitignore
-# ✅ bot.py
-# ✅ bot_commands.py
-# ✅ analysis.py
-# ✅ fetch_messages.py
-# ✅ archive/ (test files)
+# OS and IDE
+.DS_Store
+.vscode/
+.idea/

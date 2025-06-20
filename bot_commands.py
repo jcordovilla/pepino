@@ -412,31 +412,6 @@ class AnalysisCommands(commands.Cog):
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(
-        name="concepts_analysis",
-        description="Analyze key concepts and topics across all messages (enhanced word analysis)"
-    )
-    async def concepts_analysis(self, interaction: discord.Interaction):
-        """Enhanced concept analysis across all messages"""
-        try:
-            await self.analyzer.initialize()
-            await interaction.response.defer()
-            
-            result = await self.analyzer.update_word_frequencies()
-            
-            if len(result) > 2000:
-                chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
-                for chunk in chunks:
-                    await interaction.followup.send(chunk)
-            else:
-                await interaction.followup.send(result)
-                
-        except Exception as e:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"Error during concept analysis: {str(e)}")
-            else:
-                await interaction.followup.send(f"Error during concept analysis: {str(e)}")
-
-    @app_commands.command(
         name="userstats_analysis", 
         description="Enhanced user statistics with topic contributions and collaboration patterns"
     )
@@ -513,7 +488,6 @@ class AnalysisCommands(commands.Cog):
 • `/topics_analysis` - Topic analysis with trends, optionally filtered by channel
 
 **📊 Enhanced Statistical Analysis Commands:**
-• `/concepts_analysis` - Key concepts & topics across all messages
 • `/userstats_analysis` - Enhanced user statistics with topic contributions
 • `/temporal_analysis` - Activity patterns with time-based topic analysis
 
