@@ -2334,8 +2334,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         plt.figure(figsize=(12, 6))
                         plt.bar(dates, message_counts, color='#5865F2', alpha=0.7, edgecolor='#4752C4', linewidth=1)
                         
+                        # Clean channel name for chart title (remove emojis)
+                        clean_channel_name = re.sub(r'[^\w\s-]', '', resolved_channel)
+                        
                         # Formatting
-                        plt.title(f'Daily Message Activity - #{resolved_channel}', fontsize=16, fontweight='bold', pad=20)
+                        plt.title(f'Daily Message Activity - {clean_channel_name}', fontsize=16, fontweight='bold', pad=20)
                         plt.xlabel('Date', fontsize=12)
                         plt.ylabel('Number of Messages', fontsize=12)
                         
@@ -2357,8 +2360,12 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         plt.legend()
                         plt.tight_layout()
                         
-                        # Save the chart
-                        chart_filename = f"channel_activity_{resolved_channel.replace('#', '').replace('🗂', '').replace('🏘', '').replace('💠', '').replace('🦾', '').replace('🏛', '').replace('🧢', '').replace('📚', '').replace('🗣', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        # Save the chart with sanitized filename
+                        safe_channel_name = re.sub(r'[^\w\s-]', '', resolved_channel).replace(' ', '_').strip('_')
+                        if not safe_channel_name:
+                            safe_channel_name = "unknown_channel"
+                        
+                        chart_filename = f"channel_activity_{safe_channel_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                         chart_path = os.path.join('temp', chart_filename)
                         
                         # Ensure temp directory exists
