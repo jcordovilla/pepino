@@ -1298,90 +1298,97 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             import traceback
             traceback.print_exc()
             return f"Error analyzing topics: {str(e)}"
-    
+
     async def extract_concepts_from_content(self, messages) -> List[str]:
-        """Extract meaningful concepts from message content using NLP"""
+        """Extract most relevant and frequent topics from user messages"""
         try:
-            import spacy
             from collections import Counter
+            import re
             
-            # Load spaCy model
-            try:
-                nlp = spacy.load('en_core_web_sm')
-            except OSError:
-                print("spaCy model not found. Installing...")
-                import subprocess
-                subprocess.run([
-                    "python", "-m", "spacy", "download", "en_core_web_sm"
-                ], check=True)
-                nlp = spacy.load('en_core_web_sm')
+            # Combine all message content
+            all_text = " ".join([msg[0] for msg in messages if msg[0] and len(msg[0]) > 15])
+            if not all_text.strip():
+                return []
             
-            all_concepts = []
+            # Clean text but preserve important terms
+            text = all_text.lower()
+            # Remove URLs but keep other content
+            text = re.sub(r'https?://[^\s]+', '', text)
+            text = re.sub(r'<@[!&]?\d+>', '', text)  # Remove Discord mentions
             
-            # Process messages in batches
-            batch_size = 50
-            for i in range(0, len(messages), batch_size):
-                batch = messages[i:i + batch_size]
-                
-                # Combine batch content
-                combined_text = " ".join([msg[0] for msg in batch if msg[0]])
-                
-                if not combined_text.strip():
-                    continue
-                
-                # Process with spaCy
-                doc = nlp(combined_text[:1000000])  # Limit text length
-                
-                # Extract different types of concepts
-                concepts = []
-                
-                # 1. Named entities (persons, organizations, technologies)
-                for ent in doc.ents:
-                    if ent.label_ in ["PERSON", "ORG", "PRODUCT", "WORK_OF_ART"] and len(ent.text) > 2:
-                        concepts.append(ent.text.lower().strip())
-                
-                # 2. Compound noun phrases (technical terms)
-                for chunk in doc.noun_chunks:
-                    if len(chunk.text.split()) >= 2 and len(chunk.text) > 5:
-                        # Filter out common stopwords
-                        if not any(word in chunk.text.lower() for word in ['this', 'that', 'some', 'any', 'the']):
-                            concepts.append(chunk.text.lower().strip())
-                
-                # 3. Technical patterns (API, AI, ML terms)
-                import re
-                tech_patterns = [
-                    r'\b[A-Z]{2,}\b',  # Acronyms like AI, ML, API
-                    r'\b\w+(?:-\w+)+\b',  # Hyphenated terms
-                    r'\b\w+(?:\.\w+)+\b',  # Dotted terms like node.js
-                ]
-                
-                for pattern in tech_patterns:
-                    matches = re.findall(pattern, combined_text)
-                    concepts.extend([match.lower() for match in matches if len(match) > 2])
-                
-                # 4. Verb-object relationships (actions)
-                for token in doc:
-                    if token.pos_ == "VERB" and not token.is_stop:
-                        # Find direct objects
-                        for child in token.children:
-                            if child.dep_ == "dobj" and child.pos_ in ["NOUN", "PROPN"]:
-                                action_concept = f"{token.lemma_} {child.text}"
-                                concepts.append(action_concept.lower())
-                
-                all_concepts.extend(concepts)
+            concepts = []
             
-            # Count and return top concepts
-            concept_counter = Counter(all_concepts)
+            # 1. Extract meaningful compound phrases (2-3 words)
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
             
-            # Filter concepts (remove very short, very long, or common words)
-            filtered_concepts = []
-            for concept, count in concept_counter.most_common(50):
-                if (3 <= len(concept) <= 50 and 
-                    count >= 2 and 
-                    concept not in ['the', 'and', 'for', 'with', 'this', 'that', 'from', 'they', 'have', 'will']):
-                    filtered_concepts.append(concept)
+            # Generate 2-word phrases
+            two_word_phrases = []
+            for i in range(len(words) - 1):
+                phrase = f"{words[i]} {words[i+1]}"
+                if len(phrase) > 8:  # Reasonable length
+                    two_word_phrases.append(phrase)
             
-            return filtered_concepts[:20]  # Return top 20 concepts
+            # Generate 3-word phrases  
+            three_word_phrases = []
+            for i in range(len(words) - 2):
+                phrase = f"{words[i]} {words[i+1]} {words[i+2]}"
+                if len(phrase) > 12:  # Reasonable length
+                    three_word_phrases.append(phrase)
+            
+            # Count phrase frequencies
+            phrase_counter = Counter(two_word_phrases + three_word_phrases)
+            
+            # Add frequent phrases
+            for phrase, count in phrase_counter.most_common(30):
+                if count >= 2:  # Appears at least twice
+                    concepts.append(phrase)
+            
+            # 2. Extract important single words that are content-rich
+            important_single_words = []
+            for word in words:
+                if (len(word) >= 5 and 
+                    word not in ['discord', 'everyone', 'message', 'channel', 'meeting', 'group', 'thanks', 'please', 'hello', 'morning', 'evening', 'today', 'think', 'really', 'great', 'would', 'could', 'should', 'about', 'after', 'before', 'which', 'where', 'there', 'other', 'first', 'through', 'welcome', 'question', 'discussion', 'conversation']):
+                    important_single_words.append(word)
+            
+            # Count single words and add frequent ones
+            word_counter = Counter(important_single_words)
+            for word, count in word_counter.most_common(20):
+                if count >= 3:  # Appears at least 3 times
+                    concepts.append(word)
+            
+            # 3. Domain-specific terms that are actually relevant
+            domain_terms = []
+            
+            # Look for actual topics being discussed
+            activity_patterns = [
+                r'\b(?:content curation|content curator|conversational leader|buddy group|cohort|workshop|session|sync|onboarding|mentorship|coordination|feedback|analytics|automation|leadership)\b',
+                r'\b(?:agent ops|discord tool|channel analysis|reaction counter|watermarking|genai|social media|linkedin|google|anthropic|chatgpt)\b',
+                r'\b(?:net arch|forum discussion|group chat|zoom meeting|recording|guidelines|submission|deployment|implementation)\b'
+            ]
+            
+            for pattern in activity_patterns:
+                matches = re.findall(pattern, text)
+                domain_terms.extend(matches)
+            
+            concepts.extend(domain_terms)
+            
+            # Count all concepts and filter
+            concept_counter = Counter(concepts)
+            
+            # Final filtering for most relevant topics
+            final_concepts = []
+            for concept, count in concept_counter.most_common(25):
+                # Prioritize actual discussion topics over generic terms
+                concept_clean = concept.strip()
+                if (len(concept_clean) >= 5 and
+                    count >= 2 and
+                    concept_clean not in ['meeting today', 'thank you', 'good morning', 'everyone here', 'really good', 'really think', 'would like', 'think this', 'this really', 'really great', 'thank everyone', 'everyone thank', 'great work', 'good work', 'work with', 'working with']):
+                    final_concepts.append(concept_clean)
+                    
+                if len(final_concepts) >= 5:  # Limit to top 5
+                    break
+            
+            return final_concepts
             
         except Exception as e:
             print(f"Error extracting concepts: {str(e)}")
@@ -1392,25 +1399,45 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         try:
             await self.initialize()
             
-            # Get user statistics using async database connection
+            # Get user statistics with most active channel
             async with self.pool.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
+                WITH user_stats AS (
+                    SELECT 
+                        author_id,
+                        COALESCE(author_display_name, author_name) as display_name,
+                        COUNT(*) as message_count,
+                        COUNT(DISTINCT channel_name) as channels_active,
+                        AVG(LENGTH(content)) as avg_message_length,
+                        MIN(DATE(timestamp)) as first_message_date,
+                        MAX(DATE(timestamp)) as last_message_date
                     FROM messages
                     WHERE {self.base_filter}
+                    GROUP BY author_id, author_display_name, author_name
+                ),
+                user_top_channels AS (
+                    SELECT 
+                        author_id,
+                        channel_name as top_channel,
+                        COUNT(*) as channel_messages,
+                        ROW_NUMBER() OVER (PARTITION BY author_id ORDER BY COUNT(*) DESC) as rn
+                    FROM messages
+                    WHERE {self.base_filter}
+                    GROUP BY author_id, channel_name
                 )
                 SELECT 
-                    author_id,
-                    COALESCE(author_display_name, author_name) as display_name,
-                    COUNT(*) as message_count,
-                    COUNT(DISTINCT channel_name) as channels_active,
-                    AVG(LENGTH(content)) as avg_message_length,
-                    MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message
-                FROM filtered_messages
-                GROUP BY author_id, author_display_name, author_name
-                ORDER BY message_count DESC
-                LIMIT 15
+                    u.author_id,
+                    u.display_name,
+                    u.message_count,
+                    u.channels_active,
+                    u.avg_message_length,
+                    u.first_message_date,
+                    u.last_message_date,
+                    c.top_channel,
+                    c.channel_messages
+                FROM user_stats u
+                LEFT JOIN user_top_channels c ON u.author_id = c.author_id AND c.rn = 1
+                ORDER BY u.message_count DESC
+                LIMIT 10
             """) as cursor:
                 users = await cursor.fetchall()
             
@@ -1418,30 +1445,40 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 return "No user statistics available"
             
             # Format results with enhanced information
-            result = "**📊 Enhanced User Activity Statistics**\n\n"
+            result = "**📊 Top 10 User Activity Statistics**\n\n"
             
             for i, user in enumerate(users, 1):
                 display_name = user[1] if user[1] else "Unknown"
                 message_count = user[2]
                 channels_active = user[3]
                 avg_length = user[4] if user[4] else 0
-                first_msg = self.format_timestamp(user[5]) if user[5] else "Unknown"
-                last_msg = self.format_timestamp(user[6]) if user[6] else "Unknown"
+                first_date = user[5] if user[5] else "Unknown"
+                last_date = user[6] if user[6] else "Unknown"
+                top_channel = user[7] if user[7] else "Unknown"
+                channel_messages = user[8] if user[8] else 0
+                
+                # Format activity period as simple date range
+                if first_date != "Unknown" and last_date != "Unknown":
+                    if first_date == last_date:
+                        activity_period = first_date
+                    else:
+                        activity_period = f"{first_date} → {last_date}"
+                else:
+                    activity_period = "Unknown"
                 
                 result += f"**{i}. {display_name}**\n"
-                result += f"• Total Messages: {message_count:,}\n"
-                result += f"• Active Channels: {channels_active}\n"
-                result += f"• Average Message Length: {avg_length:.1f} characters\n"
-                result += f"• Activity Period: {first_msg} → {last_msg}\n"
+                result += f"• Messages: {message_count:,} • Channels: {channels_active} • Avg Length: {avg_length:.0f} chars\n"
+                result += f"• Most Active: #{top_channel} ({channel_messages} messages)\n"
+                result += f"• Active Period: {activity_period}\n"
                 
-                # Get user's main topics (simplified concept extraction)
+                # Get user's main topics with improved concept extraction
                 try:
                     async with self.pool.execute(f"""
                         SELECT content
                         FROM messages
                         WHERE author_id = ? AND {self.base_filter}
                         AND content IS NOT NULL 
-                        AND LENGTH(content) > 20
+                        AND LENGTH(content) > 50
                         ORDER BY timestamp DESC
                         LIMIT 100
                     """, (user[0],)) as cursor:
@@ -1450,7 +1487,13 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     if user_messages:
                         user_concepts = await self.extract_concepts_from_content(user_messages)
                         if user_concepts:
-                            result += f"• Main Topics: {', '.join(user_concepts[:3])}\n"
+                            # Filter for meaningful multi-word concepts
+                            meaningful_concepts = [concept for concept in user_concepts 
+                                                 if len(concept.split()) >= 2 or len(concept) > 6]
+                            if meaningful_concepts:
+                                result += f"• Main Topics: {', '.join(meaningful_concepts[:3])}\n"
+                            elif user_concepts:
+                                result += f"• Main Topics: {', '.join(user_concepts[:3])}\n"
                 
                 except Exception as e:
                     print(f"Error getting concepts for user {display_name}: {e}")
@@ -1461,9 +1504,8 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             total_messages = sum(user[2] for user in users)
             avg_channels_per_user = sum(user[3] for user in users) / len(users) if users else 0
             
-            result += f"**📈 Summary Statistics:**\n"
-            result += f"• Top {len(users)} users contributed {total_messages:,} messages\n"
-            result += f"• Average channels per active user: {avg_channels_per_user:.1f}\n"
+            result += f"**📈 Summary:**\n"
+            result += f"• Top 10 users: {total_messages:,} messages • Avg channels per user: {avg_channels_per_user:.1f}\n"
             
             return result
             
