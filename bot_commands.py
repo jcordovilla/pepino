@@ -431,11 +431,11 @@ class AnalysisCommands(commands.Cog):
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(
-        name="userstats_analysis", 
-        description="Enhanced user statistics with topic contributions and collaboration patterns"
+        name="top_users", 
+        description="Top 10 most active users with statistics and main topics"
     )
-    async def userstats_analysis(self, interaction: discord.Interaction):
-        """Enhanced user activity statistics with concept analysis"""
+    async def top_users(self, interaction: discord.Interaction):
+        """Top 10 most active users with statistics and main topics"""
         try:
             await self.analyzer.initialize()
             await interaction.response.defer()
@@ -507,7 +507,7 @@ class AnalysisCommands(commands.Cog):
 • `/topics_analysis` - Topic analysis with trends, optionally filtered by channel
 
 **📊 Enhanced Statistical Analysis Commands:**
-• `/userstats_analysis` - Enhanced user statistics with topic contributions
+• `/top_users` - Top 10 most active users with statistics and main topics
 • `/temporal_analysis` - Activity patterns with time-based topic analysis
 
 **📋 Utility Commands:**
