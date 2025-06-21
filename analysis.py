@@ -1986,6 +1986,89 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     except:
                         user_concepts = []
             
+            # Generate user activity chart for past 30 days
+            chart_path = None
+            try:
+                import matplotlib.pyplot as plt
+                import matplotlib.dates as mdates
+                from datetime import datetime, timedelta
+                import os
+                
+                # Get daily message counts for past 30 days for this user
+                async with self.pool.execute(f"""
+                    SELECT 
+                        DATE(timestamp) as date,
+                        COUNT(*) as messages
+                    FROM messages 
+                    WHERE author_id = ? AND {self.base_filter}
+                    AND timestamp IS NOT NULL
+                    AND DATE(timestamp) >= DATE('now', '-30 days')
+                    GROUP BY DATE(timestamp)
+                    ORDER BY date ASC
+                """, (author_id,)) as cursor:
+                    daily_activity = await cursor.fetchall()
+                
+                if daily_activity and len(daily_activity) > 1:
+                    # Prepare data for plotting
+                    dates = []
+                    message_counts = []
+                    
+                    for date_str, count in daily_activity:
+                        try:
+                            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                            dates.append(date_obj)
+                            message_counts.append(count)
+                        except:
+                            continue
+                    
+                    if dates and message_counts:
+                        # Create the plot
+                        plt.figure(figsize=(12, 6))
+                        plt.bar(dates, message_counts, color='#5865F2', alpha=0.7, edgecolor='#4752C4', linewidth=1)
+                        
+                        # Clean user name for chart title (remove emojis and special chars)
+                        clean_user_name = re.sub(r'[^\w\s-]', '', display_name)
+                        
+                        # Formatting
+                        plt.title(f'Daily Message Activity - {clean_user_name}', fontsize=16, fontweight='bold', pad=20)
+                        plt.xlabel('Date', fontsize=12)
+                        plt.ylabel('Number of Messages', fontsize=12)
+                        
+                        # Format x-axis
+                        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+                        plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates)//10)))
+                        plt.xticks(rotation=45)
+                        
+                        # Add grid for better readability
+                        plt.grid(True, alpha=0.3, axis='y')
+                        
+                        # Add some statistics to the plot
+                        avg_messages = sum(message_counts) / len(message_counts)
+                        max_messages = max(message_counts)
+                        
+                        plt.axhline(y=avg_messages, color='red', linestyle='--', alpha=0.7, 
+                                  label=f'Average: {avg_messages:.1f} msg/day')
+                        
+                        plt.legend()
+                        plt.tight_layout()
+                        
+                        # Save the chart with sanitized filename
+                        safe_user_name = re.sub(r'[^\w\s-]', '', display_name).replace(' ', '_').strip('_')
+                        if not safe_user_name:
+                            safe_user_name = "unknown_user"
+                        
+                        chart_filename = f"user_activity_{safe_user_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        chart_path = os.path.join('temp', chart_filename)
+                        
+                        # Ensure temp directory exists
+                        os.makedirs('temp', exist_ok=True)
+                        
+                        plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+                        plt.close()
+                        
+            except Exception as e:
+                print(f"Error generating user activity chart: {e}")
+            
             # Format results to match the original
             result = f"**User Analysis: {display_name}**\n\n"
             
@@ -2036,7 +2119,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 
                 result += '\n'.join(formatted_concepts) + "\n"
             
-            return result
+            # Return both text and chart path if chart was generated
+            if chart_path and os.path.exists(chart_path):
+                return (result, chart_path)
+            else:
+                return result
             
         except Exception as e:
             import traceback
