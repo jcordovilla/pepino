@@ -1005,7 +1005,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             return await self.get_available_channels()
 
     async def analyze_topics_spacy(self, args: dict = None) -> str:
-        """Analyze topics in messages using advanced spaCy NLP with trend analysis"""
+        """Simplified topic analysis with clean, actionable insights"""
         try:
             await self.initialize()
             
@@ -1046,14 +1046,14 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     else:
                         return f"Channel '{channel_filter}' not found. Available channels: {', '.join(channel_names[:10])}"
             
-            # Get messages with timestamps for trend analysis
+            # Get messages with minimum character filter
             if channel_filter:
                 async with self.pool.execute(f"""
                     SELECT content, timestamp, author_name
                     FROM messages 
                     WHERE channel_name = ? AND {self.base_filter}
                     AND content IS NOT NULL AND content != ''
-                    AND LENGTH(content) > 30
+                    AND LENGTH(content) > 50
                     ORDER BY timestamp DESC 
                     LIMIT 800
                 """, (channel_filter,)) as cursor:
@@ -1064,7 +1064,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     FROM messages 
                     WHERE {self.base_filter}
                     AND content IS NOT NULL AND content != ''
-                    AND LENGTH(content) > 30
+                    AND LENGTH(content) > 50
                     ORDER BY timestamp DESC 
                     LIMIT 800
                 """) as cursor:
@@ -1072,8 +1072,54 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             
             if not messages:
                 return "No messages found for topic analysis."
+
+            # Get comprehensive statistics for overview section
+            if channel_filter:
+                # Get channel-specific stats
+                async with self.pool.execute(f"""
+                    SELECT 
+                        COUNT(*) as total_messages,
+                        COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+                        COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
+                        COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions,
+                        COUNT(DISTINCT author_id) as active_contributors,
+                        AVG(LENGTH(content)) as avg_msg_length,
+                        MIN(timestamp) as earliest_msg,
+                        MAX(timestamp) as latest_msg
+                    FROM messages
+                    WHERE channel_name = ? AND {self.base_filter}
+                    AND content IS NOT NULL AND LENGTH(content) > 50
+                """, (channel_filter,)) as cursor:
+                    stats = await cursor.fetchone()
+                
+                # Get total channel members
+                async with self.pool.execute(f"""
+                    SELECT COUNT(DISTINCT user_id) as total_members
+                    FROM channel_members
+                    WHERE channel_name = ?
+                """, (channel_filter,)) as cursor:
+                    member_result = await cursor.fetchone()
+                    total_members = member_result[0] if member_result else 0
+            else:
+                # Global stats
+                async with self.pool.execute(f"""
+                    SELECT 
+                        COUNT(*) as total_messages,
+                        COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+                        COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
+                        COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions,
+                        COUNT(DISTINCT author_id) as active_contributors,
+                        AVG(LENGTH(content)) as avg_msg_length,
+                        MIN(timestamp) as earliest_msg,
+                        MAX(timestamp) as latest_msg
+                    FROM messages
+                    WHERE {self.base_filter}
+                    AND content IS NOT NULL AND LENGTH(content) > 50
+                """) as cursor:
+                    stats = await cursor.fetchone()
+                total_members = 0
             
-            # Advanced text cleaning to remove Discord noise
+            # Advanced text cleaning
             def clean_content(text):
                 # Remove Discord-specific patterns
                 text = re.sub(r'<@[!&]?\d+>', '', text)  # Remove mentions
@@ -1086,283 +1132,79 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 text = re.sub(r'\b(time zone|buddy group|display name|main goal|learning topics)\b', '', text, flags=re.IGNORECASE)
                 text = re.sub(r'\b(the server|the session|the recording|the future)\b', '', text, flags=re.IGNORECASE)
                 text = re.sub(r'\b(messages?|channel|group|topic|session|meeting)\b', '', text, flags=re.IGNORECASE)
-                text = re.sub(r'\b\d+\s*(minutes?|hours?|days?|weeks?|months?)\b', '', text, flags=re.IGNORECASE)
                 text = re.sub(r'\s+', ' ', text).strip()
                 return text
             
-            # Process messages with enhanced analysis
-            docs = []
+            # Process messages for topics
             technical_terms = Counter()
             business_concepts = Counter()
-            innovation_indicators = Counter()
-            discussion_themes = defaultdict(list)
+            key_discussions = Counter()
             temporal_trends = defaultdict(list)
             
-            # Define domain-specific patterns
+            # Define focused patterns
             tech_patterns = [
-                r'\b(AI|ML|LLM|GPT|algorithm|model|neural|API|cloud|automation|pipeline|framework)\b',
-                r'\b(python|javascript|typescript|react|node|docker|kubernetes|aws|azure)\b',
-                r'\b(database|sql|nosql|analytics|visualization|dashboard|metrics)\b'
+                r'\b(AI|ML|LLM|GPT|algorithm|model|neural|API|cloud|automation|pipeline|framework|metrics)\b'
             ]
             
             business_patterns = [
-                r'\b(strategy|roadmap|KPI|ROI|revenue|growth|market|customer|client)\b',
-                r'\b(product|service|solution|platform|integration|deployment|scale)\b',
-                r'\b(team|collaboration|workflow|process|efficiency|optimization)\b'
+                r'\b(team|collaboration|workflow|process|efficiency|optimization|integration|strategy|growth|solution|deployment)\b'
             ]
             
-            innovation_pattern_list = [
-                r'\b(innovation|transformation|disruption|breakthrough|cutting.edge)\b',
-                r'\b(future|trend|emerging|next.gen|state.of.the.art|revolutionary)\b',
-                r'\b(experiment|prototype|pilot|proof.of_concept|MVP|beta)\b'
-            ]
-            
-            # Process messages with advanced spaCy analysis
-            docs = []
-            technical_terms = Counter()
-            business_concepts = Counter()
-            innovation_indicators = Counter()
-            complex_phrases = Counter()
-            semantic_concepts = defaultdict(list)
-            discussion_themes = defaultdict(list)
-            temporal_trends = defaultdict(list)
-            sentence_contexts = []
-            
-            # Advanced spaCy patterns for complex phrase detection
-            def extract_complex_concepts(doc):
-                """Extract complex multi-word concepts using dependency parsing"""
-                concepts = []
-                
-                # Extract compound subjects with their predicates
-                for token in doc:
-                    if token.dep_ == "nsubj" and token.pos_ in ["NOUN", "PROPN"]:
-                        # Get the full noun phrase subject
-                        subject_span = doc[token.left_edge.i:token.right_edge.i+1]
-                        
-                        # Get the predicate (verb and its objects)
-                        if token.head.pos_ == "VERB":
-                            verb = token.head
-                            predicate_parts = [verb.text]
-                            
-                            # Add direct objects, prepositional objects
-                            for child in verb.children:
-                                if child.dep_ in ["dobj", "pobj", "attr", "prep"]:
-                                    obj_span = doc[child.left_edge.i:child.right_edge.i+1]
-                                    predicate_parts.append(obj_span.text)
-                            
-                            if len(predicate_parts) > 1:
-                                full_concept = f"{subject_span.text} {' '.join(predicate_parts)}"
-                                if len(full_concept.split()) >= 3 and len(full_concept) > 15:
-                                    concepts.append(full_concept.lower().strip())
-                
-                # Extract complex noun phrases with modifiers
-                for chunk in doc.noun_chunks:
-                    # Get extended noun phrases including prepositional phrases
-                    extended_phrase = chunk.text
-                    
-                    # Look for prepositional phrases attached to this chunk
-                    for token in chunk:
-                        for child in token.children:
-                            if child.dep_ == "prep":
-                                prep_phrase = doc[child.i:child.right_edge.i+1]
-                                extended_phrase += f" {prep_phrase.text}"
-                    
-                    if len(extended_phrase.split()) >= 3 and len(extended_phrase) > 20:
-                        concepts.append(extended_phrase.lower().strip())
-                
-                # Extract technical compounds (noun + noun + noun patterns)
-                for i, token in enumerate(doc[:-2]):
-                    if (token.pos_ in ["NOUN", "PROPN"] and 
-                        doc[i+1].pos_ in ["NOUN", "PROPN", "ADJ"] and 
-                        doc[i+2].pos_ in ["NOUN", "PROPN"]):
-                        
-                        # Check if they form a meaningful technical term
-                        compound = f"{token.text} {doc[i+1].text} {doc[i+2].text}"
-                        
-                        # Look ahead for even longer compounds
-                        j = i + 3
-                        while j < len(doc) and doc[j].pos_ in ["NOUN", "PROPN"] and j < i + 6:
-                            compound += f" {doc[j].text}"
-                            j += 1
-                        
-                        if len(compound.split()) >= 3:
-                            concepts.append(compound.lower())
-                
-                return concepts
-            
-            def extract_semantic_relationships(doc):
-                """Extract semantic relationships using dependency parsing"""
-                relationships = []
-                
-                # Find cause-effect relationships
-                for token in doc:
-                    if token.lemma_ in ["cause", "lead", "result", "enable", "drive", "impact"]:
-                        # Get what causes what
-                        cause = None
-                        effect = None
-                        
-                        for child in token.children:
-                            if child.dep_ in ["nsubj", "nsubjpass"]:
-                                cause_span = doc[child.left_edge.i:child.right_edge.i+1]
-                                cause = cause_span.text
-                            elif child.dep_ in ["dobj", "attr"]:
-                                effect_span = doc[child.left_edge.i:child.right_edge.i+1]
-                                effect = effect_span.text
-                        
-                        if cause and effect and len(f"{cause} → {effect}") > 10:
-                            relationships.append(f"{cause} → {effect}")
-                
-                # Find comparative relationships
-                for token in doc:
-                    if token.pos_ == "ADJ" and token.dep_ == "acomp":
-                        # Get what's being compared
-                        subject = None
-                        for sibling in token.head.children:
-                            if sibling.dep_ == "nsubj":
-                                subj_span = doc[sibling.left_edge.i:sibling.right_edge.i+1]
-                                subject = subj_span.text
-                        
-                        if subject:
-                            comparison = f"{subject} is {token.text}"
-                            if len(comparison) > 8:
-                                relationships.append(comparison)
-                
-                return relationships
-            
-            # Define advanced domain patterns
-            tech_patterns = [
-                r'\b(AI|ML|LLM|GPT|algorithm|model|neural|API|cloud|automation|pipeline|framework)\b',
-                r'\b(python|javascript|typescript|react|node|docker|kubernetes|aws|azure)\b',
-                r'\b(database|sql|nosql|analytics|visualization|dashboard|metrics)\b'
-            ]
-            
-            business_patterns = [
-                r'\b(strategy|roadmap|KPI|ROI|revenue|growth|market|customer|client)\b',
-                r'\b(product|service|solution|platform|integration|deployment|scale)\b',
-                r'\b(team|collaboration|workflow|process|efficiency|optimization)\b'
-            ]
-            
-            innovation_pattern_list = [
-                r'\b(innovation|transformation|disruption|breakthrough|cutting.edge)\b',
-                r'\b(future|trend|emerging|next.gen|state.of.the.art|revolutionary)\b',
-                r'\b(experiment|prototype|pilot|proof.of_concept|MVP|beta)\b'
-            ]
-            
-            for i, msg in enumerate(messages):
+            for msg in messages:
                 content, timestamp, author = msg[0], msg[1], msg[2]
-                
-                # Skip very short or formulaic messages
-                if len(content.split()) < 6:
-                    continue
-                    
                 cleaned_content = clean_content(content)
-                if len(cleaned_content.split()) < 4:
+                
+                if len(cleaned_content.split()) < 5:
                     continue
                 
                 try:
                     doc = nlp(cleaned_content)
                     
-                    # Store sentence-level context for later analysis
-                    for sent in doc.sents:
-                        if len(sent.text.split()) >= 5:
-                            sentence_contexts.append({
-                                'text': sent.text,
-                                'author': author,
-                                'timestamp': timestamp,
-                                'main_concepts': [token.lemma_ for token in sent if token.pos_ in ['NOUN', 'PROPN'] and not token.is_stop]
-                            })
-                    
-                    docs.append((doc, timestamp, author, content))
-                    
-                    # Extract complex concepts using advanced spaCy features
-                    complex_concepts = extract_complex_concepts(doc)
-                    for concept in complex_concepts:
-                        if len(concept.split()) >= 3:
-                            complex_phrases[concept] += 1
-                            
-                            # Categorize by semantic content
-                            if any(tech in concept for tech in ['ai', 'ml', 'data', 'algorithm', 'api', 'tech', 'system', 'platform', 'tool']):
-                                semantic_concepts['Advanced Technology'].append(concept)
-                            elif any(biz in concept for biz in ['business', 'strategy', 'market', 'customer', 'revenue', 'growth', 'team', 'process']):
-                                semantic_concepts['Business Strategy'].append(concept)
-                            elif any(inn in concept for inn in ['innovation', 'future', 'transform', 'disrupt', 'emerging', 'new', 'next']):
-                                semantic_concepts['Innovation & Future'].append(concept)
-                            else:
-                                semantic_concepts['General Discussion'].append(concept)
-                    
-                    # Extract semantic relationships
-                    relationships = extract_semantic_relationships(doc)
-                    for rel in relationships:
-                        semantic_concepts['Cause & Effect'].append(rel)
-                    
-                    # Extract simple patterns for baseline
+                    # Extract technical terms
                     for pattern in tech_patterns:
                         matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
                         for match in matches:
-                            technical_terms[match.lower()] += 1
+                            technical_terms[match.upper()] += 1
                     
+                    # Extract business concepts
                     for pattern in business_patterns:
                         matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
                         for match in matches:
                             business_concepts[match.lower()] += 1
                     
-                    for pattern in innovation_pattern_list:
-                        matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
-                        for match in matches:
-                            innovation_indicators[match.lower()] += 1
+                    # Extract multi-word discussion themes
+                    for chunk in doc.noun_chunks:
+                        if (len(chunk.text.split()) >= 3 and 
+                            len(chunk.text) > 15 and
+                            chunk.text.lower() not in ['the conversational leaders', 'the community coordinators']):
+                            
+                            clean_chunk = re.sub(r'^(the|a|an)\s+', '', chunk.text.lower()).strip()
+                            if len(clean_chunk.split()) >= 2:
+                                key_discussions[clean_chunk.title()] += 1
                     
-                    # Time-based trend analysis with concepts
+                    # Time-based trends
                     try:
                         msg_date = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).date()
                         week_key = msg_date.strftime('%Y-W%U')
                         
-                        # Add complex concepts to temporal trends
-                        temporal_trends[week_key].extend([concept.split()[0] for concept in complex_concepts if concept])
+                        # Add significant concepts to trends
+                        main_concepts = [token.lemma_.lower() for token in doc 
+                                       if token.pos_ in ['NOUN', 'PROPN'] and 
+                                       not token.is_stop and len(token.text) > 3]
+                        temporal_trends[week_key].extend(main_concepts[:3])
                         
                     except:
                         pass
                 
-                except Exception as e:
+                except Exception:
                     continue
             
-            if not docs:
-                return "No meaningful content found for analysis."
-            
-            # Advanced topic clustering using semantic similarity
-            semantic_clusters = defaultdict(list)
-            conversation_flows = []
-            
-            # Analyze conversation flows (who responds to whom about what)
-            for i, (doc1, ts1, author1, content1) in enumerate(docs[:100]):
-                doc1_concepts = [token.lemma_.lower() for token in doc1 
-                               if token.pos_ in ['NOUN', 'ADJ', 'VERB'] and not token.is_stop]
-                
-                for j, (doc2, ts2, author2, content2) in enumerate(docs[:100]):
-                    if i >= j or author1 == author2:
-                        continue
-                    
-                    doc2_concepts = [token.lemma_.lower() for token in doc2 
-                                   if token.pos_ in ['NOUN', 'ADJ', 'VERB'] and not token.is_stop]
-                    
-                    # Calculate semantic overlap
-                    set1, set2 = set(doc1_concepts), set(doc2_concepts)
-                    if len(set1.union(set2)) > 0:
-                        similarity = len(set1.intersection(set2)) / len(set1.union(set2))
-                        if similarity > 0.4:  # Higher threshold for quality
-                            common_concepts = list(set1.intersection(set2))[:3]
-                            if common_concepts:
-                                conversation_flows.append({
-                                    'participants': [author1, author2],
-                                    'concepts': common_concepts,
-                                    'similarity': similarity
-                                })
-            
-            # Trend analysis - identify emerging vs declining topics
-            trend_analysis = {}
-            if len(temporal_trends) >= 2:
+            # Calculate trend analysis
+            emerging_topics = []
+            if len(temporal_trends) >= 3:
                 all_weeks = sorted(temporal_trends.keys())
                 recent_weeks = all_weeks[-2:]
-                older_weeks = all_weeks[:-2] if len(all_weeks) > 2 else []
+                older_weeks = all_weeks[:-2]
                 
                 recent_concepts = Counter()
                 older_concepts = Counter()
@@ -1372,127 +1214,83 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 for week in older_weeks:
                     older_concepts.update(temporal_trends[week])
                 
-                # Find emerging topics (high in recent, low in older)
-                emerging = []
-                declining = []
-                
-                for concept, recent_count in recent_concepts.most_common(20):
+                for concept, recent_count in recent_concepts.most_common(10):
                     older_count = older_concepts.get(concept, 0)
                     if recent_count >= 3:
                         ratio = recent_count / max(older_count, 1)
-                        if ratio > 2 and older_count < recent_count:
-                            emerging.append((concept, recent_count, ratio))
-                        elif ratio < 0.5 and older_count > recent_count:
-                            declining.append((concept, older_count, ratio))
+                        if ratio > 2.0:
+                            emerging_topics.append((concept, recent_count, ratio))
+            
+            # Format simplified results
+            result = f"🧠 Topic Analysis: #{channel_filter}\n\n"
+            
+            # Enhanced overview section
+            if stats:
+                total_msgs = stats[0] if stats[0] else 0
+                total_replies = stats[1] if stats[1] else 0
+                original_posts = stats[2] if stats[2] else 1
+                posts_with_reactions = stats[3] if stats[3] else 0
+                active_contributors = stats[4] if stats[4] else 0
+                avg_length = int(stats[5]) if stats[5] else 0
+                earliest = stats[6] if stats[6] else None
+                latest = stats[7] if stats[7] else None
                 
-                trend_analysis = {'emerging': emerging[:5], 'declining': declining[:5]}
-            
-            # Format sophisticated results
-            result = "**🧠 Advanced Topic & Trend Analysis**\n\n"
-            if channel_filter:
-                result += f"**Channel: #{channel_filter}**\n\n"
-            
-            result += f"**📊 Analyzed {len([d for d in docs if d])} substantial messages**\n"
-            
-            # Add engagement metrics for topics analysis
-            if channel_filter:
-                # Calculate engagement for the specific channel
-                engagement_query = f"""
-                    SELECT 
-                        COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
-                        COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
-                        COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions,
-                        COUNT(*) as total_messages
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
-                """
+                replies_per_post = total_replies / original_posts if original_posts > 0 else 0
+                reaction_rate = (posts_with_reactions / total_msgs * 100) if total_msgs > 0 else 0
+                participation_rate = (active_contributors / total_members * 100) if total_members > 0 else 0
                 
-                async with self.pool.execute(engagement_query, (channel_filter,)) as cursor:
-                    engagement_stats = await cursor.fetchone()
+                result += "📊 Channel Overview:\n"
+                result += f"• {total_msgs} substantial messages analyzed (50+ character minimum)\n"
+                result += f"• {replies_per_post:.2f} average replies per post\n"
+                result += f"• {reaction_rate:.1f}% reaction rate (messages with reactions)\n"
+                if total_members > 0:
+                    result += f"• {total_members} total members, {active_contributors} active contributors ({participation_rate:.1f}% participation)\n"
+                result += f"• Average message length: {avg_length} characters\n"
                 
-                if engagement_stats:
-                    total_replies = engagement_stats[0] if engagement_stats[0] else 0
-                    original_posts = engagement_stats[1] if engagement_stats[1] else 1
-                    posts_with_reactions = engagement_stats[2] if engagement_stats[2] else 0
-                    total_messages = engagement_stats[3] if engagement_stats[3] else 1
-                    
-                    replies_per_post = total_replies / original_posts if original_posts > 0 else 0
-                    reaction_rate = (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0
-                    
-                    result += f"**📈 Engagement: {replies_per_post:.2f} replies/post, {reaction_rate:.1f}% reaction rate**\n"
-            
-            result += "\n"
-            
-            # Technical Innovation Topics
-            if technical_terms:
-                result += "**🔬 Technical Innovation Topics:**\n"
-                for term, count in technical_terms.most_common(10):
-                    if count >= 3:
-                        result += f"• {term.upper()} ({count} discussions)\n"
+                if earliest and latest:
+                    try:
+                        start_date = datetime.fromisoformat(earliest.replace('Z', '+00:00')).strftime('%b %Y')
+                        end_date = datetime.fromisoformat(latest.replace('Z', '+00:00')).strftime('%b %Y')
+                        if start_date == end_date:
+                            result += f"• Activity timeframe: {start_date}\n"
+                        else:
+                            result += f"• Activity timeframe: {start_date} - {end_date}\n"
+                    except:
+                        pass
+                
                 result += "\n"
             
-            # Business & Strategy Themes
+            # Technical Topics
+            if technical_terms:
+                result += "🔧 Technical Topics:\n"
+                for term, count in technical_terms.most_common(8):
+                    if count >= 3:
+                        result += f"• {term} ({count} discussions)\n"
+                result += "\n"
+            
+            # Business Topics  
             if business_concepts:
-                result += "**📈 Business & Strategy Themes:**\n"
-                for concept, count in business_concepts.most_common(8):
-                    if count >= 2:
+                result += "� Business Topics:\n"
+                for concept, count in business_concepts.most_common(6):
+                    if count >= 3:
                         result += f"• {concept.title()} ({count} mentions)\n"
                 result += "\n"
             
-            # Innovation Indicators
-            if innovation_indicators:
-                result += "**� Innovation & Future Focus:**\n"
-                for pattern, count in innovation_indicators.most_common(6):
+            # Key Discussion Threads
+            if key_discussions:
+                result += "🎯 Key Discussion Threads:\n"
+                for discussion, count in key_discussions.most_common(8):
                     if count >= 2:
-                        result += f"• {pattern.title()} ({count} mentions)\n"
+                        result += f"• {discussion} ({count} discussions)\n"
                 result += "\n"
             
-            # Complex Multi-word Concepts (NEW!)
-            if complex_phrases:
-                result += "**🎯 Complex Discussion Topics:**\n"
-                for phrase, count in complex_phrases.most_common(12):
-                    if count >= 2 and len(phrase.split()) >= 3:
-                        result += f"• {phrase.title()} ({count} discussions)\n"
-                result += "\n"
-            
-            # Semantic Concept Categories (NEW!)
-            for category, concepts in semantic_concepts.items():
-                if len(concepts) >= 3:
-                    concept_counts = Counter(concepts)
-                    top_concepts = concept_counts.most_common(6)
-                    if top_concepts and any(count >= 2 for _, count in top_concepts):
-                        result += f"**🔍 {category}:**\n"
-                        for concept, count in top_concepts:
-                            if count >= 2:
-                                result += f"• {concept.title()} ({count}x)\n"
-                        result += "\n"
-
-            # Conversation Flow Analysis
-            if conversation_flows:
-                result += "**�️ Key Conversation Flows:**\n"
-                flow_summary = defaultdict(int)
-                for flow in conversation_flows:
-                    concept_key = ' + '.join(flow['concepts'][:2])
-                    flow_summary[concept_key] += 1
-                
-                for flow, count in sorted(flow_summary.items(), key=lambda x: x[1], reverse=True)[:5]:
-                    if count >= 2:
-                        result += f"• {flow.title()} ({count} collaborative discussions)\n"
-                result += "\n"
-            
-            # Trend Analysis
-            if trend_analysis:
-                if trend_analysis['emerging']:
-                    result += "**📈 Emerging Trends:**\n"
-                    for concept, count, ratio in trend_analysis['emerging']:
-                        result += f"• {concept.title()} ({count} mentions, {ratio:.1f}x growth)\n"
-                    result += "\n"
-                
-                if trend_analysis['declining']:
-                    result += "**� Declining Topics:**\n"
-                    for concept, count, ratio in trend_analysis['declining']:
-                        result += f"• {concept.title()} (was {count} mentions)\n"
-                    result += "\n"
+            # Trending Topics
+            if emerging_topics:
+                result += "📈 Trending: "
+                trending_items = []
+                for concept, count, ratio in emerging_topics[:3]:
+                    trending_items.append(f"{concept.title()} ({ratio:.1f}x growth)")
+                result += ", ".join(trending_items) + "\n"
             
             return result
             
