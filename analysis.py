@@ -2152,7 +2152,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             """, (resolved_channel,)) as cursor:
                 day_activity = await cursor.fetchall()
             
-            # Get recent activity (last 10 days)
+            # Get recent activity (last 7 days)
             async with self.pool.execute(f"""
                 SELECT 
                     DATE(timestamp) as date,
@@ -2160,10 +2160,10 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 FROM messages 
                 WHERE channel_name = ? AND {self.base_filter}
                 AND timestamp IS NOT NULL
-                AND DATE(timestamp) >= DATE('now', '-10 days')
+                AND DATE(timestamp) >= DATE('now', '-7 days')
                 GROUP BY DATE(timestamp)
                 ORDER BY date DESC
-                LIMIT 5
+                LIMIT 7
             """, (resolved_channel,)) as cursor:
                 recent_activity = await cursor.fetchall()
             
@@ -2428,7 +2428,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             
             # Recent Activity
             if recent_activity:
-                result += f"**Recent Activity (Last 10 Days):**\n"
+                result += f"**Recent Activity (Last 7 Days):**\n"
                 for date, count in recent_activity:
                     result += f"• {date}: {count} messages\n"
                 result += "\n"
