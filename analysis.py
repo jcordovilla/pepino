@@ -482,11 +482,13 @@ class MessageAnalyzer:
         
         return chain_stats
 
-    async def update_temporal_stats(self, args: dict = None) -> str:
-        """Update temporal activity statistics"""
+    async def update_temporal_stats(self, args: dict = None) -> tuple:
+        """Enhanced server activity trends with 30-day message evolution chart"""
         try:
-            # Get temporal statistics
-            cursor = self.conn.execute(f"""
+            await self.initialize()
+            
+            # Get temporal statistics using async database connection
+            async with self.pool.execute(f"""
                 SELECT 
                     CAST(strftime('%H', timestamp) AS INTEGER) as hour,
                     CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
@@ -497,11 +499,25 @@ class MessageAnalyzer:
                 AND timestamp IS NOT NULL
                 GROUP BY hour, day_of_week, date
                 ORDER BY date, hour
-            """)
+            """) as cursor:
+                stats = await cursor.fetchall()
             
-            stats = cursor.fetchall()
             if not stats:
-                return "No temporal statistics available"
+                return ("No activity trends data available", None)
+            
+            # Get last 30 days server-wide daily activity for chart
+            async with self.pool.execute(f"""
+                SELECT 
+                    DATE(timestamp) as date,
+                    COUNT(*) as daily_count
+                FROM messages
+                WHERE {self.base_filter}
+                AND timestamp >= date('now', '-30 days')
+                AND timestamp IS NOT NULL
+                GROUP BY DATE(timestamp)
+                ORDER BY date
+            """) as cursor:
+                daily_activity = await cursor.fetchall()
             
             # Process statistics
             hourly_stats = {}
@@ -531,51 +547,143 @@ class MessageAnalyzer:
                     weekly_stats[day_of_week] = 0
                 weekly_stats[day_of_week] += message_count
             
-            # Format results
-            result = "**📊 Temporal Activity Analysis**\n\n"
+            # Generate server activity chart
+            chart_path = None
+            if daily_activity:
+                try:
+                    import matplotlib.pyplot as plt
+                    import matplotlib.dates as mdates
+                    from datetime import datetime, timedelta
+                    import os
+                    
+                    # Prepare data for chart
+                    dates = []
+                    counts = []
+                    
+                    for row in daily_activity:
+                        date_str = row[0]
+                        count = row[1]
+                        dates.append(datetime.strptime(date_str, '%Y-%m-%d'))
+                        counts.append(count)
+                    
+                    # Create chart
+                    plt.figure(figsize=(14, 8))
+                    plt.style.use('default')
+                    
+                    # Main plot
+                    plt.subplot(2, 1, 1)
+                    plt.plot(dates, counts, linewidth=2.5, color='#5865F2', marker='o', markersize=4)
+                    plt.fill_between(dates, counts, alpha=0.3, color='#5865F2')
+                    plt.title('📈 Server Activity Trends - Past 30 Days', fontsize=16, fontweight='bold', pad=20)
+                    plt.xlabel('Date', fontsize=12)
+                    plt.ylabel('Daily Messages', fontsize=12)
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Format x-axis
+                    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+                    plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=3))
+                    plt.xticks(rotation=45)
+                    
+                    # Add trend statistics
+                    if len(counts) > 1:
+                        avg_daily = sum(counts) / len(counts)
+                        max_day = max(counts)
+                        min_day = min(counts)
+                        recent_avg = sum(counts[-7:]) / min(7, len(counts))  # Last 7 days
+                        
+                        plt.text(0.02, 0.98, f'📊 Statistics:\\n• Daily Average: {avg_daily:.0f} messages\\n• Peak Day: {max_day} messages\\n• Last 7 Days Avg: {recent_avg:.0f} messages', 
+                                transform=plt.gca().transAxes, fontsize=10,
+                                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                    
+                    # Weekly pattern subplot
+                    plt.subplot(2, 1, 2)
+                    if daily_stats:
+                        days_ordered = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                        day_counts = [daily_stats.get(day, 0) for day in days_ordered]
+                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8']
+                        
+                        bars = plt.bar(days_ordered, day_counts, color=colors, alpha=0.8)
+                        plt.title('📅 Activity by Day of Week', fontsize=14, fontweight='bold', pad=15)
+                        plt.ylabel('Total Messages', fontsize=11)
+                        plt.xticks(rotation=45)
+                        
+                        # Add value labels on bars
+                        for bar, count in zip(bars, day_counts):
+                            if count > 0:
+                                plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(day_counts)*0.01, 
+                                        f'{count:,}', ha='center', va='bottom', fontsize=9)
+                    
+                    plt.tight_layout()
+                    
+                    # Save chart
+                    os.makedirs('temp', exist_ok=True)
+                    chart_path = f"temp/server_activity_trends_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+                    plt.close()
+                    
+                except Exception as e:
+                    print(f"Error generating activity chart: {e}")
+                    chart_path = None
+            
+            # Format results with improved layout
+            result = "**⏰ Server Activity Trends & Patterns**\\n\\n"
+            
+            # Overview stats
+            if daily_activity:
+                total_messages = sum(row[1] for row in daily_activity)
+                days_with_data = len(daily_activity)
+                avg_daily = total_messages / days_with_data if days_with_data > 0 else 0
+                
+                result += f"**📊 30-Day Overview:**\\n"
+                result += f"• Total Messages: {total_messages:,}\\n"
+                result += f"• Daily Average: {avg_daily:.1f} messages\\n"
+                result += f"• Active Days: {days_with_data}/30\\n\\n"
             
             # Peak hours
             if hourly_stats:
                 sorted_hours = sorted(hourly_stats.items(), key=lambda x: x[1], reverse=True)
-                result += "**🕐 Peak Activity Hours:**\n"
+                result += "**🕐 Peak Activity Hours:**\\n"
                 for hour, count in sorted_hours[:5]:
                     time_str = f"{hour:02d}:00-{hour:02d}:59"
-                    result += f"• {time_str}: {count:,} messages\n"
-                result += "\n"
+                    result += f"• {time_str}: {count:,} messages\\n"
+                result += "\\n"
             
             # Daily distribution
             if daily_stats:
-                result += "**📅 Activity by Day of Week:**\n"
-                for day in day_names:
-                    if day in daily_stats:
-                        count = daily_stats[day]
-                        result += f"• {day}: {count:,} messages\n"
-                result += "\n"
+                result += "**📅 Most Active Days:**\\n"
+                sorted_days = sorted(daily_stats.items(), key=lambda x: x[1], reverse=True)
+                for day, count in sorted_days[:3]:
+                    result += f"• {day}: {count:,} messages\\n"
+                result += "\\n"
             
-            # Activity patterns
+            # Activity patterns summary
             if hourly_stats:
-                result += "**⏰ Activity Patterns:**\n"
+                result += "**🌅 Daily Activity Patterns:**\\n"
                 
-                # Morning (6-11)
+                # Morning (6-11), Afternoon (12-17), Evening (18-23), Night (0-5)
                 morning = sum(hourly_stats.get(h, 0) for h in range(6, 12))
-                # Afternoon (12-17)
                 afternoon = sum(hourly_stats.get(h, 0) for h in range(12, 18))
-                # Evening (18-23)
                 evening = sum(hourly_stats.get(h, 0) for h in range(18, 24))
-                # Night (0-5)
                 night = sum(hourly_stats.get(h, 0) for h in range(0, 6))
                 
                 total = morning + afternoon + evening + night
                 if total > 0:
-                    result += f"• Morning (06-11): {morning:,} messages ({morning/total*100:.1f}%)\n"
-                    result += f"• Afternoon (12-17): {afternoon:,} messages ({afternoon/total*100:.1f}%)\n"
-                    result += f"• Evening (18-23): {evening:,} messages ({evening/total*100:.1f}%)\n"
-                    result += f"• Night (00-05): {night:,} messages ({night/total*100:.1f}%)\n"
+                    result += f"• 🌅 Morning (06-11): {morning:,} ({morning/total*100:.1f}%)\\n"
+                    result += f"• ☀️ Afternoon (12-17): {afternoon:,} ({afternoon/total*100:.1f}%)\\n"
+                    result += f"• 🌆 Evening (18-23): {evening:,} ({evening/total*100:.1f}%)\\n"
+                    result += f"• 🌙 Night (00-05): {night:,} ({night/total*100:.1f}%)\\n"
+                    
+                    # Identify peak period
+                    periods = [('Morning', morning), ('Afternoon', afternoon), ('Evening', evening), ('Night', night)]
+                    peak_period = max(periods, key=lambda x: x[1])
+                    result += f"\\n🏆 **Peak Period**: {peak_period[0]} ({peak_period[1]:,} messages)\\n"
             
-            return result
+            return (result, chart_path)
             
         except Exception as e:
-            return f"Error updating temporal statistics: {str(e)}"
+            import traceback
+            traceback.print_exc()
+            return (f"Error analyzing activity trends: {str(e)}", None)
 
     def run_all_analyses(self) -> Dict[str, Any]:
         """Run all analysis updates and return a comprehensive summary"""

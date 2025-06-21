@@ -456,11 +456,11 @@ class AnalysisCommands(commands.Cog):
                 await interaction.followup.send(f"Error during user statistics analysis: {str(e)}")
 
     @app_commands.command(
-        name="temporal_analysis",
-        description="Analyze temporal patterns of message activity"
+        name="activity_trends",
+        description="Server activity trends and patterns over the past 30 days"
     )
-    async def temporal_analysis(self, interaction: discord.Interaction):
-        """Update temporal activity patterns"""
+    async def activity_trends(self, interaction: discord.Interaction):
+        """Server activity trends and patterns over the past 30 days"""
         try:
             await self.analyzer.initialize()
             await interaction.response.defer()
@@ -488,9 +488,9 @@ class AnalysisCommands(commands.Cog):
                     
         except Exception as e:
             if not interaction.response.is_done():
-                await interaction.response.send_message(f"Error during temporal analysis: {str(e)}")
+                await interaction.response.send_message(f"Error during activity trends analysis: {str(e)}")
             else:
-                await interaction.followup.send(f"Error during temporal analysis: {str(e)}")
+                await interaction.followup.send(f"Error during activity trends analysis: {str(e)}")
 
     @app_commands.command(
         name="help_analysis",
@@ -508,7 +508,7 @@ class AnalysisCommands(commands.Cog):
 
 **📊 Enhanced Statistical Analysis Commands:**
 • `/top_users` - Top 10 most active users with statistics and main topics
-• `/temporal_analysis` - Activity patterns with time-based topic analysis
+• `/activity_trends` - Server activity trends and patterns over the past 30 days
 
 **📋 Utility Commands:**
 • `/list_users` - Show all available users
