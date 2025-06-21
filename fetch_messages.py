@@ -26,6 +26,7 @@ intents.message_content = True
 intents.guilds = True
 intents.messages = True
 intents.reactions = True  # Enable reactions intent to capture reaction data
+intents.members = True    # Enable members intent to see channel membership
 
 def extract_emojis(text):
     # Fixed regex for Unicode emojis to capture common emoji ranges
