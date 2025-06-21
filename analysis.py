@@ -2179,6 +2179,24 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             weekly_active = weekly_active_result[0] if weekly_active_result else 0
             channel_amp = (weekly_active / unique_users * 100) if unique_users > 0 else 0
             
+            # Get inactive users (users who posted before but not in last 7 days)
+            async with self.pool.execute(f"""
+                SELECT COUNT(DISTINCT author_id) as inactive_users
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND timestamp < datetime('now', '-7 days')
+                AND author_id NOT IN (
+                    SELECT DISTINCT author_id 
+                    FROM messages 
+                    WHERE channel_name = ? AND {self.base_filter}
+                    AND timestamp >= datetime('now', '-7 days')
+                )
+            """, (resolved_channel, resolved_channel)) as cursor:
+                inactive_result = await cursor.fetchone()
+            
+            inactive_users = inactive_result[0] if inactive_result else 0
+            inactive_percentage = (inactive_users / unique_users * 100) if unique_users > 0 else 0
+            
             # Extract top topics using advanced spaCy analysis
             top_topics = []
             try:
@@ -2435,9 +2453,10 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             
             # Channel Health Metrics
             result += f"**📈 Channel Health Metrics:**\n"
-            result += f"• Channel AMP: {channel_amp:.1f}% ({weekly_active}/{unique_users} members active this week)\n"
             result += f"• Total Members Ever Active: {unique_users}\n"
-            result += f"• Weekly Active Members: {weekly_active}\n\n"
+            result += f"• Weekly Active Members: {weekly_active} ({channel_amp:.1f}%)\n"
+            result += f"• Recently Inactive Members: {inactive_users} ({inactive_percentage:.1f}%)\n"
+            result += f"• Activity Ratio: {weekly_active} active / {inactive_users} inactive\n\n"
             
             # Top Topics Discussed
             if top_topics:
