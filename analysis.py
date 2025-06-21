@@ -2197,6 +2197,28 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             inactive_users = inactive_result[0] if inactive_result else 0
             inactive_percentage = (inactive_users / unique_users * 100) if unique_users > 0 else 0
             
+            # Get total channel members (from new channel_members table)
+            total_channel_members = 0
+            lurkers = 0
+            participation_rate = 0
+            
+            try:
+                async with self.pool.execute(f"""
+                    SELECT COUNT(DISTINCT user_id) as total_members
+                    FROM channel_members 
+                    WHERE channel_name = ?
+                """, (resolved_channel,)) as cursor:
+                    member_result = await cursor.fetchone()
+                
+                if member_result and member_result[0]:
+                    total_channel_members = member_result[0]
+                    lurkers = total_channel_members - unique_users
+                    participation_rate = (unique_users / total_channel_members * 100) if total_channel_members > 0 else 0
+                    
+            except Exception as e:
+                # If channel_members table doesn't exist or has no data, continue without it
+                print(f"Note: Channel membership data not available: {e}")
+            
             # Extract top topics using advanced spaCy analysis
             top_topics = []
             try:
@@ -2453,10 +2475,23 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             
             # Channel Health Metrics
             result += f"**📈 Channel Health Metrics:**\n"
-            result += f"• Total Members Ever Active: {unique_users}\n"
-            result += f"• Weekly Active Members: {weekly_active} ({channel_amp:.1f}%)\n"
-            result += f"• Recently Inactive Members: {inactive_users} ({inactive_percentage:.1f}%)\n"
-            result += f"• Activity Ratio: {weekly_active} active / {inactive_users} inactive\n\n"
+            
+            if total_channel_members > 0:
+                # Enhanced metrics with full membership data
+                result += f"• Total Channel Members: {total_channel_members}\n"
+                result += f"• Members Who Ever Posted: {unique_users} ({participation_rate:.1f}%)\n"
+                result += f"• Weekly Active Members: {weekly_active} ({(weekly_active/total_channel_members*100):.1f}% of total)\n"
+                result += f"• Recently Inactive Members: {inactive_users} ({inactive_percentage:.1f}% of posters)\n"
+                result += f"• Lurkers (Never Posted): {lurkers} ({(lurkers/total_channel_members*100):.1f}%)\n"
+                result += f"• Participation Rate: {participation_rate:.1f}% (members who have posted)\n"
+                result += f"• Activity Ratio: {weekly_active} active / {inactive_users} inactive / {lurkers} lurkers\n\n"
+            else:
+                # Fallback to message-based metrics
+                result += f"• Total Members Ever Active: {unique_users}\n"
+                result += f"• Weekly Active Members: {weekly_active} ({channel_amp:.1f}%)\n"
+                result += f"• Recently Inactive Members: {inactive_users} ({inactive_percentage:.1f}%)\n"
+                result += f"• Activity Ratio: {weekly_active} active / {inactive_users} inactive\n"
+                result += f"• Note: Full membership data not available - showing message-based metrics only\n\n"
             
             # Top Topics Discussed
             if top_topics:

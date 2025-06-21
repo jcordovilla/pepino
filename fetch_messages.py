@@ -175,6 +175,18 @@ class DiscordFetcher(discord.Client):
                         self.new_data[guild.name].setdefault(channel.name, []).extend(new_messages)
                     else:
                         logger.info(f"    📫 No messages found")
+                    
+                    # Fetch channel members
+                    logger.info(f"    👥 Fetching channel members...")
+                    channel_members = await self._fetch_channel_members(channel)
+                    
+                    if channel_members:
+                        logger.info(f"    ✅ {len(channel_members)} member(s) found")
+                        # Store channel members in new_data for saving to DB
+                        self.new_data[guild.name].setdefault('_channel_members', {})
+                        self.new_data[guild.name]['_channel_members'][channel.name] = channel_members
+                    else:
+                        logger.info(f"    👥 No accessible members found")
                         
                 except Exception as e:
                     logger.error(f"    ❌ Error fetching channel #{channel.name}: {str(e)}")
@@ -232,6 +244,68 @@ class DiscordFetcher(discord.Client):
             except Exception as e:
                 logger.error(f"Unexpected error: {e}")
                 raise
+
+    async def _fetch_channel_members(self, channel: discord.TextChannel) -> List[Dict[str, Any]]:
+        """Fetch all members who have access to a specific channel"""
+        try:
+            members_data = []
+            member_count = 0
+            
+            logger.info(f"      Fetching members for #{channel.name}")
+            
+            for member in channel.guild.members:
+                # Check if member can read this channel
+                perms = channel.permissions_for(member)
+                if perms.read_messages:
+                    member_count += 1
+                    
+                    # Get member roles
+                    roles = []
+                    for role in member.roles:
+                        if role.name != "@everyone":  # Skip @everyone role
+                            roles.append({
+                                'id': str(role.id),
+                                'name': role.name,
+                                'color': role.color.value,
+                                'position': role.position,
+                                'permissions': role.permissions.value
+                            })
+                    
+                    # Get member permissions for this channel
+                    member_perms = {
+                        'read_messages': perms.read_messages,
+                        'send_messages': perms.send_messages,
+                        'manage_messages': perms.manage_messages,
+                        'read_message_history': perms.read_message_history,
+                        'add_reactions': perms.add_reactions,
+                        'attach_files': perms.attach_files,
+                        'embed_links': perms.embed_links,
+                        'mention_everyone': perms.mention_everyone
+                    }
+                    
+                    member_data = {
+                        'channel_id': str(channel.id),
+                        'channel_name': channel.name,
+                        'guild_id': str(channel.guild.id),
+                        'guild_name': channel.guild.name,
+                        'user_id': str(member.id),
+                        'user_name': member.name,
+                        'user_display_name': member.display_name,
+                        'user_joined_at': member.joined_at.isoformat() if member.joined_at else None,
+                        'user_roles': json.dumps(roles),
+                        'is_bot': member.bot,
+                        'member_permissions': json.dumps(member_perms),
+                        'synced_at': datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    members_data.append(member_data)
+            
+            logger.info(f"      Found {member_count} members with access to #{channel.name}")
+            return members_data
+            
+        except Exception as e:
+            logger.error(f"Error fetching members for #{channel.name}: {e}")
+            return []
 
     async def _convert_message_to_dict(self, message: discord.Message) -> Dict[str, Any]:
         # Helper function to safely get role type
@@ -647,6 +721,25 @@ def init_database(db_path='discord_messages.db'):
         )
     ''')
     
+    # Create channel members table for tracking actual channel membership
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS channel_members (
+            channel_id TEXT,
+            channel_name TEXT,
+            guild_id TEXT,
+            guild_name TEXT,
+            user_id TEXT,
+            user_name TEXT,
+            user_display_name TEXT,
+            user_joined_at TEXT,
+            user_roles TEXT,
+            is_bot BOOLEAN,
+            member_permissions TEXT,
+            synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (channel_id, user_id)
+        )
+    ''')
+    
     # Create virtual table for full-text search
     cursor.execute('''
         CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -668,6 +761,12 @@ def init_database(db_path='discord_messages.db'):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_reference ON messages(referenced_message_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_thread ON messages(thread_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_application ON messages(application_id)')
+    
+    # Create indexes for channel_members table
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_members_channel ON channel_members(channel_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_members_user ON channel_members(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_members_guild ON channel_members(guild_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_members_sync ON channel_members(synced_at)')
     
     conn.commit()
     conn.close()
@@ -842,6 +941,75 @@ def save_sync_log_to_db(sync_log_entry, db_path='discord_messages.db'):
     conn.commit()
     conn.close()
 
+def save_channel_members_to_db(messages_data, db_path='discord_messages.db'):
+    """Save channel members data to database"""
+    if not messages_data:
+        return
+        
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Clear existing channel members data to avoid stale data
+        cursor.execute('DELETE FROM channel_members')
+        logger.info("Cleared existing channel members data")
+        
+        # Extract all channel members from the data
+        all_members = []
+        for guild_name, channels in messages_data.items():
+            if '_channel_members' in channels:
+                for channel_name, members in channels['_channel_members'].items():
+                    all_members.extend(members)
+        
+        if not all_members:
+            logger.info("No channel members to save")
+            conn.close()
+            return
+            
+        logger.info(f"Saving {len(all_members)} channel member records to database...")
+        
+        # Process members in batches
+        batch_size = 100
+        for i in range(0, len(all_members), batch_size):
+            batch = all_members[i:i + batch_size]
+            
+            try:
+                cursor.executemany('''
+                    INSERT OR REPLACE INTO channel_members (
+                        channel_id, channel_name, guild_id, guild_name,
+                        user_id, user_name, user_display_name, user_joined_at,
+                        user_roles, is_bot, member_permissions, synced_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', [(
+                    member.get('channel_id', ''),
+                    member.get('channel_name', ''),
+                    member.get('guild_id', ''),
+                    member.get('guild_name', ''),
+                    member.get('user_id', ''),
+                    member.get('user_name', ''),
+                    member.get('user_display_name', ''),
+                    member.get('user_joined_at'),
+                    member.get('user_roles', '[]'),
+                    member.get('is_bot', False),
+                    member.get('member_permissions', '{}'),
+                    member.get('synced_at', datetime.now(timezone.utc).isoformat())
+                ) for member in batch])
+                
+                conn.commit()
+                logger.info(f"✅ Saved batch of {len(batch)} channel member records")
+                
+            except Exception as e:
+                logger.error(f"Error saving channel members batch: {str(e)}")
+                conn.rollback()
+                
+    except Exception as e:
+        logger.error(f"Error in save_channel_members_to_db: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
 def load_existing_data_old(path='discord_messages.json'):
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
@@ -878,6 +1046,8 @@ def update_discord_messages():
     if client.new_data:
         print("💾 Saving messages to database...")
         save_messages_to_db(client.new_data, 'discord_messages.db')
+        print("👥 Saving channel members to database...")
+        save_channel_members_to_db(client.new_data, 'discord_messages.db')
         save_sync_log_to_db(client.sync_log_entry)
         print("\n📂 Data updated in database.")
         print(f"📝 Total messages synced: {client.sync_log_entry['total_messages_synced']}")
