@@ -341,13 +341,31 @@ class AnalysisCommands(commands.Cog):
             
             result = await self.analyzer.get_user_insights(user)
             
-            # Handle the result  
-            if len(result) > 2000:
-                chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
-                for chunk in chunks:
-                    await interaction.followup.send(chunk)
+            # Handle both text-only and (text, chart_path) tuple results
+            if isinstance(result, tuple):
+                text_result, chart_path = result
+                
+                # Send the text analysis
+                if len(text_result) > 2000:
+                    chunks = [text_result[i:i+1900] for i in range(0, len(text_result), 1900)]
+                    for chunk in chunks:
+                        await interaction.followup.send(chunk)
+                else:
+                    await interaction.followup.send(text_result)
+                
+                # Send the chart as an image
+                if chart_path and os.path.exists(chart_path):
+                    with open(chart_path, 'rb') as f:
+                        chart_file = discord.File(f, filename='user_activity_chart.png')
+                        await interaction.followup.send("📊 **Daily Activity Chart (Last 30 Days):**", file=chart_file)
             else:
-                await interaction.followup.send(result)
+                # Handle text-only result (fallback)
+                if len(result) > 2000:
+                    chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
+                    for chunk in chunks:
+                        await interaction.followup.send(chunk)
+                else:
+                    await interaction.followup.send(result)
                     
         except Exception as e:
             if not interaction.response.is_done():
