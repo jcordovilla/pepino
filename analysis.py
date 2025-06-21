@@ -1507,7 +1507,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         try:
             await self.initialize()
             
-            # Get user statistics with most active channel
+            # Get user statistics with most active channel (humans only)
             async with self.pool.execute(f"""
                 WITH user_stats AS (
                     SELECT 
@@ -1520,6 +1520,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         MAX(DATE(timestamp)) as last_message_date
                     FROM messages
                     WHERE {self.base_filter}
+                    AND (author_is_bot = 0 OR author_is_bot IS NULL)
                     GROUP BY author_id, author_display_name, author_name
                 ),
                 user_top_channels AS (
@@ -1530,6 +1531,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                         ROW_NUMBER() OVER (PARTITION BY author_id ORDER BY COUNT(*) DESC) as rn
                     FROM messages
                     WHERE {self.base_filter}
+                    AND (author_is_bot = 0 OR author_is_bot IS NULL)
                     GROUP BY author_id, channel_name
                 )
                 SELECT 
@@ -1552,8 +1554,8 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             if not users:
                 return "No user statistics available"
             
-            # Format results with enhanced information
-            result = "**📊 Top 10 User Activity Statistics**\n\n"
+            # Format results with enhanced information (humans only)
+            result = "**📊 Top 10 Human User Activity Statistics**\n\n"
             
             for i, user in enumerate(users, 1):
                 display_name = user[1] if user[1] else "Unknown"
@@ -1579,12 +1581,13 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 result += f"• Most Active: #{top_channel} ({channel_messages} messages)\n"
                 result += f"• Active Period: {activity_period}\n"
                 
-                # Get user's main topics with improved concept extraction
+                # Get user's main topics with improved concept extraction (humans only)
                 try:
                     async with self.pool.execute(f"""
                         SELECT content
                         FROM messages
                         WHERE author_id = ? AND {self.base_filter}
+                        AND (author_is_bot = 0 OR author_is_bot IS NULL)
                         AND content IS NOT NULL 
                         AND LENGTH(content) > 50
                         ORDER BY timestamp DESC
@@ -2086,14 +2089,17 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             # Resolve the channel name to the actual database name
             resolved_channel = await self.resolve_channel_name(channel_name)
             
-            # Get basic channel statistics
+            # Get basic channel statistics with bot/human differentiation
             async with self.pool.execute(f"""
                 SELECT 
                     COUNT(*) as total_messages,
                     COUNT(DISTINCT author_id) as unique_users,
                     AVG(LENGTH(content)) as avg_message_length,
                     MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message
+                    MAX(timestamp) as last_message,
+                    COUNT(CASE WHEN author_is_bot = 1 THEN 1 END) as bot_messages,
+                    COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
+                    COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_id END) as unique_human_users
                 FROM messages 
                 WHERE channel_name = ? AND {self.base_filter}
                 AND content IS NOT NULL
@@ -2119,9 +2125,9 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 else:
                     return f"❌ No channel found matching '{channel_name}'"
             
-            total_messages, unique_users, avg_length, first_msg, last_msg = stats
+            total_messages, unique_users, avg_length, first_msg, last_msg, bot_messages, human_messages, unique_human_users = stats
             
-            # Get engagement metrics
+            # Get engagement metrics (excluding bots)
             async with self.pool.execute(f"""
                 SELECT 
                     COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
@@ -2129,6 +2135,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions
                 FROM messages 
                 WHERE channel_name = ? AND {self.base_filter}
+                AND (author_is_bot = 0 OR author_is_bot IS NULL)
             """, (resolved_channel,)) as cursor:
                 engagement = await cursor.fetchone()
             
@@ -2136,7 +2143,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             replies_per_post = total_replies / original_posts if original_posts > 0 else 0
             reaction_rate = (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0
             
-            # Get top contributors
+            # Get top contributors (excluding bots)
             async with self.pool.execute(f"""
                 SELECT 
                     COALESCE(author_display_name, author_name) as display_name,
@@ -2145,6 +2152,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 FROM messages 
                 WHERE channel_name = ? AND {self.base_filter}
                 AND content IS NOT NULL
+                AND (author_is_bot = 0 OR author_is_bot IS NULL)
                 GROUP BY author_id, author_display_name, author_name
                 ORDER BY message_count DESC
                 LIMIT 5
@@ -2202,35 +2210,38 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             """, (resolved_channel,)) as cursor:
                 recent_activity = await cursor.fetchall()
             
-            # Get channel health metrics (activity in last week)
+            # Get channel health metrics (activity in last week, excluding bots)
             async with self.pool.execute(f"""
                 SELECT COUNT(DISTINCT author_id) as weekly_active
                 FROM messages 
                 WHERE channel_name = ? AND {self.base_filter}
                 AND timestamp >= datetime('now', '-7 days')
+                AND (author_is_bot = 0 OR author_is_bot IS NULL)
             """, (resolved_channel,)) as cursor:
                 weekly_active_result = await cursor.fetchone()
             
             weekly_active = weekly_active_result[0] if weekly_active_result else 0
-            channel_amp = (weekly_active / unique_users * 100) if unique_users > 0 else 0
+            channel_amp = (weekly_active / unique_human_users * 100) if unique_human_users > 0 else 0
             
-            # Get inactive users (users who posted before but not in last 7 days)
+            # Get inactive users (human users who posted before but not in last 7 days)
             async with self.pool.execute(f"""
                 SELECT COUNT(DISTINCT author_id) as inactive_users
                 FROM messages 
                 WHERE channel_name = ? AND {self.base_filter}
                 AND timestamp < datetime('now', '-7 days')
+                AND (author_is_bot = 0 OR author_is_bot IS NULL)
                 AND author_id NOT IN (
                     SELECT DISTINCT author_id 
                     FROM messages 
                     WHERE channel_name = ? AND {self.base_filter}
                     AND timestamp >= datetime('now', '-7 days')
+                    AND (author_is_bot = 0 OR author_is_bot IS NULL)
                 )
             """, (resolved_channel, resolved_channel)) as cursor:
                 inactive_result = await cursor.fetchone()
             
             inactive_users = inactive_result[0] if inactive_result else 0
-            inactive_percentage = (inactive_users / unique_users * 100) if unique_users > 0 else 0
+            inactive_percentage = (inactive_users / unique_human_users * 100) if unique_human_users > 0 else 0
             
             # Get total channel members (from new channel_members table)
             total_channel_members = 0
@@ -2247,8 +2258,8 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                 
                 if member_result and member_result[0]:
                     total_channel_members = member_result[0]
-                    lurkers = total_channel_members - unique_users
-                    participation_rate = (unique_users / total_channel_members * 100) if total_channel_members > 0 else 0
+                    lurkers = total_channel_members - unique_human_users
+                    participation_rate = (unique_human_users / total_channel_members * 100) if total_channel_members > 0 else 0
                     
             except Exception as e:
                 # If channel_members table doesn't exist or has no data, continue without it
@@ -2456,9 +2467,12 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             result = f"**Channel Analysis: #{resolved_channel}**\n\n"
             
             # Basic Statistics
-            result += f"**Basic Statistics:**\n"
-            result += f"• Total Messages: {total_messages}\n"
-            result += f"• Unique Users: {unique_users}\n"
+            result += f"**📊 Basic Statistics:**\n"
+            result += f"• Total Messages: {total_messages:,}\n"
+            result += f"  - Human Messages: {human_messages:,} ({human_messages/total_messages*100:.1f}%)\n"
+            result += f"  - Bot Messages: {bot_messages:,} ({bot_messages/total_messages*100:.1f}%)\n"
+            result += f"• Total Unique Users: {unique_users:,}\n"
+            result += f"• Unique Human Users: {unique_human_users:,}\n"
             result += f"• Average Message Length: {avg_length:.1f} characters\n"
             
             if first_msg and last_msg:
@@ -2474,17 +2488,18 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             
             result += "\n"
             
-            # Engagement Metrics
-            result += f"**📈 Engagement Metrics:**\n"
+            # Engagement Metrics (Human Activity Only)
+            result += f"**📈 Human Engagement Metrics:**\n"
             result += f"• Average Replies per Original Post: {replies_per_post:.2f}\n"
-            result += f"• Posts with Reactions: {reaction_rate:.1f}% ({posts_with_reactions}/{total_messages})\n"
-            result += f"• Total Replies: {total_replies} | Original Posts: {original_posts}\n\n"
+            result += f"• Posts with Reactions: {reaction_rate:.1f}% ({posts_with_reactions}/{human_messages})\n"
+            result += f"• Total Replies: {total_replies:,} | Original Posts: {original_posts:,}\n"
+            result += f"• Note: Bot messages excluded from engagement calculations\n\n"
             
-            # Top Contributors
+            # Top Contributors (Humans Only)
             if contributors:
-                result += f"**Top Contributors:**\n"
+                result += f"**👥 Top Human Contributors:**\n"
                 for name, count, avg_chars in contributors:
-                    result += f"• {name}: {count} messages (avg {avg_chars:.0f} chars)\n"
+                    result += f"• {name}: {count:,} messages (avg {avg_chars:.0f} chars)\n"
                 result += "\n"
             
             # Peak Activity Hours
@@ -2508,24 +2523,24 @@ class DiscordBotAnalyzer(MessageAnalyzer):
                     result += f"• {date}: {count} messages\n"
                 result += "\n"
             
-            # Channel Health Metrics
-            result += f"**📈 Channel Health Metrics:**\n"
+            # Channel Health Metrics (Human Activity)
+            result += f"**📈 Channel Health Metrics (Human Activity):**\n"
             
             if total_channel_members > 0:
                 # Enhanced metrics with full membership data
-                result += f"• Total Channel Members: {total_channel_members}\n"
-                result += f"• Members Who Ever Posted: {unique_users} ({participation_rate:.1f}%)\n"
-                result += f"• Weekly Active Members: {weekly_active} ({(weekly_active/total_channel_members*100):.1f}% of total)\n"
-                result += f"• Recently Inactive Members: {inactive_users} ({inactive_percentage:.1f}% of posters)\n"
-                result += f"• Lurkers (Never Posted): {lurkers} ({(lurkers/total_channel_members*100):.1f}%)\n"
-                result += f"• Participation Rate: {participation_rate:.1f}% (members who have posted)\n"
-                result += f"• Activity Ratio: {weekly_active} active / {inactive_users} inactive / {lurkers} lurkers\n\n"
+                result += f"• Total Channel Members: {total_channel_members:,}\n"
+                result += f"• Human Members Who Ever Posted: {unique_human_users:,} ({participation_rate:.1f}%)\n"
+                result += f"• Weekly Active Human Members: {weekly_active:,} ({(weekly_active/total_channel_members*100):.1f}% of total)\n"
+                result += f"• Recently Inactive Human Members: {inactive_users:,} ({inactive_percentage:.1f}% of human posters)\n"
+                result += f"• Human Lurkers (Never Posted): {lurkers:,} ({(lurkers/total_channel_members*100):.1f}%)\n"
+                result += f"• Human Participation Rate: {participation_rate:.1f}% (members who have posted)\n"
+                result += f"• Activity Ratio: {weekly_active:,} active / {inactive_users:,} inactive / {lurkers:,} lurkers\n\n"
             else:
                 # Fallback to message-based metrics
-                result += f"• Total Members Ever Active: {unique_users}\n"
-                result += f"• Weekly Active Members: {weekly_active} ({channel_amp:.1f}%)\n"
-                result += f"• Recently Inactive Members: {inactive_users} ({inactive_percentage:.1f}%)\n"
-                result += f"• Activity Ratio: {weekly_active} active / {inactive_users} inactive\n"
+                result += f"• Total Human Members Ever Active: {unique_human_users:,}\n"
+                result += f"• Weekly Active Human Members: {weekly_active:,} ({channel_amp:.1f}%)\n"
+                result += f"• Recently Inactive Human Members: {inactive_users:,} ({inactive_percentage:.1f}%)\n"
+                result += f"• Activity Ratio: {weekly_active:,} active / {inactive_users:,} inactive\n"
                 result += f"• Note: Full membership data not available - showing message-based metrics only\n\n"
             
             # Top Topics Discussed
