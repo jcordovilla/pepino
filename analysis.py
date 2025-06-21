@@ -1501,657 +1501,179 @@ class DiscordBotAnalyzer(MessageAnalyzer):
             traceback.print_exc()
             return f"Error analyzing topics: {str(e)}"
     
-    async def update_temporal_stats(self, args: dict = None) -> str:
-        """Enhanced temporal activity analysis with concepts by time period"""
+    async def extract_concepts_from_content(self, messages) -> List[str]:
+        """Extract meaningful concepts from message content using NLP"""
+        try:
+            import spacy
+            from collections import Counter
+            
+            # Load spaCy model
+            try:
+                nlp = spacy.load('en_core_web_sm')
+            except OSError:
+                print("spaCy model not found. Installing...")
+                import subprocess
+                subprocess.run([
+                    "python", "-m", "spacy", "download", "en_core_web_sm"
+                ], check=True)
+                nlp = spacy.load('en_core_web_sm')
+            
+            all_concepts = []
+            
+            # Process messages in batches
+            batch_size = 50
+            for i in range(0, len(messages), batch_size):
+                batch = messages[i:i + batch_size]
+                
+                # Combine batch content
+                combined_text = " ".join([msg[0] for msg in batch if msg[0]])
+                
+                if not combined_text.strip():
+                    continue
+                
+                # Process with spaCy
+                doc = nlp(combined_text[:1000000])  # Limit text length
+                
+                # Extract different types of concepts
+                concepts = []
+                
+                # 1. Named entities (persons, organizations, technologies)
+                for ent in doc.ents:
+                    if ent.label_ in ["PERSON", "ORG", "PRODUCT", "WORK_OF_ART"] and len(ent.text) > 2:
+                        concepts.append(ent.text.lower().strip())
+                
+                # 2. Compound noun phrases (technical terms)
+                for chunk in doc.noun_chunks:
+                    if len(chunk.text.split()) >= 2 and len(chunk.text) > 5:
+                        # Filter out common stopwords
+                        if not any(word in chunk.text.lower() for word in ['this', 'that', 'some', 'any', 'the']):
+                            concepts.append(chunk.text.lower().strip())
+                
+                # 3. Technical patterns (API, AI, ML terms)
+                import re
+                tech_patterns = [
+                    r'\b[A-Z]{2,}\b',  # Acronyms like AI, ML, API
+                    r'\b\w+(?:-\w+)+\b',  # Hyphenated terms
+                    r'\b\w+(?:\.\w+)+\b',  # Dotted terms like node.js
+                ]
+                
+                for pattern in tech_patterns:
+                    matches = re.findall(pattern, combined_text)
+                    concepts.extend([match.lower() for match in matches if len(match) > 2])
+                
+                # 4. Verb-object relationships (actions)
+                for token in doc:
+                    if token.pos_ == "VERB" and not token.is_stop:
+                        # Find direct objects
+                        for child in token.children:
+                            if child.dep_ == "dobj" and child.pos_ in ["NOUN", "PROPN"]:
+                                action_concept = f"{token.lemma_} {child.text}"
+                                concepts.append(action_concept.lower())
+                
+                all_concepts.extend(concepts)
+            
+            # Count and return top concepts
+            concept_counter = Counter(all_concepts)
+            
+            # Filter concepts (remove very short, very long, or common words)
+            filtered_concepts = []
+            for concept, count in concept_counter.most_common(50):
+                if (3 <= len(concept) <= 50 and 
+                    count >= 2 and 
+                    concept not in ['the', 'and', 'for', 'with', 'this', 'that', 'from', 'they', 'have', 'will']):
+                    filtered_concepts.append(concept)
+            
+            return filtered_concepts[:20]  # Return top 20 concepts
+            
+        except Exception as e:
+            print(f"Error extracting concepts: {str(e)}")
+            return []
+
+    async def update_user_statistics(self, args: dict = None) -> str:
+        """Enhanced user activity statistics with concept analysis - overrides base class method"""
         try:
             await self.initialize()
             
-            # Get temporal statistics
+            # Get user statistics using async database connection
             async with self.pool.execute(f"""
-                SELECT 
-                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-                    CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
-                    DATE(timestamp) as date,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE {self.base_filter}
-                AND timestamp IS NOT NULL
-                GROUP BY hour, day_of_week, date
-                ORDER BY date, hour
-            """) as cursor:
-                stats = await cursor.fetchall()
-            
-            if not stats:
-                return "No temporal statistics available"
-            
-            # Process statistics
-            hourly_stats = {}
-            daily_stats = {}
-            weekly_stats = {}
-            
-            day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-            
-            for stat in stats:
-                hour = stat[0]
-                day_of_week = stat[1]
-                message_count = stat[3]
-                
-                # Hourly aggregation
-                if hour not in hourly_stats:
-                    hourly_stats[hour] = 0
-                hourly_stats[hour] += message_count
-                
-                # Daily aggregation
-                day_name = day_names[day_of_week]
-                if day_name not in daily_stats:
-                    daily_stats[day_name] = 0
-                daily_stats[day_name] += message_count
-                
-                # Weekly pattern
-                if day_of_week not in weekly_stats:
-                    weekly_stats[day_of_week] = 0
-                weekly_stats[day_of_week] += message_count
-            
-            # Get concepts by time period
-            time_periods = {
-                "Morning (06-11)": (6, 11),
-                "Afternoon (12-17)": (12, 17),
-                "Evening (18-23)": (18, 23),
-                "Night (00-05)": (0, 5)
-            }
-            
-            period_concepts = {}
-            
-            for period, (start_hour, end_hour) in time_periods.items():
-                # Get messages from this time period
-                async with self.pool.execute(f"""
-                    SELECT content
+                WITH filtered_messages AS (
+                    SELECT *
                     FROM messages
                     WHERE {self.base_filter}
-                    AND timestamp IS NOT NULL
-                    AND CAST(strftime('%H', timestamp) AS INTEGER) >= ?
-                    AND CAST(strftime('%H', timestamp) AS INTEGER) <= ?
-                    AND LENGTH(content) > 20
-                    ORDER BY timestamp DESC
-                    LIMIT 300
-                """, (start_hour, end_hour)) as cursor:
-                    period_messages = await cursor.fetchall()
-                
-                if period_messages:
-                    concepts = await self.extract_concepts_from_content(period_messages)
-                    period_concepts[period] = concepts[:5]  # Top 5 concepts per period
-            
-            # Format results
-            result = "**📊 Enhanced Temporal Activity Analysis**\n\n"
-            
-            # Peak hours
-            if hourly_stats:
-                sorted_hours = sorted(hourly_stats.items(), key=lambda x: x[1], reverse=True)
-                result += "**🕐 Peak Activity Hours:**\n"
-                for hour, count in sorted_hours[:5]:
-                    time_str = f"{hour:02d}:00-{hour:02d}:59"
-                    result += f"• {time_str}: {count:,} messages\n"
-                result += "\n"
-            
-            # Daily distribution
-            if daily_stats:
-                result += "**📅 Activity by Day of Week:**\n"
-                for day in day_names:
-                    if day in daily_stats:
-                        count = daily_stats[day]
-                        result += f"• {day}: {count:,} messages\n"
-                result += "\n"
-            
-            # Activity patterns with concepts
-            if hourly_stats:
-                result += "**⏰ Activity Patterns with Topics:**\n"
-                
-                # Morning (6-11)
-                morning = sum(hourly_stats.get(h, 0) for h in range(6, 12))
-                # Afternoon (12-17)
-                afternoon = sum(hourly_stats.get(h, 0) for h in range(12, 18))
-                # Evening (18-23)
-                evening = sum(hourly_stats.get(h, 0) for h in range(18, 24))
-                # Night (0-5)
-                night = sum(hourly_stats.get(h, 0) for h in range(0, 6))
-                
-                total = morning + afternoon + evening + night
-                if total > 0:
-                    # Morning
-                    result += f"• **Morning (06-11):** {morning:,} messages ({morning/total*100:.1f}%)\n"
-                    if "Morning (06-11)" in period_concepts and period_concepts["Morning (06-11)"]:
-                        concepts_str = ", ".join(c.title() for c in period_concepts["Morning (06-11)"][:3])
-                        result += f"  ↳ Morning Topics: {concepts_str}\n"
-                    
-                    # Afternoon
-                    result += f"• **Afternoon (12-17):** {afternoon:,} messages ({afternoon/total*100:.1f}%)\n"
-                    if "Afternoon (12-17)" in period_concepts and period_concepts["Afternoon (12-17)"]:
-                        concepts_str = ", ".join(c.title() for c in period_concepts["Afternoon (12-17)"][:3])
-                        result += f"  ↳ Afternoon Topics: {concepts_str}\n"
-                    
-                    # Evening
-                    result += f"• **Evening (18-23):** {evening:,} messages ({evening/total*100:.1f}%)\n"
-                    if "Evening (18-23)" in period_concepts and period_concepts["Evening (18-23)"]:
-                        concepts_str = ", ".join(c.title() for c in period_concepts["Evening (18-23)"][:3])
-                        result += f"  ↳ Evening Topics: {concepts_str}\n"
-                    
-                    # Night
-                    result += f"• **Night (00-05):** {night:,} messages ({night/total*100:.1f}%)\n"
-                    if "Night (00-05)" in period_concepts and period_concepts["Night (00-05)"]:
-                        concepts_str = ", ".join(c.title() for c in period_concepts["Night (00-05)"][:3])
-                        result += f"  ↳ Night Topics: {concepts_str}\n"
-            
-            # Add unique concepts by time period summary
-            unique_concepts = {}
-            for period, concepts in period_concepts.items():
-                for concept in concepts:
-                    if concept not in unique_concepts:
-                        unique_concepts[concept] = []
-                    unique_concepts[concept].append(period)
-            
-            # Identify concepts that only appear in specific time periods
-            time_specific_concepts = {concept: periods for concept, periods in unique_concepts.items() if len(periods) == 1}
-            
-            if time_specific_concepts:
-                result += "\n**🧠 Time-Specific Topics:**\n"
-                time_sorted = sorted(time_specific_concepts.items(), key=lambda x: x[1][0])
-                for concept, periods in time_sorted[:6]:  # Show top 6 time-specific concepts
-                    result += f"• {concept.title()} - Only discussed during {periods[0]}\n"
-            
-            return result
-            
-        except Exception as e:
-            return f"Error updating temporal statistics: {str(e)}"
-    
-    async def generate_channel_activity_chart(self, channel_name: str) -> str:
-        """Generate a chart showing channel activity patterns"""
-        try:
-            await self.initialize()
-            
-            # Get hourly activity data for the channel
-            async with self.pool.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
                 )
                 SELECT 
-                    strftime('%H', timestamp) as hour,
-                    COUNT(*) as message_count
-                FROM filtered_messages
-                GROUP BY hour
-                ORDER BY hour
-            """, (channel_name,)) as cursor:
-                hourly_data = await cursor.fetchall()
-            
-            # Get daily activity data for the channel
-            async with self.pool.execute(f"""
-                WITH filtered_messages AS (
-                    SELECT *
-                    FROM messages
-                    WHERE channel_name = ? AND {self.base_filter}
-                )
-                SELECT 
-                    strftime('%w', timestamp) as day_of_week,
-                    COUNT(*) as message_count
-                FROM filtered_messages
-                GROUP BY day_of_week
-                ORDER BY day_of_week
-            """, (channel_name,)) as cursor:
-                daily_data = await cursor.fetchall()
-            
-            if not hourly_data and not daily_data:
-                return None
-            
-            # Create figure with two subplots
-            import matplotlib
-            matplotlib.use('Agg')  # Use non-interactive backend
-            import matplotlib.pyplot as plt
-            
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
-            
-            # Plot hourly activity
-            if hourly_data:
-                hours = [int(row[0]) for row in hourly_data]
-                counts = [row[1] for row in hourly_data]
-                
-                # Fill missing hours with 0
-                hour_counts = {h: 0 for h in range(24)}
-                for hour, count in zip(hours, counts):
-                    hour_counts[hour] = count
-                
-                hours = list(hour_counts.keys())
-                counts = list(hour_counts.values())
-                
-                ax1.bar(hours, counts, alpha=0.7, color='steelblue')
-                ax1.set_xlabel('Hour of Day')
-                ax1.set_ylabel('Message Count')
-                ax1.set_title(f'Message Activity by Hour - #{channel_name}')
-                ax1.set_xticks(range(0, 24, 2))
-                ax1.set_xticklabels([f'{h:02d}:00' for h in range(0, 24, 2)])
-                ax1.grid(True, alpha=0.3)
-            
-            # Plot daily activity
-            if daily_data:
-                days = [int(row[0]) for row in daily_data]
-                counts = [row[1] for row in daily_data]
-                
-                # Fill missing days with 0
-                day_counts = {d: 0 for d in range(7)}
-                for day, count in zip(days, counts):
-                    day_counts[day] = count
-                
-                day_names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                counts = [day_counts[d] for d in range(7)]
-                
-                ax2.bar(range(7), counts, alpha=0.7, color='lightcoral')
-                ax2.set_xlabel('Day of Week')
-                ax2.set_ylabel('Message Count')
-                ax2.set_title(f'Message Activity by Day - #{channel_name}')
-                ax2.set_xticks(range(7))
-                ax2.set_xticklabels(day_names)
-                ax2.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            
-            # Save to temp directory
-            import os
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_channel_name = "".join(c for c in channel_name if c.isalnum() or c in ('-', '_'))
-            filename = f"channel_activity_{safe_channel_name}_{timestamp}.png"
-            
-            temp_dir = "temp"
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            
-            filepath = os.path.join(temp_dir, filename)
-            plt.savefig(filepath, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            print(f"Channel activity chart saved to: {filepath}")
-            return filepath
-            
-        except Exception as e:
-            print(f"Error generating channel activity chart: {e}")
-            return None
-    
-    async def get_channel_insights(self, channel_name: str) -> str:
-        """Get detailed insights for a specific channel"""
-        try:
-            await self.initialize()
-            print(f"Getting insights for channel: {channel_name}")
-
-            # Resolve channel name to database channel name  
-            resolved_channel_name = await self.resolve_channel_name(channel_name)
-            print(f"Resolved channel name: {resolved_channel_name}")
-
-            # Basic channel statistics
-            basic_query = f"""
-                SELECT 
-                    COUNT(*) as total_messages,
-                    COUNT(DISTINCT author_id) as unique_users,
-                    AVG(LENGTH(content)) as avg_message_length,
-                    MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-            """
-            
-            async with self.pool.execute(basic_query, (resolved_channel_name,)) as cursor:
-                basic_stats = await cursor.fetchone()
-
-            if not basic_stats or basic_stats[0] == 0:
-                return f"Channel '{channel_name}' not found or has no messages."
-
-            # Top contributors
-            contributors_query = f"""
-                SELECT 
+                    author_id,
                     COALESCE(author_display_name, author_name) as display_name,
                     COUNT(*) as message_count,
-                    AVG(LENGTH(content)) as avg_length
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-                GROUP BY author_id, author_display_name, author_name
-                ORDER BY message_count DESC
-                LIMIT 10
-            """
-            
-            async with self.pool.execute(contributors_query, (resolved_channel_name,)) as cursor:
-                contributors = await cursor.fetchall()
-
-            # Activity by time of day
-            time_query = f"""
-                SELECT 
-                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-                GROUP BY hour
-                ORDER BY hour
-            """
-            
-            async with self.pool.execute(time_query, (resolved_channel_name,)) as cursor:
-                hourly_activity = await cursor.fetchall()
-
-            # Activity by day of week
-            day_query = f"""
-                SELECT 
-                    CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-                GROUP BY day_of_week
-                ORDER BY day_of_week
-            """
-            
-            async with self.pool.execute(day_query, (resolved_channel_name,)) as cursor:
-                daily_activity = await cursor.fetchall()
-
-            # Recent activity (last 30 days)
-            recent_query = f"""
-                SELECT 
-                    DATE(timestamp) as date,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE channel_name = ? 
-                AND {self.base_filter}
-                AND date(timestamp) >= date('now', '-30 days')
-                GROUP BY date
-                ORDER BY date DESC
-                LIMIT 10
-            """
-            
-            async with self.pool.execute(recent_query, (resolved_channel_name,)) as cursor:
-                recent_activity = await cursor.fetchall()
-
-            # Format results
-            result = f"**📊 Channel Analysis: {channel_name}**\n\n"
-            
-            # Basic statistics
-            total_messages = basic_stats[0]
-            unique_users = basic_stats[1]
-            avg_length = basic_stats[2] if basic_stats[2] else 0
-            first_msg = self.format_timestamp(basic_stats[3]) if basic_stats[3] else "Unknown"
-            last_msg = self.format_timestamp(basic_stats[4]) if basic_stats[4] else "Unknown"
-            
-            result += "**Basic Statistics:**\n"
-            result += f"• Total Messages: {total_messages:,}\n"
-            result += f"• Unique Users: {unique_users}\n"
-            result += f"• Average Message Length: {avg_length:.1f} characters\n"
-            result += f"• First Message: {first_msg}\n"
-            result += f"• Last Message: {last_msg}\n\n"
-
-            # Calculate engagement metrics (replies and reactions)
-            engagement_query = f"""
-                SELECT 
-                    COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
-                    COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
-                    COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-            """
-            
-            async with self.pool.execute(engagement_query, (resolved_channel_name,)) as cursor:
-                engagement_stats = await cursor.fetchone()
-            
-            if engagement_stats:
-                total_replies = engagement_stats[0] if engagement_stats[0] else 0
-                original_posts = engagement_stats[1] if engagement_stats[1] else 1
-                posts_with_reactions = engagement_stats[2] if engagement_stats[2] else 0
-                
-                replies_per_post = total_replies / original_posts if original_posts > 0 else 0
-                reaction_rate = (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0
-                
-                result += "**📈 Engagement Metrics:**\n"
-                result += f"• Average Replies per Original Post: {replies_per_post:.2f}\n"
-                result += f"• Posts with Reactions: {reaction_rate:.1f}% ({posts_with_reactions}/{total_messages})\n"
-                result += f"• Total Replies: {total_replies:,} | Original Posts: {original_posts:,}\n\n"
-
-            # Top contributors
-            if contributors:
-                result += "**Top Contributors:**\n"
-                for i, contributor in enumerate(contributors[:5], 1):
-                    display_name = contributor[0] if contributor[0] else "Unknown"
-                    msg_count = contributor[1]
-                    avg_len = contributor[2] if contributor[2] else 0
-                    result += f"• {display_name}: {msg_count} messages (avg {avg_len:.0f} chars)\n"
-                result += "\n"
-
-            # Peak activity hours
-            if hourly_activity:
-                # Find top 3 peak hours
-                sorted_hours = sorted(hourly_activity, key=lambda x: x[1], reverse=True)
-                result += "**Peak Activity Hours:**\n"
-                for hour, count in sorted_hours[:3]:
-                    time_str = f"{hour:02d}:00-{hour:02d}:59"
-                    result += f"• {time_str}: {count} messages\n"
-                result += "\n"
-
-            # Activity by day of week
-            if daily_activity:
-                day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-                result += "**Activity by Day:**\n"
-                day_totals = {day: 0 for day in range(7)}
-                for day_num, count in daily_activity:
-                    day_totals[day_num] = count
-                
-                # Show top 3 most active days
-                sorted_days = sorted(day_totals.items(), key=lambda x: x[1], reverse=True)
-                for day_num, count in sorted_days[:3]:
-                    if count > 0:
-                        result += f"• {day_names[day_num]}: {count} messages\n"
-                result += "\n"
-
-            # Recent activity trend
-            if recent_activity:
-                result += "**Recent Activity (Last 10 Days):**\n"
-                for date, count in recent_activity[:5]:
-                    result += f"• {date}: {count} messages\n"
-                result += "\n"
-
-            # Calculate Channel-Specific Active Member Percentage (AMP)
-            # Get unique users who posted in this channel in the last 7 days
-            channel_amp_query = f"""
-                SELECT COUNT(DISTINCT author_id) as weekly_active_in_channel
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-                AND date(timestamp) >= date('now', '-7 days')
-            """
-            
-            async with self.pool.execute(channel_amp_query, (resolved_channel_name,)) as cursor:
-                weekly_active_result = await cursor.fetchone()
-                weekly_active_in_channel = weekly_active_result[0] if weekly_active_result else 0
-            
-            # Get total unique users who have ever posted in this channel
-            total_channel_users_query = f"""
-                SELECT COUNT(DISTINCT author_id) as total_channel_users
-                FROM messages
-                WHERE channel_name = ? AND {self.base_filter}
-            """
-            
-            async with self.pool.execute(total_channel_users_query, (resolved_channel_name,)) as cursor:
-                total_channel_users_result = await cursor.fetchone()
-                total_channel_users = total_channel_users_result[0] if total_channel_users_result else 1
-            
-            # Calculate Channel AMP
-            channel_amp = (weekly_active_in_channel / total_channel_users * 100) if total_channel_users > 0 else 0
-            
-            result += "**📈 Channel Health Metrics:**\n"
-            result += f"• **Channel AMP**: {channel_amp:.1f}% ({weekly_active_in_channel}/{total_channel_users} members active this week)\n"
-            result += f"• Total Members Ever Active: {total_channel_users}\n"
-            result += f"• Weekly Active Members: {weekly_active_in_channel}\n\n"
-
-            # Generate chart if possible
-            try:
-                chart_path = await self.generate_channel_activity_chart(channel_name)
-                if chart_path:
-                    result = (result, chart_path)
-            except Exception as e:
-                print(f"Could not generate chart: {e}")
-
-            return result
-
-        except Exception as e:
-            return f"Error getting channel insights: {str(e)}"
-    
-    async def get_user_insights(self, user_identifier: str) -> str:
-        """Get detailed insights for a specific user by username, display name, or user ID"""
-        try:
-            await self.initialize()
-            print(f"Getting insights for user: {user_identifier}")
-
-            # Try to find the user by different identifiers
-            user_query = f"""
-                SELECT DISTINCT 
-                    author_id,
-                    author_name,
-                    author_display_name,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE (
-                    author_name = ? OR 
-                    author_display_name = ? OR 
-                    author_id = ? OR
-                    LOWER(author_name) = LOWER(?) OR
-                    LOWER(author_display_name) = LOWER(?)
-                ) AND {self.base_filter}
-                GROUP BY author_id, author_name, author_display_name
-                ORDER BY message_count DESC
-                LIMIT 1
-            """
-            
-            async with self.pool.execute(user_query, (user_identifier, user_identifier, user_identifier, user_identifier, user_identifier)) as cursor:
-                user_info = await cursor.fetchone()
-
-            if not user_info:
-                return f"User '{user_identifier}' not found in the database."
-
-            author_id = user_info[0]
-            author_name = user_info[1]
-            display_name = user_info[2] if user_info[2] else author_name
-            total_messages = user_info[3]
-
-            # Get detailed user statistics
-            stats_query = f"""
-                SELECT 
-                    COUNT(*) as total_messages,
                     COUNT(DISTINCT channel_name) as channels_active,
                     AVG(LENGTH(content)) as avg_message_length,
                     MIN(timestamp) as first_message,
-                    MAX(timestamp) as last_message,
-                    COUNT(DISTINCT DATE(timestamp)) as active_days
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-            """
-            
-            async with self.pool.execute(stats_query, (author_id,)) as cursor:
-                stats = await cursor.fetchone()
-
-            # Get channel activity breakdown
-            channel_query = f"""
-                SELECT 
-                    channel_name,
-                    COUNT(*) as message_count,
-                    AVG(LENGTH(content)) as avg_length
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-                GROUP BY channel_name
+                    MAX(timestamp) as last_message
+                FROM filtered_messages
+                GROUP BY author_id, author_display_name, author_name
                 ORDER BY message_count DESC
-                LIMIT 10
-            """
+                LIMIT 15
+            """) as cursor:
+                users = await cursor.fetchall()
             
-            async with self.pool.execute(channel_query, (author_id,)) as cursor:
-                channels = await cursor.fetchall()
-
-            # Get activity by time of day
-            time_query = f"""
-                SELECT 
-                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-                    COUNT(*) as message_count
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-                GROUP BY hour
-                ORDER BY hour
-            """
+            if not users:
+                return "No user statistics available"
             
-            async with self.pool.execute(time_query, (author_id,)) as cursor:
-                hourly_activity = await cursor.fetchall()
-
-            # Get content for concept analysis
-            content_query = f"""
-                SELECT content
-                FROM messages
-                WHERE author_id = ? AND {self.base_filter}
-                AND content IS NOT NULL 
-                AND LENGTH(content) > 20
-                LIMIT 500
-            """
+            # Format results with enhanced information
+            result = "**📊 Enhanced User Activity Statistics**\n\n"
             
-            async with self.pool.execute(content_query, (author_id,)) as cursor:
-                messages = await cursor.fetchall()
-
-            # Extract concepts instead of single words
-            user_concepts = await self.extract_concepts_from_content(messages) if messages else []
-
-            # Format the results
-            result = f"**👤 User Analysis: {display_name}**\n\n"
-            
-            if stats:
-                result += "**📊 General Statistics:**\n"
-                result += f"• Total Messages: {stats[0]:,}\n"
-                result += f"• Active Channels: {stats[1]}\n"
-                result += f"• Average Message Length: {stats[2]:.1f} characters\n"
-                result += f"• Active Days: {stats[5]}\n"
+            for i, user in enumerate(users, 1):
+                display_name = user[1] if user[1] else "Unknown"
+                message_count = user[2]
+                channels_active = user[3]
+                avg_length = user[4] if user[4] else 0
+                first_msg = self.format_timestamp(user[5]) if user[5] else "Unknown"
+                last_msg = self.format_timestamp(user[6]) if user[6] else "Unknown"
                 
-                if stats[3] and stats[4]:
-                    first_msg = self.format_timestamp(stats[3])
-                    last_msg = self.format_timestamp(stats[4])
-                    result += f"• First Message: {first_msg}\n"
-                    result += f"• Last Message: {last_msg}\n"
-                result += "\n"
-
-            if channels:
-                result += "**📍 Channel Activity:**\n"
-                for channel in channels[:5]:  # Top 5 channels
-                    channel_name = channel[0]
-                    msg_count = channel[1]
-                    avg_len = channel[2] if channel[2] else 0
-                    result += f"• #{channel_name}: {msg_count} messages (avg {avg_len:.0f} chars)\n"
-                result += "\n"
-
-            if hourly_activity:
-                result += "**🕐 Activity by Time of Day:**\n"
-                # Group hours into time periods
-                periods = {'Night (00-05)': 0, 'Morning (06-11)': 0, 'Afternoon (12-17)': 0, 'Evening (18-23)': 0}
-                for hour_data in hourly_activity:
-                    hour = hour_data[0]
-                    count = hour_data[1]
-                    if 0 <= hour <= 5:
-                        periods['Night (00-05)'] += count
-                    elif 6 <= hour <= 11:
-                        periods['Morning (06-11)'] += count
-                    elif 12 <= hour <= 17:
-                        periods['Afternoon (12-17)'] += count
-                    elif 18 <= hour <= 23:
-                        periods['Evening (18-23)'] += count
+                result += f"**{i}. {display_name}**\n"
+                result += f"• Total Messages: {message_count:,}\n"
+                result += f"• Active Channels: {channels_active}\n"
+                result += f"• Average Message Length: {avg_length:.1f} characters\n"
+                result += f"• Activity Period: {first_msg} → {last_msg}\n"
                 
-                for period, count in periods.items():
-                    if count > 0:
-                        result += f"• {period}: {count} messages\n"
+                # Get user's main topics (simplified concept extraction)
+                try:
+                    async with self.pool.execute(f"""
+                        SELECT content
+                        FROM messages
+                        WHERE author_id = ? AND {self.base_filter}
+                        AND content IS NOT NULL 
+                        AND LENGTH(content) > 20
+                        ORDER BY timestamp DESC
+                        LIMIT 100
+                    """, (user[0],)) as cursor:
+                        user_messages = await cursor.fetchall()
+                    
+                    if user_messages:
+                        user_concepts = await self.extract_concepts_from_content(user_messages)
+                        if user_concepts:
+                            result += f"• Main Topics: {', '.join(user_concepts[:3])}\n"
+                
+                except Exception as e:
+                    print(f"Error getting concepts for user {display_name}: {e}")
+                
                 result += "\n"
-
-            if user_concepts:
-                result += "**� Key Topics & Concepts:**\n"
-                for i, concept in enumerate(user_concepts[:8], 1):
-                    result += f"• {concept.title()}\n"
-                result += "\n"
-
+            
+            # Add overall statistics
+            total_messages = sum(user[2] for user in users)
+            avg_channels_per_user = sum(user[3] for user in users) / len(users) if users else 0
+            
+            result += f"**📈 Summary Statistics:**\n"
+            result += f"• Top {len(users)} users contributed {total_messages:,} messages\n"
+            result += f"• Average channels per active user: {avg_channels_per_user:.1f}\n"
+            
             return result
-
+            
         except Exception as e:
-            return f"Error getting user insights: {str(e)}"
-    
+            import traceback
+            traceback.print_exc()
+            return f"Error updating user statistics: {str(e)}"
+
     async def resolve_channel_name(self, user_input: str, bot_guilds=None) -> str:
         """Resolve user input to the actual database channel name"""
         try:
@@ -2206,3 +1728,723 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         except Exception as e:
             print(f"Error resolving channel name: {str(e)}")
             return user_input
+    
+    async def get_user_insights(self, user_name: str) -> str:
+        """Get comprehensive insights for a specific user matching the original format"""
+        try:
+            await self.initialize()
+            
+            # Find the user by name (case-insensitive)
+            async with self.pool.execute(f"""
+                SELECT DISTINCT author_id, author_display_name, author_name
+                FROM messages
+                WHERE {self.base_filter}
+                AND (LOWER(author_name) LIKE ? OR LOWER(author_display_name) LIKE ?)
+                LIMIT 10
+            """, (f"%{user_name.lower()}%", f"%{user_name.lower()}%")) as cursor:
+                matching_users = await cursor.fetchall()
+            
+            if not matching_users:
+                return f"❌ No user found matching '{user_name}'"
+            
+            # If multiple matches, find the best one
+            best_match = None
+            for user in matching_users:
+                author_id, display_name, author_name = user
+                current_name = display_name or author_name
+                if user_name.lower() == current_name.lower():
+                    best_match = user
+                    break
+                elif user_name.lower() in current_name.lower():
+                    best_match = user
+            
+            if not best_match:
+                best_match = matching_users[0]
+            
+            author_id, display_name, author_name = best_match
+            display_name = display_name or author_name
+            
+            # Get basic user statistics
+            async with self.pool.execute(f"""
+                SELECT 
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT channel_name) as channels_active,
+                    AVG(LENGTH(content)) as avg_message_length,
+                    COUNT(DISTINCT DATE(timestamp)) as active_days,
+                    MIN(timestamp) as first_message,
+                    MAX(timestamp) as last_message
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                AND content IS NOT NULL
+            """, (author_id,)) as cursor:
+                stats = await cursor.fetchone()
+            
+            if not stats or stats[0] == 0:
+                return f"❌ No messages found for user '{display_name}'"
+            
+            total_messages, channels_active, avg_length, active_days, first_msg, last_msg = stats
+            
+            # Get detailed channel activity with average message lengths
+            async with self.pool.execute(f"""
+                SELECT 
+                    channel_name, 
+                    COUNT(*) as message_count,
+                    AVG(LENGTH(content)) as avg_chars_per_message
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                AND content IS NOT NULL
+                GROUP BY channel_name
+                ORDER BY message_count DESC
+                LIMIT 5
+            """, (author_id,)) as cursor:
+                channel_activity = await cursor.fetchall()
+            
+            # Get activity by time of day (grouped into periods)
+            async with self.pool.execute(f"""
+                SELECT 
+                    CASE 
+                        WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 0 AND 5 THEN 'Night (00-05)'
+                        WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 6 AND 11 THEN 'Morning (06-11)'
+                        WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 12 AND 17 THEN 'Afternoon (12-17)'
+                        WHEN CAST(strftime('%H', timestamp) AS INTEGER) BETWEEN 18 AND 23 THEN 'Evening (18-23)'
+                        ELSE 'Unknown'
+                    END as time_period,
+                    COUNT(*) as messages
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                AND timestamp IS NOT NULL
+                GROUP BY time_period
+                ORDER BY messages DESC
+            """, (author_id,)) as cursor:
+                time_activity = await cursor.fetchall()
+            
+            # Get recent messages for content analysis
+            async with self.pool.execute(f"""
+                SELECT content
+                FROM messages
+                WHERE author_id = ? AND {self.base_filter}
+                AND content IS NOT NULL 
+                AND LENGTH(content) > 20
+                ORDER BY timestamp DESC
+                LIMIT 200
+            """, (author_id,)) as cursor:
+                recent_messages = await cursor.fetchall()
+            
+            # Extract key concepts using advanced spaCy analysis (same as channel analysis)
+            user_concepts = []
+            technical_terms = []
+            business_concepts = []
+            innovation_indicators = []
+            complex_phrases = []
+            
+            if recent_messages:
+                try:
+                    import spacy
+                    from collections import Counter
+                    import re
+                    
+                    # Load spaCy model
+                    try:
+                        nlp = spacy.load("en_core_web_sm")
+                    except OSError:
+                        print("spaCy model not found. Will use basic concept extraction.")
+                        user_concepts = await self.extract_concepts_from_content(recent_messages)
+                    else:
+                        # Advanced text cleaning (same as channel analysis)
+                        def clean_content(text):
+                            text = re.sub(r'<@[!&]?\d+>', '', text)  # Remove mentions
+                            text = re.sub(r'<#\d+>', '', text)  # Remove channel references
+                            text = re.sub(r'<:\w+:\d+>', '', text)  # Remove custom emojis
+                            text = re.sub(r'https?://\S+', '', text)  # Remove URLs
+                            text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)  # Remove code blocks
+                            text = re.sub(r'`[^`]+`', '', text)  # Remove inline code
+                            text = re.sub(r'[🎯🏷️💡🔗🔑📝🌎🏭]', '', text)  # Remove emoji noise
+                            text = re.sub(r'\b(time zone|buddy group|display name|main goal|learning topics)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\b(the server|the session|the recording|the future)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\b(messages?|channel|group|topic|session|meeting)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\b\d+\s*(minutes?|hours?|days?|weeks?|months?)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\s+', ' ', text).strip()
+                            return text
+                        
+                        # Advanced concept extraction using spaCy (same patterns as channel analysis)
+                        def extract_complex_concepts(doc):
+                            concepts = []
+                            
+                            # Extract compound subjects with their predicates
+                            for token in doc:
+                                if token.dep_ == "nsubj" and token.pos_ in ["NOUN", "PROPN"]:
+                                    subject_span = doc[token.left_edge.i:token.right_edge.i+1]
+                                    if token.head.pos_ == "VERB":
+                                        verb = token.head
+                                        predicate_parts = [verb.text]
+                                        for child in verb.children:
+                                            if child.dep_ in ["dobj", "pobj", "attr", "prep"]:
+                                                obj_span = doc[child.left_edge.i:child.right_edge.i+1]
+                                                predicate_parts.append(obj_span.text)
+                                        if len(predicate_parts) > 1:
+                                            full_concept = f"{subject_span.text} {' '.join(predicate_parts)}"
+                                            if len(full_concept.split()) >= 3 and len(full_concept) > 15:
+                                                concepts.append(full_concept.lower().strip())
+                            
+                            # Extract extended noun phrases
+                            for chunk in doc.noun_chunks:
+                                extended_phrase = chunk.text
+                                for token in chunk:
+                                    for child in token.children:
+                                        if child.dep_ == "prep":
+                                            prep_phrase = doc[child.i:child.right_edge.i+1]
+                                            extended_phrase += f" {prep_phrase.text}"
+                                if len(extended_phrase.split()) >= 3 and len(extended_phrase) > 20:
+                                    concepts.append(extended_phrase.lower().strip())
+                            
+                            # Extract technical compounds
+                            for i, token in enumerate(doc[:-2]):
+                                if (token.pos_ in ["NOUN", "PROPN"] and 
+                                    doc[i+1].pos_ in ["NOUN", "PROPN", "ADJ"] and 
+                                    doc[i+2].pos_ in ["NOUN", "PROPN"]):
+                                    compound = f"{token.text} {doc[i+1].text} {doc[i+2].text}"
+                                    j = i + 3
+                                    while j < len(doc) and doc[j].pos_ in ["NOUN", "PROPN"] and j < i + 6:
+                                        compound += f" {doc[j].text}"
+                                        j += 1
+                                    if len(compound.split()) >= 3:
+                                        concepts.append(compound.lower())
+                            
+                            return concepts
+                        
+                        # Domain-specific patterns (same as channel analysis)
+                        tech_patterns = [
+                            r'\b(AI|ML|LLM|GPT|algorithm|model|neural|API|cloud|automation|pipeline|framework)\b',
+                            r'\b(python|javascript|typescript|react|node|docker|kubernetes|aws|azure)\b',
+                            r'\b(database|sql|nosql|analytics|visualization|dashboard|metrics)\b'
+                        ]
+                        
+                        business_patterns = [
+                            r'\b(strategy|roadmap|KPI|ROI|revenue|growth|market|customer|client)\b',
+                            r'\b(product|service|solution|platform|integration|deployment|scale)\b',
+                            r'\b(team|collaboration|workflow|process|efficiency|optimization)\b'
+                        ]
+                        
+                        innovation_patterns = [
+                            r'\b(innovation|transformation|disruption|breakthrough|cutting.edge)\b',
+                            r'\b(future|trend|emerging|next.gen|state.of.the.art|revolutionary)\b',
+                            r'\b(experiment|prototype|pilot|proof.of_concept|MVP|beta)\b'
+                        ]
+                        
+                        # Process user's messages
+                        all_complex_concepts = []
+                        tech_counter = Counter()
+                        business_counter = Counter()
+                        innovation_counter = Counter()
+                        
+                        # Combine recent messages
+                        combined_text = " ".join([msg[0] for msg in recent_messages if msg[0]])
+                        cleaned_content = clean_content(combined_text)
+                        
+                        if cleaned_content and len(cleaned_content.split()) >= 10:
+                            try:
+                                doc = nlp(cleaned_content[:500000])  # Process user's content
+                                
+                                # Extract complex concepts
+                                complex_concepts = extract_complex_concepts(doc)
+                                all_complex_concepts.extend(complex_concepts)
+                                
+                                # Extract simple patterns
+                                for pattern in tech_patterns:
+                                    matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
+                                    for match in matches:
+                                        tech_counter[match.lower()] += 1
+                                
+                                for pattern in business_patterns:
+                                    matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
+                                    for match in matches:
+                                        business_counter[match.lower()] += 1
+                                
+                                for pattern in innovation_patterns:
+                                    matches = re.findall(pattern, cleaned_content, re.IGNORECASE)
+                                    for match in matches:
+                                        innovation_counter[match.lower()] += 1
+                                
+                            except Exception as e:
+                                print(f"Error in spaCy processing for {display_name}: {e}")
+                        
+                        # Compile results
+                        complex_phrases = [concept for concept, count in Counter(all_complex_concepts).most_common(8) if count >= 1]
+                        technical_terms = [term for term, count in tech_counter.most_common(5) if count >= 1]
+                        business_concepts = [concept for concept, count in business_counter.most_common(5) if count >= 1]
+                        innovation_indicators = [pattern for pattern, count in innovation_counter.most_common(5) if count >= 1]
+                        
+                        # Combine all concepts for the traditional display
+                        user_concepts = (complex_phrases[:4] + technical_terms[:2] + 
+                                       business_concepts[:2] + innovation_indicators[:2])[:8]
+                        
+                except Exception as e:
+                    print(f"Error extracting advanced concepts for {display_name}: {e}")
+                    # Fallback to basic extraction
+                    try:
+                        user_concepts = await self.extract_concepts_from_content(recent_messages)
+                    except:
+                        user_concepts = []
+            
+            # Format results to match the original
+            result = f"**User Analysis: {display_name}**\n\n"
+            
+            # General Statistics
+            result += f"**📊 General Statistics:**\n"
+            result += f"• Total Messages: {total_messages}\n"
+            result += f"• Active Channels: {channels_active}\n"
+            result += f"• Average Message Length: {avg_length:.1f} characters\n"
+            result += f"• Active Days: {active_days}\n"
+            
+            if first_msg and last_msg:
+                # Format timestamps to match original (YYYY-MM-DD HH:MM)
+                try:
+                    from datetime import datetime
+                    first_dt = datetime.fromisoformat(first_msg.replace('Z', '+00:00'))
+                    last_dt = datetime.fromisoformat(last_msg.replace('Z', '+00:00'))
+                    result += f"• First Message: {first_dt.strftime('%Y-%m-%d %H:%M')}\n"
+                    result += f"• Last Message: {last_dt.strftime('%Y-%m-%d %H:%M')}\n"
+                except:
+                    result += f"• First Message: {self.format_timestamp(first_msg)}\n"
+                    result += f"• Last Message: {self.format_timestamp(last_msg)}\n"
+            
+            result += "\n"
+            
+            # Channel Activity
+            if channel_activity:
+                result += f"**📍 Channel Activity:**\n"
+                for channel, count, avg_chars in channel_activity:
+                    result += f"• #{channel}: {count} messages (avg {avg_chars:.0f} chars)\n"
+                result += "\n"
+            
+            # Activity by Time of Day
+            if time_activity:
+                result += f"**� Activity by Time of Day:**\n"
+                for period, count in time_activity:
+                    result += f"• {period}: {count} messages\n"
+                result += "\n"
+            
+            # Key Topics & Concepts
+            if user_concepts:
+                result += f"**🧠 Key Topics & Concepts:**\n"
+                # Format concepts with title case and bullet points
+                formatted_concepts = []
+                for concept in user_concepts[:8]:
+                    # Title case each word and clean up
+                    formatted_concept = ' '.join(word.capitalize() for word in concept.split())
+                    formatted_concepts.append(f"• {formatted_concept}")
+                
+                result += '\n'.join(formatted_concepts) + "\n"
+            
+            return result
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"Error getting user insights: {str(e)}"
+    
+    async def get_channel_insights(self, channel_name: str) -> str:
+        """Get comprehensive channel statistics and insights"""
+        try:
+            await self.initialize()
+            
+            # Resolve the channel name to the actual database name
+            resolved_channel = await self.resolve_channel_name(channel_name)
+            
+            # Get basic channel statistics
+            async with self.pool.execute(f"""
+                SELECT 
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT author_id) as unique_users,
+                    AVG(LENGTH(content)) as avg_message_length,
+                    MIN(timestamp) as first_message,
+                    MAX(timestamp) as last_message
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND content IS NOT NULL
+            """, (resolved_channel,)) as cursor:
+                stats = await cursor.fetchone()
+            
+            if not stats or stats[0] == 0:
+                # Try to find similar channel names
+                async with self.pool.execute(f"""
+                    SELECT DISTINCT channel_name, COUNT(*) as msg_count
+                    FROM messages 
+                    WHERE {self.base_filter}
+                    AND LOWER(channel_name) LIKE ?
+                    GROUP BY channel_name
+                    ORDER BY msg_count DESC
+                    LIMIT 5
+                """, (f"%{channel_name.lower()}%",)) as cursor:
+                    similar_channels = await cursor.fetchall()
+                
+                if similar_channels:
+                    suggestions = ", ".join([ch[0] for ch in similar_channels])
+                    return f"❌ No messages found for channel '{channel_name}'. Did you mean: {suggestions}?"
+                else:
+                    return f"❌ No channel found matching '{channel_name}'"
+            
+            total_messages, unique_users, avg_length, first_msg, last_msg = stats
+            
+            # Get engagement metrics
+            async with self.pool.execute(f"""
+                SELECT 
+                    COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+                    COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as original_posts,
+                    COUNT(CASE WHEN has_reactions = 1 THEN 1 END) as posts_with_reactions
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+            """, (resolved_channel,)) as cursor:
+                engagement = await cursor.fetchone()
+            
+            total_replies, original_posts, posts_with_reactions = engagement
+            replies_per_post = total_replies / original_posts if original_posts > 0 else 0
+            reaction_rate = (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0
+            
+            # Get top contributors
+            async with self.pool.execute(f"""
+                SELECT 
+                    COALESCE(author_display_name, author_name) as display_name,
+                    COUNT(*) as message_count,
+                    AVG(LENGTH(content)) as avg_chars
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND content IS NOT NULL
+                GROUP BY author_id, author_display_name, author_name
+                ORDER BY message_count DESC
+                LIMIT 5
+            """, (resolved_channel,)) as cursor:
+                contributors = await cursor.fetchall()
+            
+            # Get peak activity hours
+            async with self.pool.execute(f"""
+                SELECT 
+                    strftime('%H', timestamp) as hour,
+                    COUNT(*) as messages
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND timestamp IS NOT NULL
+                GROUP BY strftime('%H', timestamp)
+                ORDER BY messages DESC
+                LIMIT 3
+            """, (resolved_channel,)) as cursor:
+                peak_hours = await cursor.fetchall()
+            
+            # Get activity by day of week
+            async with self.pool.execute(f"""
+                SELECT 
+                    CASE strftime('%w', timestamp)
+                        WHEN '0' THEN 'Sunday'
+                        WHEN '1' THEN 'Monday'
+                        WHEN '2' THEN 'Tuesday'
+                        WHEN '3' THEN 'Wednesday'
+                        WHEN '4' THEN 'Thursday'
+                        WHEN '5' THEN 'Friday'
+                        WHEN '6' THEN 'Saturday'
+                    END as day_name,
+                    COUNT(*) as messages
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND timestamp IS NOT NULL
+                GROUP BY strftime('%w', timestamp)
+                ORDER BY messages DESC
+                LIMIT 3
+            """, (resolved_channel,)) as cursor:
+                day_activity = await cursor.fetchall()
+            
+            # Get recent activity (last 10 days)
+            async with self.pool.execute(f"""
+                SELECT 
+                    DATE(timestamp) as date,
+                    COUNT(*) as messages
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND timestamp IS NOT NULL
+                AND DATE(timestamp) >= DATE('now', '-10 days')
+                GROUP BY DATE(timestamp)
+                ORDER BY date DESC
+                LIMIT 5
+            """, (resolved_channel,)) as cursor:
+                recent_activity = await cursor.fetchall()
+            
+            # Get channel health metrics (activity in last week)
+            async with self.pool.execute(f"""
+                SELECT COUNT(DISTINCT author_id) as weekly_active
+                FROM messages 
+                WHERE channel_name = ? AND {self.base_filter}
+                AND timestamp >= datetime('now', '-7 days')
+            """, (resolved_channel,)) as cursor:
+                weekly_active_result = await cursor.fetchone()
+            
+            weekly_active = weekly_active_result[0] if weekly_active_result else 0
+            channel_amp = (weekly_active / unique_users * 100) if unique_users > 0 else 0
+            
+            # Extract top topics using advanced spaCy analysis
+            top_topics = []
+            try:
+                import spacy
+                from collections import Counter
+                import re
+                
+                # Get content for topic analysis
+                async with self.pool.execute(f"""
+                    SELECT content
+                    FROM messages 
+                    WHERE channel_name = ? AND {self.base_filter}
+                    AND content IS NOT NULL 
+                    AND LENGTH(content) > 30
+                    ORDER BY timestamp DESC
+                    LIMIT 200
+                """, (resolved_channel,)) as cursor:
+                    topic_messages = await cursor.fetchall()
+                
+                if topic_messages:
+                    try:
+                        nlp = spacy.load("en_core_web_sm")
+                        
+                        # Advanced text cleaning (same as channel analysis)
+                        def clean_content(text):
+                            text = re.sub(r'<@[!&]?\d+>', '', text)  # Remove mentions
+                            text = re.sub(r'<#\d+>', '', text)  # Remove channel references
+                            text = re.sub(r'<:\w+:\d+>', '', text)  # Remove custom emojis
+                            text = re.sub(r'https?://\S+', '', text)  # Remove URLs
+                            text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)  # Remove code blocks
+                            text = re.sub(r'`[^`]+`', '', text)  # Remove inline code
+                            text = re.sub(r'[🎯🏷️💡🔗🔑📝🌎🏭]', '', text)  # Remove emoji noise
+                            text = re.sub(r'\b(time zone|buddy group|display name|main goal|learning topics)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\b(the server|the session|the recording|the future)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\b(messages?|channel|group|topic|session|meeting)\b', '', text, flags=re.IGNORECASE)
+                            text = re.sub(r'\s+', ' ', text).strip()
+                            return text
+                        
+                        # Extract complex concepts using spaCy
+                        def extract_complex_topics(doc):
+                            topics = []
+                            
+                            # Extract compound subjects with their predicates
+                            for token in doc:
+                                if token.dep_ == "nsubj" and token.pos_ in ["NOUN", "PROPN"]:
+                                    subject_span = doc[token.left_edge.i:token.right_edge.i+1]
+                                    if token.head.pos_ == "VERB":
+                                        verb = token.head
+                                        predicate_parts = [verb.text]
+                                        for child in verb.children:
+                                            if child.dep_ in ["dobj", "pobj", "attr"]:
+                                                obj_span = doc[child.left_edge.i:child.right_edge.i+1]
+                                                predicate_parts.append(obj_span.text)
+                                        if len(predicate_parts) > 1:
+                                            full_topic = f"{subject_span.text} {' '.join(predicate_parts)}"
+                                            if len(full_topic.split()) >= 2 and len(full_topic) > 10:
+                                                topics.append(full_topic.lower().strip())
+                            
+                            # Extract extended noun phrases (technical terms, concepts)
+                            for chunk in doc.noun_chunks:
+                                if len(chunk.text.split()) >= 2 and len(chunk.text) > 8:
+                                    # Filter out common stopwords and generic terms
+                                    if not any(word in chunk.text.lower() for word in ['this', 'that', 'some', 'any', 'the', 'these', 'those']):
+                                        topics.append(chunk.text.lower().strip())
+                            
+                            # Extract technical compounds and domain-specific terms
+                            for i, token in enumerate(doc[:-1]):
+                                if (token.pos_ in ["NOUN", "PROPN", "ADJ"] and 
+                                    doc[i+1].pos_ in ["NOUN", "PROPN"]):
+                                    compound = f"{token.text} {doc[i+1].text}"
+                                    # Look ahead for longer compounds
+                                    j = i + 2
+                                    while j < len(doc) and doc[j].pos_ in ["NOUN", "PROPN"] and j < i + 4:
+                                        compound += f" {doc[j].text}"
+                                        j += 1
+                                    if len(compound.split()) >= 2 and len(compound) > 6:
+                                        topics.append(compound.lower())
+                            
+                            return topics
+                        
+                        # Process messages and extract topics
+                        all_topics = []
+                        combined_text = " ".join([msg[0] for msg in topic_messages if msg[0]])
+                        cleaned_content = clean_content(combined_text)
+                        
+                        if cleaned_content and len(cleaned_content.split()) >= 20:
+                            doc = nlp(cleaned_content[:500000])  # Limit text length
+                            complex_topics = extract_complex_topics(doc)
+                            all_topics.extend(complex_topics)
+                        
+                        # Count and filter topics
+                        topic_counter = Counter(all_topics)
+                        
+                        # Filter for meaningful topics (avoid very short, very long, or common words)
+                        filtered_topics = []
+                        for topic, count in topic_counter.most_common(50):
+                            if (6 <= len(topic) <= 60 and 
+                                count >= 2 and 
+                                len(topic.split()) >= 2 and
+                                topic not in ['the', 'and', 'for', 'with', 'this', 'that', 'from', 'they', 'have', 'will', 'can', 'would', 'could'] and
+                                not topic.startswith(('i ', 'you ', 'we ', 'they '))):
+                                # Title case the topic for display
+                                formatted_topic = ' '.join(word.capitalize() for word in topic.split())
+                                filtered_topics.append(formatted_topic)
+                        
+                        top_topics = filtered_topics[:10]
+                        
+                    except OSError:
+                        print("spaCy model not found for topic extraction.")
+                    except Exception as e:
+                        print(f"Error in topic extraction: {e}")
+                        
+            except Exception as e:
+                print(f"Error extracting topics: {e}")
+            
+            # Generate activity chart for past 30 days
+            chart_path = None
+            try:
+                import matplotlib.pyplot as plt
+                import matplotlib.dates as mdates
+                from datetime import datetime, timedelta
+                import os
+                
+                # Get daily message counts for past 30 days
+                async with self.pool.execute(f"""
+                    SELECT 
+                        DATE(timestamp) as date,
+                        COUNT(*) as messages
+                    FROM messages 
+                    WHERE channel_name = ? AND {self.base_filter}
+                    AND timestamp IS NOT NULL
+                    AND DATE(timestamp) >= DATE('now', '-30 days')
+                    GROUP BY DATE(timestamp)
+                    ORDER BY date ASC
+                """, (resolved_channel,)) as cursor:
+                    daily_activity = await cursor.fetchall()
+                
+                if daily_activity and len(daily_activity) > 1:
+                    # Prepare data for plotting
+                    dates = []
+                    message_counts = []
+                    
+                    for date_str, count in daily_activity:
+                        try:
+                            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                            dates.append(date_obj)
+                            message_counts.append(count)
+                        except:
+                            continue
+                    
+                    if dates and message_counts:
+                        # Create the plot
+                        plt.figure(figsize=(12, 6))
+                        plt.bar(dates, message_counts, color='#5865F2', alpha=0.7, edgecolor='#4752C4', linewidth=1)
+                        
+                        # Formatting
+                        plt.title(f'Daily Message Activity - #{resolved_channel}', fontsize=16, fontweight='bold', pad=20)
+                        plt.xlabel('Date', fontsize=12)
+                        plt.ylabel('Number of Messages', fontsize=12)
+                        
+                        # Format x-axis
+                        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+                        plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates)//10)))
+                        plt.xticks(rotation=45)
+                        
+                        # Add grid for better readability
+                        plt.grid(True, alpha=0.3, axis='y')
+                        
+                        # Add some statistics to the plot
+                        avg_messages = sum(message_counts) / len(message_counts)
+                        max_messages = max(message_counts)
+                        
+                        plt.axhline(y=avg_messages, color='red', linestyle='--', alpha=0.7, 
+                                  label=f'Average: {avg_messages:.1f} msg/day')
+                        
+                        plt.legend()
+                        plt.tight_layout()
+                        
+                        # Save the chart
+                        chart_filename = f"channel_activity_{resolved_channel.replace('#', '').replace('🗂', '').replace('🏘', '').replace('💠', '').replace('🦾', '').replace('🏛', '').replace('🧢', '').replace('📚', '').replace('🗣', '')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        chart_path = os.path.join('temp', chart_filename)
+                        
+                        # Ensure temp directory exists
+                        os.makedirs('temp', exist_ok=True)
+                        
+                        plt.savefig(chart_path, dpi=300, bbox_inches='tight', facecolor='white')
+                        plt.close()
+                        
+            except Exception as e:
+                print(f"Error generating activity chart: {e}")
+            
+            # Format results
+            result = f"**Channel Analysis: #{resolved_channel}**\n\n"
+            
+            # Basic Statistics
+            result += f"**Basic Statistics:**\n"
+            result += f"• Total Messages: {total_messages}\n"
+            result += f"• Unique Users: {unique_users}\n"
+            result += f"• Average Message Length: {avg_length:.1f} characters\n"
+            
+            if first_msg and last_msg:
+                try:
+                    from datetime import datetime
+                    first_dt = datetime.fromisoformat(first_msg.replace('Z', '+00:00'))
+                    last_dt = datetime.fromisoformat(last_msg.replace('Z', '+00:00'))
+                    result += f"• First Message: {first_dt.strftime('%Y-%m-%d %H:%M')}\n"
+                    result += f"• Last Message: {last_dt.strftime('%Y-%m-%d %H:%M')}\n"
+                except:
+                    result += f"• First Message: {self.format_timestamp(first_msg)}\n"
+                    result += f"• Last Message: {self.format_timestamp(last_msg)}\n"
+            
+            result += "\n"
+            
+            # Engagement Metrics
+            result += f"**📈 Engagement Metrics:**\n"
+            result += f"• Average Replies per Original Post: {replies_per_post:.2f}\n"
+            result += f"• Posts with Reactions: {reaction_rate:.1f}% ({posts_with_reactions}/{total_messages})\n"
+            result += f"• Total Replies: {total_replies} | Original Posts: {original_posts}\n\n"
+            
+            # Top Contributors
+            if contributors:
+                result += f"**Top Contributors:**\n"
+                for name, count, avg_chars in contributors:
+                    result += f"• {name}: {count} messages (avg {avg_chars:.0f} chars)\n"
+                result += "\n"
+            
+            # Peak Activity Hours
+            if peak_hours:
+                result += f"**Peak Activity Hours:**\n"
+                for hour, count in peak_hours:
+                    result += f"• {hour}:00-{hour}:59: {count} messages\n"
+                result += "\n"
+            
+            # Activity by Day
+            if day_activity:
+                result += f"**Activity by Day:**\n"
+                for day, count in day_activity:
+                    result += f"• {day}: {count} messages\n"
+                result += "\n"
+            
+            # Recent Activity
+            if recent_activity:
+                result += f"**Recent Activity (Last 10 Days):**\n"
+                for date, count in recent_activity:
+                    result += f"• {date}: {count} messages\n"
+                result += "\n"
+            
+            # Channel Health Metrics
+            result += f"**📈 Channel Health Metrics:**\n"
+            result += f"• Channel AMP: {channel_amp:.1f}% ({weekly_active}/{unique_users} members active this week)\n"
+            result += f"• Total Members Ever Active: {unique_users}\n"
+            result += f"• Weekly Active Members: {weekly_active}\n\n"
+            
+            # Top Topics Discussed
+            if top_topics:
+                result += f"**🧠 Top Topics Discussed:**\n"
+                for i, topic in enumerate(top_topics, 1):
+                    result += f"{i}. {topic}\n"
+            
+            # Return both text and chart path if chart was generated
+            if chart_path and os.path.exists(chart_path):
+                return (result, chart_path)
+            else:
+                return result
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"Error getting channel insights: {str(e)}"
