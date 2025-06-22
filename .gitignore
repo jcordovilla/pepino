@@ -1,31 +1,20 @@
-# Discord Analysis Bot - Essential Files Only
-
-# Sensitive data
+# This is a .gitignore file for a Python project
+# It tells Git which files or directories to ignore
+# So that they are not tracked in the repository
+# Environment variables
 .env
-.env.*
 
-# Database and data files (contain sensitive message data)
-*.db
-*.sqlite*
-discord_messages.db
-data/
-
-# Generated content and temporary files
-archive/
-temp/
-tmp/
-*.png
-*.jpg
-*.csv
-*.log
-
-# Python
+# Python cache
 __pycache__/
 *.pyc
+
+# Virtual environments
 venv/
 .venv/
 
-# OS and IDE
+# Database files
+*.db
+*.sqlite
+
+# OS files
 .DS_Store
-.vscode/
-.idea/
