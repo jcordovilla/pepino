@@ -1,5 +1,9 @@
 # Discord Analytics Bot
 
+> **📌 Choose Your Branch:**
+> - **`main`** - Full-featured Discord analytics bot with advanced insights, charts, and AI analysis
+> - **`simple-fetcher`** - Basic Discord message fetcher for building your own analytics
+
 A comprehensive Discord analytics system that fetches, analyzes, and visualizes Discord server activity with advanced insights and bot/human differentiation.
 
 ## 🚀 Features
