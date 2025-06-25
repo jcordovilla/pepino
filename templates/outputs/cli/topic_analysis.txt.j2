@@ -1,0 +1,26 @@
+🧠 Topic Analysis{{ ': #' + channel_name if channel_name else '' }}{{ ' (' + days_back|string + ' days)' if days_back else '' }}
+
+{%- if topics %}
+
+Top Topics Discussed:
+{% for topic in topics[:20] %}
+{{ loop.index }}. {{ topic.topic | title }}
+   Frequency: {{ topic.frequency | format_number }} mentions
+   Relevance: {{ (topic.relevance_score * 100) | round(1) }}%
+
+{% endfor %}
+{%- else %}
+
+No topics found for the specified criteria.
+{%- endif %}
+
+{%- if message_count %}
+
+📈 Analysis Summary:
+• Messages Analyzed: {{ message_count | format_number }}
+• Topics Found: {{ topics | length }}
+• Most Relevant: {{ topics[0].topic | title if topics else 'None' }}
+{%- if capabilities_used %}
+• Analysis Methods: {{ capabilities_used | join(', ') | title }}
+{%- endif %}
+{%- endif %} 

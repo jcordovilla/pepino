@@ -1,0 +1,29 @@
+⏰ Temporal Analysis{{ ': #' + channel_name if channel_name else '' }}{{ ' (' + days_back|string + ' days)' if days_back else '' }}
+{% if temporal_data %}
+
+📈 Activity Timeline:
+{% for data in temporal_data %}
+• {{ data.period }}: {{ data.message_count | format_number }} messages, {{ data.unique_users | format_number }} users
+{% endfor %}
+{%- endif %}
+
+{%- if patterns %}
+
+📊 Activity Patterns:
+• Total Messages: {{ patterns.total_messages | format_number }}
+• Average per Period: {{ "%.1f"|format(patterns.avg_messages_per_period) }} messages
+• Most Active Period: {{ patterns.most_active_period }} ({{ patterns.max_messages_in_period | format_number }} messages)
+• Least Active Period: {{ patterns.min_messages_in_period | format_number }} messages
+• Activity Trend: {{ patterns.message_trend | title }} ({{ "%.1f"|format(patterns.trend_percentage) }}%)
+• Peak User Count: {{ patterns.peak_user_count | format_number }}
+{%- endif %}
+
+{% if granularity %}
+
+🕐 Time Granularity: {{ granularity | title }}
+{% endif %}
+
+{% if capabilities_used %}
+
+🔧 Analysis Methods: {{ capabilities_used | join(', ') | title }}
+{% endif %} 

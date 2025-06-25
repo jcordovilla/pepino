@@ -1,0 +1,10 @@
+## 👥 Top 10 Most Active Users
+
+{% if users_data and users_data | length > 0 -%}
+{% for user in users_data -%}
+{% set display_name = user.display_name or user.author_name -%}
+**{{ loop.index }}. {{ display_name }}** - {{ user.message_count | format_number }} messages
+{% endfor -%}
+{% else -%}
+❌ No user data found
+{% endif %} 

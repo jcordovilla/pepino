@@ -1,0 +1,32 @@
+📋 Available Channels for Analysis
+
+{% if items %}
+
+Channels (showing {{ showing_count }} of {{ total_count }}):
+{% for channel in items %}
+{{ loop.index }}. #{{ channel.channel_name if channel.channel_name else channel.name if channel.name else channel }}
+   {%- if channel.message_count %}
+   Messages: {{ channel.message_count | format_number }}
+   {%- endif %}
+   {%- if channel.unique_users %}
+   Users: {{ channel.unique_users | format_number }}
+   {%- endif %}
+   {%- if channel.last_activity %}
+   Last Activity: {{ channel.last_activity | format_timestamp }}
+   {%- endif %}
+
+{% endfor %}
+
+{%- if has_more and total_count > showing_count %}
+... and {{ total_count - showing_count }} more channels
+Use --limit 0 to show all channels
+{%- endif %}
+{%- else %}
+
+No channels found in the database.
+{%- endif %}
+
+Summary:
+• Total channels available: {{ total_count | format_number }}
+• Ready for analysis with commands like:
+  pepino analyze channels --channel channel_name 

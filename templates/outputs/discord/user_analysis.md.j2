@@ -1,0 +1,31 @@
+## 📊 User Analysis: {{ user_info.display_name }}
+
+**📈 Activity Statistics:**
+• Total Messages: {{ statistics.message_count | format_number }}
+• Active Channels: {{ statistics.channels_active }}
+• Average Message Length: {{ statistics.avg_message_length | format_number }} characters
+• First Message: {{ statistics.first_message_date | format_timestamp }}
+• Last Message: {{ statistics.last_message_date | format_timestamp }}
+
+{% if concepts and concepts | length > 0 -%}
+**🎯 Main Topics/Concepts:**
+{{ concepts[:8] | map('discord_code') | join(', ') }}
+
+{% endif -%}
+**📅 Activity Timeline:**
+• Member since: {{ statistics.first_message_date | format_timestamp }}
+• Most recent activity: {{ statistics.last_message_date | format_timestamp }}
+
+{% if activity_patterns -%}
+**⏰ Activity Patterns:**
+{% for pattern in activity_patterns -%}
+• {{ pattern.description }}: {{ pattern.value }}
+{% endfor %}
+
+{% endif -%}
+{% if recommendations -%}
+**💡 Insights:**
+{% for rec in recommendations -%}
+• {{ rec }}
+{% endfor -%}
+{% endif %} 

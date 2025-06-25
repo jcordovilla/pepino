@@ -1,0 +1,31 @@
+🏆 Top {{ limit }} Users{{ ' in #' + channel_name if channel_name else '' }}
+
+{% if top_users %}
+
+Ranking by Message Count:
+{% for user in top_users %}
+{{ loop.index }}. {{ user.author_name or 'Unknown User' }}
+   Messages: {{ user.message_count | format_number }}
+   Channels: {{ user.unique_channels | format_number }}
+   {%- if user.first_message %}
+   First Seen: {{ user.first_message | format_timestamp }}
+   {%- endif %}
+   {%- if user.last_message %}
+   Last Seen: {{ user.last_message | format_timestamp }}
+   {%- endif %}
+
+{% endfor %}
+{%- else %}
+
+No users found with the specified criteria.
+{%- endif %}
+
+{%- if total_users %}
+
+Summary:
+• Total users analyzed: {{ total_users | format_number }}
+• Showing top {{ top_users | length }} contributors
+{%- if days %}
+• Time period: Last {{ days }} days
+{%- endif %}
+{%- endif %} 

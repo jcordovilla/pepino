@@ -1,0 +1,18 @@
+## 🎯 Topic Analysis{% if channel_name %} in #{{ channel_name }}{% else %} across all channels{% endif %}
+
+**📊 Analysis Scope:**
+• Messages Analyzed: {{ message_count | format_number }}
+• Time Period: 30 days
+
+{% if topics and topics | length > 0 -%}
+**🔥 Top Topics:**
+{% for topic in topics[:10] -%}
+{% if topic.topic is defined -%}
+{{ loop.index }}. **{{ topic.topic }}** - {{ topic.frequency }} mentions
+{% else -%}
+{{ loop.index }}. **{{ topic }}** - N/A mentions
+{% endif -%}
+{% endfor -%}
+{% else -%}
+No significant topics found in the analyzed messages.
+{% endif %} 

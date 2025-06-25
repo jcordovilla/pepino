@@ -1,166 +1,164 @@
-# Discord Analytics Bot
+# Pepino - Discord Analytics Bot
 
-> **📌 Choose Your Branch:**
-> - **`main`** - Full-featured Discord analytics bot with advanced insights, charts, and AI analysis
-> - **`simple-fetcher`** - Basic Discord message fetcher for building your own analytics
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Poetry](https://img.shields.io/badge/dependency-poetry-blue.svg)](https://python-poetry.org/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A comprehensive Discord analytics system that fetches, analyzes, and visualizes Discord server activity with advanced insights and bot/human differentiation.
+A powerful Discord analytics system that extracts deep insights from server activity with both interactive Discord bot and CLI interfaces.
 
-## 🚀 Features
+## ✨ Features
 
-### Core Analytics
-- **📊 Channel Analysis** - Deep insights into channel activity, engagement, and topics
-- **👥 User Statistics** - Top contributors with activity patterns (human-only metrics)
-- **📈 Activity Trends** - Server-wide activity visualization with 30-day charts
-- **🧠 Topic Analysis** - AI-powered topic extraction and discussion themes
-- **📱 Bot Commands** - Interactive Discord slash commands for real-time analytics
+### 🎯 **Dual Interface**
+- **Discord Bot**: Interactive slash commands with real-time charts
+- **CLI Tool**: Powerful automation and scripting capabilities
 
-### Key Differentiators
-- **🤖 vs 👤 Bot/Human Separation** - All metrics exclude bots for accurate human engagement
-- **📊 Visual Charts** - Matplotlib-generated activity trends and patterns
-- **🎯 Smart Topic Extraction** - Relevant topics using NLP and frequency analysis
-- **� Engagement Metrics** - Reply rates, reaction rates, participation analysis
-- **🕐 Temporal Patterns** - Peak hours, daily/weekly activity breakdowns
+### 📊 **Smart Analytics**
+- **User Insights**: Activity patterns, peak hours, conversation topics
+- **Channel Intelligence**: Engagement metrics, contributor analysis, topic trends
+- **Conversation Analysis**: Thread tracking, reply patterns, sentiment analysis
 
-## � Available Commands
+### 🚀 **Production Ready**
+- **Repository Pattern**: Clean architecture with 95%+ test coverage
+- **Async Performance**: Built for scale with asyncio throughout
+- **Professional Logging**: Structured logs with rotation and monitoring
+
+## 🚀 Quick Start
+
+```bash
+# Complete setup in one command
+make dev-setup
+
+# Copy and edit environment
+cp .env.example .env
+# Add your DISCORD_TOKEN
+
+# Start the bot
+pepino start
+```
+
+### Discord Bot Setup
+1. Create bot at [Discord Developer Portal](https://discord.com/developers/applications)
+2. Enable **Message Content Intent** and **Server Members Intent**  
+3. Copy token to `.env` file
+4. Invite with `View Channels`, `Read Message History`, `Use Slash Commands` permissions
+
+## 🎮 Discord Commands
 
 | Command | Description |
 |---------|-------------|
-| `/channel_analysis` | Detailed channel insights with key topics & activity charts |
-| `/user_analysis` | Individual user analysis with contribution patterns |
-| `/top_users` | Top 10 most active human users with main topics |
-| `/topics_analysis` | Channel topic themes and discussion patterns |
-| `/activity_trends` | Server activity trends with 30-day evolution charts |
+| `/user_analysis <user>` | Deep user activity and engagement analysis |
+| `/channel_analysis <channel>` | Channel insights with contributor charts |
+| `/topics_analysis [channel]` | AI-powered topic extraction and trends |
+| `/top_users` | Most active users with statistics |
+| `/activity_trends` | Server activity patterns over time |
+| `/sync_and_analyze` | Sync fresh data + run analysis |
+| `/list_users` / `/list_channels` | Browse available data |
 
-## 🛠️ Setup
+*All commands support autocomplete and include optional charts*
 
-### Prerequisites
-- Python 3.7+
-- Discord bot token with proper permissions
-
-### Quick Start
-1. **Clone and setup**
-   ```bash
-   git clone <repo-url>
-   cd pepino
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. **Configure environment**
-   ```bash
-   # Create .env file
-   echo "DISCORD_TOKEN=your_bot_token_here" > .env
-   ```
-
-3. **Discord Bot Setup**
-   - Create bot at [Discord Developer Portal](https://discord.com/developers/applications)
-   - Enable **Message Content Intent** and **Server Members Intent**
-   - Invite with permissions: `View Channels`, `Read Message History`
-
-4. **Fetch data and run bot**
-   ```bash
-   # Fetch messages (one-time setup)
-   python fetch_messages.py
-   
-   # Start analytics bot
-   python bot.py
-   ```
-
-## 📊 Sample Analytics Output
-
-### Channel Analysis
+### Example Output
 ```
-📊 Basic Statistics:
-• Total Messages: 1,234 (89.2% human, 10.8% bot)
-• Unique Human Users: 45
-• Average Message Length: 156.3 characters
+📊 User Analysis: alice_dev
 
-📈 Human Engagement Metrics:
-• Average Replies per Original Post: 1.23
-• Posts with Reactions: 15.6% (192/1,234)
-• Note: Bot messages excluded from calculations
+📈 Activity Overview:
+• 1,247 messages across 23 channels
+• Most Active: #development (312 messages)
+• Peak Hours: Tuesday 2-4 PM
+• Reply Rate: 67.8%
 
-📈 Channel Health Metrics (Human Activity):
-• Weekly Active Human Members: 12 (26.7% of total)
-• Human Participation Rate: 78.3%
-• Activity Ratio: 12 active / 8 inactive / 25 lurkers
+🏷️ Top Topics:
+• deployment, ci/cd, testing (127 messages)
+• react, frontend, ui (89 messages)
 ```
 
-### Activity Trends
-- **30-day server evolution chart** with daily message trends
-- **Weekly pattern analysis** showing peak activity days
-- **Hourly breakdown** with morning/afternoon/evening percentages
-- **Visual matplotlib charts** saved and sent to Discord
+## 🤖 Discord Bot Operations
 
-### User Statistics
-```
-📊 Top 10 Human User Activity Statistics
+**Starting the Bot**
+```bash
+# Simplest form
+pepino start
 
-1. Oscar Sanchez
-• Messages: 663 • Channels: 58 • Avg Length: 276 chars
-• Most Active: #netarch-general (187 messages)
-• Main Topics: session, linkedin, onboarding
+# With options
+pepino start --token "your_token" --debug
 
-2. Jose Cordovilla  
-• Messages: 358 • Channels: 38 • Avg Length: 176 chars
-• Most Active: #netarch-general (96 messages)
-• Main Topics: workshop, session, deployment
+# Using Make
+make run
 ```
 
-## 🗃️ Database Schema
+**Configuration**: Uses unified settings from `.env` file and command options.
 
-**Enhanced Tables:**
-- `messages` - All Discord messages with bot detection (`author_is_bot` field)
-- `channel_members` - Complete channel membership data
-- `sync_logs` - Synchronization history and statistics
+**📖 Advanced bot operations: [docs/bot_operations.md](docs/bot_operations.md)**
 
-**Auto-generated Analysis:**
-- Message embeddings for similarity analysis
-- Topic modeling results with spaCy NLP
-- Temporal activity patterns and trends
-- User engagement metrics (human-only)
+## 💻 CLI Interface
 
-## 🎯 Key Analytics Insights
+**Purpose**: Automation, scripting, batch analysis, and CI/CD integration.
 
-### What Makes This Special
-1. **Human-Centric Metrics** - Excludes bots from all engagement calculations
-2. **Visual Analytics** - Charts and graphs for trend analysis
-3. **Real-time Discord Integration** - Use commands directly in your server
-4. **Intelligent Topic Extraction** - Finds meaningful discussion themes
-5. **Comprehensive Health Metrics** - Activity ratios, participation rates
+**Common Workflows**
+```bash
+# Data management
+pepino sync status              # Check data freshness
+pepino sync run                 # Smart sync (only if needed)
 
-### Bot vs Human Differentiation
-- **Message counts** show percentage breakdown
-- **Engagement metrics** calculated on human activity only
-- **User statistics** completely exclude bot accounts
-- **Activity trends** focus on human participation patterns
+# Analysis (automation-friendly)
+pepino analyze users --limit 20 --format json
+pepino analyze channels --channel general --output report.csv
+pepino analyze topics --channel dev-team --format json
 
-## 🔧 File Structure
-
-```
-pepino/
-├── bot.py                 # Discord bot with slash commands
-├── bot_commands.py        # Command implementations
-├── analysis.py           # Core analytics engine
-├── fetch_messages.py     # Message fetching and storage
-├── requirements.txt      # Dependencies
-├── discord_messages.db   # SQLite database
-└── temp/                # Generated charts and visualizations
+# Scripting and automation
+pepino list channels --format json | jq '.channels[].name'
 ```
 
-## 📈 Example Use Cases
+**📖 Complete CLI reference: [docs/operations.md](docs/operations.md)**
 
-- **Community Management** - Track engagement and identify active contributors
-- **Content Strategy** - Understand what topics drive the most discussion
-- **Growth Analysis** - Monitor server health and member participation
-- **Moderation Insights** - Identify channels needing attention
-- **Trend Analysis** - Spot emerging topics and discussion patterns
+## ⚙️ Configuration
 
-## 🛡️ Security & Privacy
+**Required**
+```bash
+DISCORD_TOKEN=your_bot_token_here
+```
 
-- Bot token stored securely in `.env` (not tracked in git)
-- Database contains conversation data - handle appropriately
-- Analytics focus on patterns, not individual message content
-- Respects Discord's Terms of Service and API limits
+**Key Settings** (optional)
+```bash
+LOG_LEVEL=INFO                  # DEBUG, INFO, WARNING
+DATABASE_URL=sqlite:///data/discord_messages.db
+MAX_MESSAGES=10000             # Analysis limit
+CHART_DPI=300                  # Chart quality
+```
+
+**📖 Complete configuration: [docs/operations.md](docs/operations.md)**
+
+## 🧪 Development
+
+```bash
+# Setup
+make dev-setup
+
+# Quality checks
+make lint                      # Check code quality
+make test                      # Run fast tests
+make test-cov                  # Tests with coverage
+
+# Development cycle
+make dev                       # Format + fast tests
+```
+
+## 📚 Documentation
+
+- **[Operations Guide](docs/operations.md)** - Complete setup, configuration, commands
+- **[Bot Operations](docs/bot_operations.md)** - Discord bot setup and troubleshooting  
+- **[Architecture](docs/architecture.md)** - Technical details and design decisions
+
+## What's New
+
+### Latest Updates
+- **Smart Sync**: Only syncs when data is stale, with progress feedback
+- **Enhanced Charts**: User activity timelines and channel contributor visualizations
+- **Repository Pattern**: Clean architecture with comprehensive test coverage
+- **Professional Logging**: Structured logs with rotation and monitoring targets
+- **Unified CLI**: Single `pepino` command with intuitive subcommands
+
+### Architecture Highlights
+- **Modern Python**: Full async/await, type hints, Pydantic models
+- **Repository Pattern**: Clean data access with easy testing
+- **Service Layer**: Business logic separation for maintainability
+- **Quality Automation**: Black, isort, mypy, flake8 with Make targets

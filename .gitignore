@@ -3,18 +3,75 @@
 # So that they are not tracked in the repository
 # Environment variables
 .env
+!.env.example
 
 # Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Poetry
+# Note: poetry.lock should be committed to version control for reproducible builds
 
 # Virtual environments
 venv/
+env/
+ENV/
 .venv/
 
-# Database files
-*.db
-*.sqlite
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+temp/logs/
+*.log
+
+# Database
+data/backups/
+data/exports/
+
+# Charts
+temp/charts/
 
 # OS files
 .DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# sqllite dbs
+*.db
+*.db-*
+
+# temp folder
+temp/

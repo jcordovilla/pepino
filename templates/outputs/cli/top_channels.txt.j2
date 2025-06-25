@@ -1,0 +1,27 @@
+🏆 Top {{ limit }} Channels
+Ranking by Message Count:
+
+{% if top_channels %}
+{% for channel in top_channels %}
+{{ loop.index }}. {{ channel.channel_name or channel.name or 'Unknown Channel' }}
+   Messages: {{ channel.message_count | format_number }}
+   Users: {{ channel.unique_users | format_number }}
+   {%- if channel.avg_message_length %}
+   Avg Length: {{ "%.1f"|format(channel.avg_message_length) }} chars
+   {%- endif %}
+   {%- if channel.first_message %}
+   First Message: {{ channel.first_message | format_timestamp }}
+   {%- endif %}
+   {%- if channel.last_message %}
+   Last Message: {{ channel.last_message | format_timestamp }}
+   {%- endif %}
+
+{% endfor %}
+{%- else %}
+
+No channels found with the specified criteria.
+{%- endif %}
+
+Summary:
+• Total channels analyzed: {{ total_channels | format_number }}
+• Showing top {{ top_channels | length }} most active channels 

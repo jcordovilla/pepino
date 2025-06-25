@@ -1,0 +1,41 @@
+👤 User Analysis: {{ username }}
+
+Basic Statistics:
+• Total Messages: {{ statistics.total_messages | format_number }}
+• Average Message Length: {{ statistics.avg_message_length | round(1) }} characters
+• Active Days: {{ statistics.active_days | format_number }}
+• First Message: {{ statistics.first_message | format_timestamp }}
+• Last Message: {{ statistics.last_message | format_timestamp }}
+
+{%- if channel_activity %}
+
+📊 Channel Activity:
+{%- for activity in channel_activity[:10] %}
+• #{{ activity.channel_name }}: {{ activity.message_count | format_number }} messages ({{ activity.percentage | format_percentage }}%)
+{%- endfor %}
+{%- endif %}
+
+{%- if time_patterns and time_patterns.hourly_activity %}
+
+⏰ Activity Patterns:
+Peak Hours:
+{%- for hour in time_patterns.hourly_activity[:5] %}
+• {{ hour.hour }}:00 - {{ hour.message_count | format_number }} messages
+{%- endfor %}
+{%- endif %}
+
+{%- if time_patterns and time_patterns.daily_activity %}
+
+Peak Days:
+{%- for day in time_patterns.daily_activity[:7] %}
+• {{ day.day }}: {{ day.message_count | format_number }} messages
+{%- endfor %}
+{%- endif %}
+
+{%- if summary %}
+
+📈 Summary:
+• Activity Level: {{ summary.activity_level or 'Unknown' }}
+• Engagement Score: {{ summary.engagement_score | round(1) if summary.engagement_score else 'N/A' }}
+• Primary Channels: {{ summary.primary_channels[:3] | join(', ') if summary.primary_channels else 'N/A' }}
+{%- endif %} 

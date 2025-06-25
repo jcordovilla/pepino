@@ -1,0 +1,17 @@
+## 📈 Activity Trends (Last 30 Days)
+
+**📊 Overall Activity:**
+• Total Messages: {{ trends.total_messages | format_number }}
+• Average per Day: {{ trends.avg_messages_per_period | format_number }}
+• Peak Day: {{ trends.max_messages_in_period }} messages
+• Trend: {{ trends.message_trend | format_trend(trends.trend_percentage) }}
+
+{% if peak_analysis -%}
+**⏰ Peak Activity Times:**
+{% if peak_analysis.peak_hour -%}
+• Peak Hour: {{ peak_analysis.peak_hour.hour }}:00 ({{ peak_analysis.peak_hour.messages }} messages)
+{% endif -%}
+{% if peak_analysis.peak_day -%}
+• Peak Day: {{ peak_analysis.peak_day.day }} ({{ peak_analysis.peak_day.messages }} messages)
+{% endif -%}
+{% endif %} 

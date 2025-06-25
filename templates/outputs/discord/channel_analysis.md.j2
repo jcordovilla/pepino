@@ -1,0 +1,75 @@
+# 📊 Channel Analysis: {{ data.channel_name }}
+
+**Analysis Period:** {{ data.date_range.start }} to {{ data.date_range.end }}
+**Total Messages:** {{ data.statistics.total_messages | format_number }}
+**Active Users:** {{ data.statistics.active_users | format_number }}
+**Average Messages/Day:** {{ data.statistics.avg_messages_per_day | format_number }}
+
+## 📈 Activity Trends
+{% if data.temporal_patterns and data.temporal_patterns.daily_activity %}
+{% set dates = data.temporal_patterns.daily_activity | map(attribute='date') | list %}
+{% set counts = data.temporal_patterns.daily_activity | map(attribute='count') | list %}
+{% set chart_path = create_activity_chart(dates, counts, "Daily Activity in #" + data.channel_name) %}
+{% if chart_path %}
+**Chart Generated:** `{{ chart_path }}`
+{% endif %}
+
+Recent activity shows:
+{% for day in data.temporal_patterns.daily_activity[-7:] %}
+- **{{ day.date }}**: {{ day.count | format_number }} messages
+{% endfor %}
+{% endif %}
+
+## 👥 Top Contributors
+{% if data.user_stats %}
+{% set user_names = data.user_stats | map(attribute='username') | list %}
+{% set user_counts = data.user_stats | map(attribute='message_count') | list %}
+{% set user_chart_path = create_bar_chart(user_names[:10], user_counts[:10], "Top Contributors in #" + data.channel_name) %}
+{% if user_chart_path %}
+**User Activity Chart:** `{{ user_chart_path }}`
+{% endif %}
+
+{% for user in data.user_stats[:10] %}
+{{ loop.index }}. **{{ user.username }}** - {{ user.message_count | format_number }} messages ({{ user.percentage | format_percentage }})
+{% endfor %}
+{% endif %}
+
+## 🕐 Time Patterns
+{% if data.temporal_patterns %}
+**Peak Hours:**
+{% for hour in data.temporal_patterns.hourly_distribution[:3] %}
+- {{ hour.hour }}:00 - {{ hour.count | format_number }} messages
+{% endfor %}
+
+**Peak Days:**
+{% for day in data.temporal_patterns.daily_distribution[:3] %}
+- {{ day.day }} - {{ day.count | format_number }} messages
+{% endfor %}
+{% endif %}
+
+## 🔍 Content Analysis
+{% if data.content_analysis %}
+{% if data.content_analysis.common_words %}
+{% set word_text = data.content_analysis.common_words | map(attribute='word') | join(' ') %}
+{% set wordcloud_path = create_wordcloud(word_text, "Common Words in #" + data.channel_name) %}
+{% if wordcloud_path %}
+**Word Cloud:** `{{ wordcloud_path }}`
+{% endif %}
+{% endif %}
+
+**Most Common Topics:**
+{% for topic in data.content_analysis.common_words[:10] %}
+- {{ topic.word }} ({{ topic.count | format_number }} times)
+{% endfor %}
+{% endif %}
+
+## 📱 Engagement Metrics
+- **Reactions:** {{ data.statistics.total_reactions | format_number }}
+- **Threads:** {{ data.statistics.total_threads | format_number }}
+- **Average Message Length:** {{ data.statistics.avg_message_length | format_number }} characters
+{% if data.statistics.engagement_rate %}
+- **Engagement Rate:** {{ data.statistics.engagement_rate | format_percentage }}
+{% endif %}
+
+---
+*Analysis generated on {{ now().strftime('%Y-%m-%d at %H:%M') }}* 
