@@ -10,6 +10,7 @@ import logging.config
 import sys
 from pathlib import Path
 from typing import Optional
+import os
 
 from pepino.data.config import Settings
 
@@ -53,6 +54,9 @@ def setup_logging(
     """
     if settings is None:
         settings = Settings()
+
+    # TEMPORARY: Force DEBUG level for testing
+    settings.log_level = "DEBUG"
 
     # Create logs directory
     logs_dir = Path("logs")
@@ -269,4 +273,24 @@ def setup_bot_logging() -> None:
     )
     
     # Configure third-party loggers
-    configure_third_party_loggers(settings) 
+    configure_third_party_loggers(settings)
+
+    log_dir = Path(os.getenv('PEPINO_LOG_DIR', 'logs'))
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / 'pepino.log'
+    
+    logging.basicConfig(
+        level=logging.DEBUG,  # Changed from INFO to DEBUG
+        format='%(asctime)s [%(levelname)s] %(name)s [%(process)d:%(thread)d] [%(funcName)s:%(lineno)d]: %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Set Discord.py logging to WARNING to reduce noise
+    logging.getLogger('discord').setLevel(logging.WARNING)
+    logging.getLogger('discord.http').setLevel(logging.WARNING)
+    
+    print(f"Logging initialized - Level: DEBUG")
+    print(f"Log files: {log_dir}") 

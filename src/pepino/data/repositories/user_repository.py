@@ -58,6 +58,7 @@ class UserRepository:
             AVG(LENGTH(content)) as avg_message_length
         FROM messages 
         WHERE author_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
         params = [username]
@@ -106,6 +107,7 @@ class UserRepository:
             MAX(timestamp) as last_message
         FROM messages 
         WHERE author_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
         params = [username]
@@ -155,6 +157,7 @@ class UserRepository:
             COUNT(*) as message_count
         FROM messages 
         WHERE author_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
         params = [username]
@@ -182,7 +185,7 @@ class UserRepository:
 
     def get_available_users(self, limit: int = 500) -> List[str]:
         """
-        Get list of available users.
+        Get list of available users (humans only).
         
         Args:
             limit: Maximum number of users to return (default: 500 for better autocomplete)
@@ -194,6 +197,7 @@ class UserRepository:
         SELECT DISTINCT author_name
         FROM messages 
         WHERE content IS NOT NULL
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
         ORDER BY author_name
         LIMIT ?
         """

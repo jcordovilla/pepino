@@ -933,6 +933,7 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
     recent_activity = result.get("recent_activity", [])
     health_metrics = result.get("health_metrics")
     top_topics = result.get("top_topics", [])
+    total_human_members = result.get("total_human_members", 0)
 
     def format_timestamp(timestamp: str) -> str:
         try:
@@ -952,12 +953,15 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
     if stats.get('human_messages', 0) > 0 and stats.get('bot_messages', 0) > 0:
         human_pct = (stats['human_messages'] / stats['total_messages'] * 100)
         bot_pct = (stats['bot_messages'] / stats['total_messages'] * 100)
-        output += f"  \n"
-        output += f"Human Messages: {stats['human_messages']:,} ({human_pct:.1f}%)\n"
-        output += f"Bot Messages: {stats['bot_messages']:,} ({bot_pct:.1f}%)\n"
+        output += f"• Human Messages: {stats['human_messages']:,} ({human_pct:.1f}%)\n"
+        output += f"• Bot Messages: {stats['bot_messages']:,} ({bot_pct:.1f}%)\n"
     output += f"• Total Unique Users: {stats['unique_users']:,}\n"
     if stats.get('unique_human_users', 0) > 0:
-        output += f"• Unique Human Users: {stats['unique_human_users']:,}\n"
+        percentage_str = ""
+        if total_human_members and total_human_members > 0:
+            percentage = (stats['unique_human_users'] / total_human_members * 100)
+            percentage_str = f" ({percentage:.2f}%)"
+        output += f"• Unique Human Users: {stats['unique_human_users']:,}{percentage_str}\n"
     output += f"• Average Message Length: {stats['avg_message_length']:.1f} characters\n"
     output += f"• First Message: {format_timestamp(stats['first_message'])}\n"
     output += f"• Last Message: {format_timestamp(stats['last_message'])}\n\n"
@@ -975,8 +979,7 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
         output += "👥 Top Human Contributors:\n"
         for user in top_users[:5]:
             display_name = user.get('display_name') or user.get('author_name', 'Unknown')
-            avg_chars = user.get('avg_message_length', 0)
-            output += f"• {display_name}: {user['message_count']:,} messages (avg {avg_chars:.0f} chars)\n"
+            output += f"• {display_name} ({user['message_count']:,} messages)\n"
         output += "\n"
 
     # Peak Activity Times
@@ -988,7 +991,7 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
             output += "\n"
         
         if peak_activity.get('peak_days'):
-            output += "Activity by Day:\n"
+            output += "Peak Activity Days:\n"
             for day_data in peak_activity['peak_days'][:3]:
                 output += f"• {day_data['day']}: {day_data['messages']:,} messages\n"
             output += "\n"
@@ -1002,39 +1005,20 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
 
     # Channel Health Metrics
     if health_metrics:
-        output += "📈 Channel Health Metrics (Human Activity):\n"
+        output += "📈 Channel Health Metrics:\n"
+        output += f"• Weekly Active Users: {health_metrics['weekly_active']:,}\n"
+        output += f"• Inactive Users: {health_metrics['inactive_users']:,}\n"
         if health_metrics.get('total_channel_members', 0) > 0:
-            total_members = health_metrics['total_channel_members']
-            human_users = stats.get('unique_human_users', stats['unique_users'])
-            weekly_active = health_metrics['weekly_active']
-            inactive_users = health_metrics['inactive_users']
-            lurkers = health_metrics['lurkers']
-            participation_rate = health_metrics['participation_rate']
-            
-            output += f"• Total Channel Members: {total_members:,}\n"
-            output += f"• Human Members Who Ever Posted: {human_users:,} ({participation_rate:.1f}%)\n"
-            output += f"• Weekly Active Human Members: {weekly_active:,} ({(weekly_active/total_members*100):.1f}% of total)\n"
-            output += f"• Recently Inactive Human Members: {inactive_users:,} ({(inactive_users/human_users*100 if human_users > 0 else 0):.1f}% of human posters)\n"
-            output += f"• Human Lurkers (Never Posted): {lurkers:,} ({(lurkers/total_members*100):.1f}%)\n"
-            output += f"• Human Participation Rate: {participation_rate:.1f}% (members who have posted)\n"
-            output += f"• Activity Ratio: {weekly_active:,} active / {inactive_users:,} inactive / {lurkers:,} lurkers\n\n"
-        else:
-            # Fallback to message-based metrics
-            weekly_active = health_metrics['weekly_active']
-            inactive_users = health_metrics['inactive_users']
-            human_users = stats.get('unique_human_users', stats['unique_users'])
-            output += f"• Total Human Members Ever Active: {human_users:,}\n"
-            output += f"• Weekly Active Human Members: {weekly_active:,} ({(weekly_active/human_users*100 if human_users > 0 else 0):.1f}%)\n"
-            output += f"• Recently Inactive Human Members: {inactive_users:,} ({(inactive_users/human_users*100 if human_users > 0 else 0):.1f}%)\n"
-            output += f"• Activity Ratio: {weekly_active:,} active / {inactive_users:,} inactive\n"
-            output += f"• Note: Full membership data not available - showing message-based metrics only\n\n"
+            output += f"• Total Channel Members: {health_metrics['total_channel_members']:,}\n"
+            output += f"• Participation Rate: {(health_metrics['participation_rate'] * 100):.1f}%\n"
+        output += "\n"
 
     # Top Topics Discussed
     if top_topics:
-        output += "🧠 Top Topics Discussed:\n"
-        for i, topic in enumerate(top_topics[:10], 1):
+        output += "🔍 Top Topics:\n"
+        for i, topic in enumerate(top_topics[:5], 1):
             if topic and topic.strip():  # Only show non-empty topics
-                output += f"{i}. {topic}\n"
+                output += f"• {topic}\n"
 
     return output
 

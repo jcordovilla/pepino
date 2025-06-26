@@ -56,7 +56,10 @@ class ChannelRepository:
             COUNT(DISTINCT author_name) as unique_users,
             MIN(timestamp) as first_message,
             MAX(timestamp) as last_message,
-            AVG(LENGTH(content)) as avg_message_length
+            AVG(LENGTH(content)) as avg_message_length,
+            COUNT(CASE WHEN author_is_bot = 1 THEN 1 END) as bot_messages,
+            COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
+            COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users
         FROM messages 
         WHERE channel_name = ?
         """
@@ -79,7 +82,10 @@ class ChannelRepository:
             'unique_users': result['unique_users'] or 0,
             'first_message': result['first_message'],
             'last_message': result['last_message'],
-            'avg_message_length': result['avg_message_length'] or 0.0
+            'avg_message_length': result['avg_message_length'] or 0.0,
+            'bot_messages': result['bot_messages'] or 0,
+            'human_messages': result['human_messages'] or 0,
+            'unique_human_users': result['unique_human_users'] or 0
         }
 
     def get_channel_user_activity(
@@ -89,7 +95,7 @@ class ChannelRepository:
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        Get top users by activity in a specific channel.
+        Get top users by activity in a specific channel (humans only).
         
         Args:
             channel_name: Channel name to analyze
@@ -102,11 +108,14 @@ class ChannelRepository:
         query = """
         SELECT 
             author_name,
+            author_display_name,
             COUNT(*) as message_count,
             MIN(timestamp) as first_message,
-            MAX(timestamp) as last_message
+            MAX(timestamp) as last_message,
+            AVG(LENGTH(content)) as avg_message_length
         FROM messages 
         WHERE channel_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
         params = [channel_name]
@@ -117,7 +126,7 @@ class ChannelRepository:
         
         query += """
         AND content IS NOT NULL
-        GROUP BY author_name 
+        GROUP BY author_name, author_display_name
         ORDER BY message_count DESC 
         LIMIT ?
         """
@@ -128,9 +137,11 @@ class ChannelRepository:
         return [
             {
                 'author_name': row['author_name'],
+                'author_display_name': row['author_display_name'],
                 'message_count': row['message_count'],
                 'first_message': row['first_message'],
-                'last_message': row['last_message']
+                'last_message': row['last_message'],
+                'avg_message_length': row['avg_message_length'] or 0.0
             }
             for row in results
         ] if results else []
@@ -141,7 +152,7 @@ class ChannelRepository:
         days: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get channel's hourly activity patterns.
+        Get channel's hourly activity patterns (humans only).
         
         Args:
             channel_name: Channel name to analyze
@@ -156,6 +167,7 @@ class ChannelRepository:
             COUNT(*) as message_count
         FROM messages 
         WHERE channel_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
         params = [channel_name]
@@ -545,3 +557,25 @@ class ChannelRepository:
         )
         result = self.db_manager.execute_query(query, fetch_one=True)
         return result[0] if result else 0
+
+    def get_channel_human_member_count(self, channel_name: str) -> int:
+        """
+        Get the total number of human members who have ever posted in a channel.
+        
+        Args:
+            channel_name: Channel name to analyze
+            
+        Returns:
+            Total number of unique human members
+        """
+        query = """
+        SELECT COUNT(DISTINCT author_name) as total_human_members
+        FROM messages 
+        WHERE channel_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
+        AND content IS NOT NULL
+        """
+        
+        result = self.db_manager.execute_query(query, (channel_name,), fetch_one=True)
+        
+        return result['total_human_members'] if result else 0

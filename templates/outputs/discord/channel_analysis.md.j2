@@ -1,150 +1,63 @@
-# 📊 Channel Analysis: {{ data.channel_name }}
+# 📊 Channel Analysis #{{ channel_name }}
 
-**Analysis Period:** {{ data.date_range.start }} to {{ data.date_range.end }}
-**Total Messages:** {{ data.statistics.total_messages | format_number }}
-**Active Users:** {{ data.statistics.unique_users | format_number }}
-**Average Messages/Day:** {{ (data.statistics.total_messages / (data.statistics.active_days or 1)) | round(1) | format_number }}
+**Period:** {{ data.statistics.first_message[:10] if data.statistics.first_message else 'Unknown' }} to {{ data.statistics.last_message[:10] if data.statistics.last_message else 'Unknown' }}
+**Active Contributors:** {{ data.statistics.unique_human_users | format_number }} ({{ (data.statistics.unique_human_users / total_human_members * 100) | round(0) if total_human_members and total_human_members > 0 else 0 }}% of all members)
+**Avg. Messages/Day:** {{ (data.statistics.total_messages / (data.statistics.active_days or 1)) | round(1) | format_number }}
 
-## 📈 Activity Trends
-{% if data.peak_activity and data.peak_activity.peak_days %}
-**Recent Activity Overview:**
-{% for day in data.peak_activity.peak_days[:7] %}
-- **{{ day.day }}**: {{ day.messages | format_number }} messages
-{% endfor %}
-{% else %}
-**Activity Analysis:** Based on {{ data.statistics.total_messages | format_number }} total messages from {{ data.statistics.unique_users | format_number }} users.
+{% if participation_summary %}
+**Participation:** {{ participation_summary }}
+{% endif %}
+{% if lost_interest_summary %}
+**Lost Interest:** {{ lost_interest_summary }}
+{% endif %}
+{% if engagement_summary %}
+**Engagement:** {{ engagement_summary }}
+{% endif %}
+{% if trend_summary %}
+**Trend:** {{ trend_summary }}
+{% endif %}
+{% if bot_activity_summary %}
+**Bot Activity:** {{ bot_activity_summary }}
 {% endif %}
 
-## 👥 Top Contributors
-{% if data.user_stats %}
-{% set user_names = data.user_stats | map(attribute='author_name') | list %}
-{% set user_counts = data.user_stats | map(attribute='message_count') | list %}
-{% set user_chart_path = create_bar_chart(user_names[:10], user_counts[:10], "Top Contributors in #" + data.channel_name) %}
-{% if user_chart_path %}
-**User Activity Chart:** `{{ user_chart_path }}`
+## 📈 Detailed Metrics
+
+**Activity:** {{ data.statistics.total_messages | format_number }} total messages ({{ data.statistics.human_messages | format_number }} human{% if data.statistics.bot_messages > 0 %}, {{ data.statistics.bot_messages | format_number }} bot{% endif %})
+{% if participation_summary %}
+**Participation:** {{ participation_summary | lower }}
 {% endif %}
-
-{% for user in data.user_stats[:10] %}
-{% set percentage = (user.message_count / data.statistics.total_messages * 100) if data.statistics.total_messages > 0 else 0 %}
-{{ loop.index }}. **{{ user.author_name }}** - {{ user.message_count | format_number }} messages ({{ percentage | round(1) }}%)
-{% endfor %}
-{% else %}
-*No user statistics available for this channel.*
-{% endif %}
-
-## 🕐 Time Patterns
-{% if data.peak_activity %}
-{% if data.peak_activity.peak_hours %}
-**Peak Hours:**
-{% for hour in data.peak_activity.peak_hours[:3] %}
-- {{ hour.hour }} - {{ hour.messages | format_number }} messages
-{% endfor %}
-{% endif %}
-
-{% if data.peak_activity.peak_days %}
-**Peak Days:**
-{% for day in data.peak_activity.peak_days[:3] %}
-- {{ day.day }} - {{ day.messages | format_number }} messages
-{% endfor %}
-{% endif %}
-{% else %}
-*Time pattern analysis not available for this channel.*
-{% endif %}
-
-## 🔍 Content Analysis
-{% if data.top_topics %}
-**Top Discussion Topics:**
-{% for topic in data.top_topics[:10] %}
-- {{ topic }}
-{% endfor %}
-{% else %}
-*Topic analysis not available for this channel.*
-{% endif %}
-
-## 🧠 Smart NLP Analysis
-{% if messages and messages|length > 0 %}
-{% set recent_sentiment = analyze_messages_sentiment(messages[:50]) %}
-{% set key_concepts = extract_message_concepts(messages[:100]) %}
-{% set named_entities = get_message_entities(messages[:100]) %}
-
-### Sentiment Overview
-{% if recent_sentiment and recent_sentiment|length > 0 %}
-{% set positive_msgs = recent_sentiment | selectattr('sentiment', 'equalto', 'positive') | list %}
-{% set negative_msgs = recent_sentiment | selectattr('sentiment', 'equalto', 'negative') | list %}
-{% set neutral_msgs = recent_sentiment | selectattr('sentiment', 'equalto', 'neutral') | list %}
-
-- **Positive Messages:** {{ positive_msgs | length }} ({{ (positive_msgs | length / recent_sentiment | length * 100) | round(1) }}%)
-- **Negative Messages:** {{ negative_msgs | length }} ({{ (negative_msgs | length / recent_sentiment | length * 100) | round(1) }}%)
-- **Neutral Messages:** {{ neutral_msgs | length }} ({{ (neutral_msgs | length / recent_sentiment | length * 100) | round(1) }}%)
-
-{% if positive_msgs|length > 0 %}
-**Most Positive Recent Messages:**
-{% for msg in positive_msgs[:3] %}
-- **{{ msg.author }}**: "{{ msg.content_preview }}" (score: {{ msg.score }})
-{% endfor %}
-{% endif %}
-{% endif %}
-
-### Key Concepts Discussed
-{% if key_concepts and key_concepts|length > 0 %}
-{% set concept_counts = {} %}
-{% for item in key_concepts %}
-{% set _ = concept_counts.update({item.concept: concept_counts.get(item.concept, 0) + 1}) %}
-{% endfor %}
-{% set sorted_concepts = concept_counts.items() | sort(attribute=1, reverse=true) %}
-
-**Top Concepts in Recent Messages:**
-{% for concept, count in sorted_concepts[:10] %}
-- **{{ concept }}** (mentioned {{ count }} times)
-{% endfor %}
-{% endif %}
-
-### Named Entities Found
-{% if named_entities and named_entities|length > 0 %}
-{% set entity_types = {} %}
-{% for entity in named_entities %}
-{% set type_list = entity_types.get(entity.label, []) %}
-{% set _ = type_list.append(entity.text) %}
-{% set _ = entity_types.update({entity.label: type_list}) %}
-{% endfor %}
-
-{% for entity_type, entities in entity_types.items() %}
-**{{ entity_type }}:** {{ entities | unique | join(', ') }}
-{% endfor %}
-{% endif %}
-{% else %}
-*Smart NLP analysis requires message data to be provided.*
-{% endif %}
-
-## 🔄 Channel Insights
-{% if data.statistics.unique_users > 0 %}
-**Channel Health:**
-- **Total Active Users:** {{ data.statistics.unique_users | format_number }}
-- **Total Messages:** {{ data.statistics.total_messages | format_number }}
-- **Community Activity:** {{ "High" if data.statistics.total_messages > 100 else "Medium" if data.statistics.total_messages > 10 else "Low" }}
-- **Channel Type:** {{ "Active Community" if data.statistics.unique_users > 5 else "Small Group" if data.statistics.unique_users > 1 else "Individual" }}
-{% endif %}
-
-## 📱 Engagement Metrics
-- **Average Message Length:** {{ data.statistics.avg_message_length | format_number }} characters
-- **Messages per User:** {{ (data.statistics.total_messages / data.statistics.unique_users) | round(1) | format_number if data.statistics.unique_users > 0 else 0 }}
-- **Active Period:** {{ "From " + data.statistics.first_message[:10] + " to " + data.statistics.last_message[:10] if data.statistics.first_message and data.statistics.last_message else 'Unknown' }}
 {% if data.engagement_metrics %}
-- **Reply Rate:** {{ data.engagement_metrics.replies_per_post | round(2) }}
-- **Reaction Rate:** {{ (data.engagement_metrics.reaction_rate * 100) | round(1) }}%
+**Engagement:** {{ (data.engagement_metrics.reaction_rate * 100) | round(0) }}% reaction rate, {{ data.engagement_metrics.replies_per_post | round(1) }} replies per post
+{% endif %}
+{% if response_time %}
+**Response Time:** Average {{ response_time | round(1) }} hours to first reply
+{% endif %}
+{% if data.peak_activity and data.peak_activity.peak_hours %}
+**Peak Activity:** {{ data.peak_activity.peak_hours[0].hour if data.peak_activity.peak_hours else 'Unknown' }} (most messages)
+{% endif %}
+{% if recent_activity_summary %}
+**Recent Activity:** {{ recent_activity_summary }}
+{% endif %}
+{% if channel_health %}
+**Health:** {{ (data.statistics.unique_human_users / total_human_members * 100) | round(0) if total_human_members and total_human_members > 0 else 0 }}% participation rate{% if trend_summary %}, {{ trend_summary | lower }}{% endif %}
 {% endif %}
 
-{% if messages and all_message_text %}
-### Message Complexity Analysis
-{% set complexity_analysis = analyze_complexity(all_message_text) %}
-{% if complexity_analysis and complexity_analysis.score is defined %}
-**Text Complexity Score:** {{ complexity_analysis.score | round(2) }}/1.0 ({{ complexity_analysis.complexity }})
-**Average Sentence Length:** {{ complexity_analysis.avg_sentence_length | round(1) }} words
-**Vocabulary Diversity:** {{ complexity_analysis.lexical_diversity | round(3) }}
-{% else %}
-*Text complexity analysis not available.*
+{% if top_users %}
+
+**🏆 Top Contributors:**
+{% for user in top_users[:5] %}
+{{ loop.index }}. {{ user.display_name or user.author_name }} ({{ user.message_count | format_number }} messages, {{ (user.message_count / data.statistics.total_messages * 100) | round(0) if data.statistics.total_messages > 0 else 0 }}%)
+{% endfor %}
 {% endif %}
+
+{% if lost_interest_users %}
+**📉 Lost Interest:** {% for user in lost_interest_users %}{{ user.display_name or user.author_name }} ({{ user.days_inactive }} days){% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+{% if chart_path %}
+## 📈 Daily Message Activity Chart
+*Chart showing message activity over time for #{{ channel_name }}*
 {% endif %}
 
 ---
-*Enhanced analysis generated on {{ now().strftime('%Y-%m-%d at %H:%M') }} with comprehensive data insights* 
+*Analysis generated on {{ now().strftime('%Y-%m-%d at %H:%M') }}* 

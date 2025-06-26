@@ -103,7 +103,145 @@ def analyze_channel(
                     channel_name=channel, include_patterns=True
                 )
                 if result:
-                    return {"channel_analysis": result.model_dump()}
+                    # Get total human members for percentage calculations
+                    total_human_members = 0
+                    try:
+                        total_human_members = data_facade.channel_repository.get_channel_human_member_count(channel)
+                    except Exception as e:
+                        logger.warning(f"Could not get total human members for channel {channel}: {e}")
+                    
+                    # Calculate participation summary
+                    participation_summary = None
+                    if result.top_users and len(result.top_users) >= 5:
+                        top_5_messages = sum(user.message_count for user in result.top_users[:5])
+                        total_messages = result.statistics.total_messages
+                        if total_messages > 0:
+                            concentration = (top_5_messages / total_messages) * 100
+                            if concentration > 70:
+                                participation_summary = f"5 top contributors posted {concentration:.0f}% of all messages (highly concentrated)"
+                            elif concentration > 50:
+                                participation_summary = f"5 top contributors posted {concentration:.0f}% of all messages"
+                            else:
+                                participation_summary = f"5 top contributors posted {concentration:.0f}% of all messages (well distributed)"
+                    
+                    # Calculate lost interest summary
+                    lost_interest_summary = None
+                    lost_interest_users = []
+                    try:
+                        # Get users who posted before but not in last 30 days
+                        all_users = data_facade.channel_repository.get_channel_user_activity(channel, days=None, limit=100)
+                        recent_users = data_facade.channel_repository.get_channel_user_activity(channel, days=30, limit=100)
+                        
+                        recent_usernames = {user['author_name'] for user in recent_users}
+                        inactive_users = [user for user in all_users if user['author_name'] not in recent_usernames]
+                        
+                        if inactive_users:
+                            # Get days since last message for inactive users
+                            from datetime import datetime, timezone
+                            now = datetime.now(timezone.utc)
+                            
+                            for user in inactive_users[:5]:  # Limit to top 5 inactive users
+                                if user['last_message']:
+                                    try:
+                                        last_msg_date = datetime.fromisoformat(user['last_message'].replace('Z', '+00:00'))
+                                        days_inactive = (now - last_msg_date).days
+                                        lost_interest_users.append({
+                                            'display_name': user.get('author_display_name'),
+                                            'author_name': user['author_name'],
+                                            'days_inactive': days_inactive,
+                                            'message_count': user['message_count']
+                                        })
+                                    except:
+                                        continue
+                            
+                            if lost_interest_users:
+                                # Sort by days inactive and message count
+                                lost_interest_users.sort(key=lambda x: (x['days_inactive'], x['message_count']), reverse=True)
+                                inactive_count = len(lost_interest_users)
+                                if inactive_count > 0:
+                                    lost_interest_summary = f"{inactive_count} former contributors inactive for 30+ days"
+                    except Exception as e:
+                        logger.warning(f"Could not calculate lost interest for channel {channel}: {e}")
+                    
+                    # Calculate engagement summary
+                    engagement_summary = None
+                    if result.engagement_metrics:
+                        reaction_rate = result.engagement_metrics.reaction_rate * 100
+                        if reaction_rate > 80:
+                            engagement_summary = f"High ({reaction_rate:.0f}% reaction rate)"
+                        elif reaction_rate > 50:
+                            engagement_summary = f"Moderate ({reaction_rate:.0f}% reaction rate)"
+                        else:
+                            engagement_summary = f"Low ({reaction_rate:.0f}% reaction rate)"
+                    
+                    # Calculate trend summary
+                    trend_summary = None
+                    try:
+                        # Compare current period vs previous period
+                        current_messages = data_facade.message_repository.get_channel_messages(channel, days_back=7)
+                        previous_messages = data_facade.message_repository.get_channel_messages(channel, days_back=14, limit=len(current_messages) * 2)
+                        
+                        if current_messages and previous_messages:
+                            current_count = len([m for m in current_messages if not m.get('author_is_bot', False)])
+                            previous_count = len([m for m in previous_messages if not m.get('author_is_bot', False)])
+                            
+                            if previous_count > 0:
+                                change_percent = ((current_count - previous_count) / previous_count) * 100
+                                if change_percent > 20:
+                                    trend_summary = f"Activity increasing (+{change_percent:.0f}% vs. last week)"
+                                elif change_percent < -20:
+                                    trend_summary = f"Activity decreasing ({change_percent:.0f}% vs. last week)"
+                                else:
+                                    trend_summary = f"Activity stable ({change_percent:+.0f}% vs. last week)"
+                    except Exception as e:
+                        logger.warning(f"Could not calculate trend for channel {channel}: {e}")
+                    
+                    # Calculate bot activity summary
+                    bot_activity_summary = None
+                    if result.statistics.bot_messages > 0:
+                        bot_percentage = (result.statistics.bot_messages / result.statistics.total_messages) * 100
+                        if result.statistics.bot_messages > result.statistics.human_messages:
+                            bot_activity_summary = f"Bots posted {bot_percentage:.0f}% of messages (more than humans)"
+                        elif bot_percentage > 10:  # Only show if bots > 10%
+                            bot_activity_summary = f"Bots posted {bot_percentage:.0f}% of messages (less than humans)"
+                    
+                    # Calculate response time (placeholder for now)
+                    response_time = None
+                    
+                    # Calculate recent activity summary
+                    recent_activity_summary = None
+                    try:
+                        recent_messages = data_facade.message_repository.get_channel_messages(channel, days_back=7)
+                        if recent_messages:
+                            human_recent = len([m for m in recent_messages if not m.get('author_is_bot', False)])
+                            previous_messages = data_facade.message_repository.get_channel_messages(channel, days_back=14, limit=len(recent_messages) * 2)
+                            if previous_messages:
+                                human_previous = len([m for m in previous_messages if not m.get('author_is_bot', False)])
+                                if human_previous > 0:
+                                    change_percent = ((human_recent - human_previous) / human_previous) * 100
+                                    if change_percent > 0:
+                                        recent_activity_summary = f"{human_recent} messages in last 7 days (up {change_percent:.0f}% from previous week)"
+                                    else:
+                                        recent_activity_summary = f"{human_recent} messages in last 7 days (down {abs(change_percent):.0f}% from previous week)"
+                                else:
+                                    recent_activity_summary = f"{human_recent} messages in last 7 days"
+                    except Exception as e:
+                        logger.warning(f"Could not calculate recent activity for channel {channel}: {e}")
+                    
+                    # Convert to dict and add all summary fields
+                    result_dict = result.model_dump()
+                    result_dict['total_human_members'] = total_human_members
+                    result_dict['participation_summary'] = participation_summary
+                    result_dict['lost_interest_summary'] = lost_interest_summary
+                    result_dict['lost_interest_users'] = lost_interest_users
+                    result_dict['engagement_summary'] = engagement_summary
+                    result_dict['trend_summary'] = trend_summary
+                    result_dict['bot_activity_summary'] = bot_activity_summary
+                    result_dict['response_time'] = response_time
+                    result_dict['recent_activity_summary'] = recent_activity_summary
+                    result_dict['channel_health'] = True
+                    
+                    return {"channel_analysis": result_dict}
                 else:
                     return {"channel_analysis": None}
             else:

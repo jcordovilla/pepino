@@ -1,87 +1,55 @@
-📊 Channel Analysis: #{{ channel_info.channel_name }}
+📊 Channel Analysis: #{{ channel_name }}
 
-Basic Statistics:
-• Total Messages: {{ statistics.total_messages | format_number }}
-{%- if statistics.human_messages > 0 and statistics.bot_messages > 0 %}
-  
-Human Messages: {{ statistics.human_messages | format_number }} ({{ (statistics.human_messages / statistics.total_messages * 100) | format_percentage }}%)
-Bot Messages: {{ statistics.bot_messages | format_number }} ({{ (statistics.bot_messages / statistics.total_messages * 100) | format_percentage }}%)
-{%- endif %}
-• Total Unique Users: {{ statistics.unique_users | format_number }}
-{%- if statistics.unique_human_users > 0 %}
-• Unique Human Users: {{ statistics.unique_human_users | format_number }}
-{%- endif %}
-• Average Message Length: {{ statistics.avg_message_length | round(1) }} characters
-• First Message: {{ statistics.first_message | format_timestamp }}
-• Last Message: {{ statistics.last_message | format_timestamp }}
+Period: {{ statistics.first_message[:10] if statistics.first_message else 'Unknown' }} to {{ statistics.last_message[:10] if statistics.last_message else 'Unknown' }}
+Active Contributors: {{ statistics.unique_human_users | format_number }} ({{ (statistics.unique_human_users / total_human_members * 100) | round(0) if total_human_members and total_human_members > 0 else 0 }}% of all members)
+Avg. Messages/Day: {{ (statistics.total_messages / (statistics.active_days or 1)) | round(1) | format_number }}
 
+{%- if participation_summary %}
+Participation: {{ participation_summary }}
+{%- endif %}
+{%- if lost_interest_summary %}
+Lost Interest: {{ lost_interest_summary }}
+{%- endif %}
+{%- if engagement_summary %}
+Engagement: {{ engagement_summary }}
+{%- endif %}
+{%- if trend_summary %}
+Trend: {{ trend_summary }}
+{%- endif %}
+{%- if bot_activity_summary %}
+Bot Activity: {{ bot_activity_summary }}
+{%- endif %}
+
+## 📊 Detailed Metrics
+
+Activity: {{ statistics.total_messages | format_number }} total messages ({{ statistics.human_messages | format_number }} human{% if statistics.bot_messages > 0 %}, {{ statistics.bot_messages | format_number }} bot{% endif %})
+{%- if participation_summary %}
+Participation: {{ participation_summary | lower }}
+{%- endif %}
 {%- if engagement_metrics %}
-
-📈 Human Engagement Metrics:
-• Average Replies per Original Post: {{ engagement_metrics.replies_per_post | round(2) }}
-• Posts with Reactions: {{ engagement_metrics.reaction_rate | format_percentage }}% ({{ engagement_metrics.posts_with_reactions }}/{{ statistics.human_messages or statistics.total_messages }})
-• Total Replies: {{ engagement_metrics.total_replies | format_number }} | Original Posts: {{ engagement_metrics.original_posts | format_number }}
-• Note: Bot messages excluded from engagement calculations
+Engagement: {{ (engagement_metrics.reaction_rate * 100) | round(0) }}% reaction rate, {{ engagement_metrics.replies_per_post | round(1) }} replies per post
+{%- endif %}
+{%- if response_time %}
+Response Time: Average {{ response_time | round(1) }} hours to first reply
+{%- endif %}
+{%- if peak_activity and peak_activity.peak_hours %}
+Peak Activity: {{ peak_activity.peak_hours[0].hour if peak_activity.peak_hours else 'Unknown' }} (most messages)
+{%- endif %}
+{%- if recent_activity_summary %}
+Recent Activity: {{ recent_activity_summary }}
+{%- endif %}
+{%- if channel_health %}
+Health: {{ (statistics.unique_human_users / total_human_members * 100) | round(0) if total_human_members and total_human_members > 0 else 0 }}% participation rate{% if trend_summary %}, {{ trend_summary | lower }}{% endif %}
 {%- endif %}
 
 {%- if top_users %}
-
-👥 Top Human Contributors:
+Top Contributors:
 {%- for user in top_users[:5] %}
-• {{ user.display_name or user.author_name or 'Unknown' }}: {{ user.message_count | format_number }} messages (avg {{ user.avg_message_length | round(0) }} chars)
+{% set percentage = (user.message_count / statistics.total_messages * 100) if statistics.total_messages > 0 else 0 %}
+{{ loop.index }}. {{ user.display_name or user.author_name or 'Unknown' }} ({{ user.message_count | format_number }} messages, {{ percentage | round(0) }}%)
 {%- endfor %}
 {%- endif %}
 
-{%- if peak_activity and peak_activity.peak_hours %}
-
-Peak Activity Hours:
-{%- for hour_data in peak_activity.peak_hours[:3] %}
-• {{ hour_data.hour }}: {{ hour_data.messages | format_number }} messages
-{%- endfor %}
-{%- endif %}
-
-{%- if peak_activity and peak_activity.peak_days %}
-
-Activity by Day:
-{%- for day_data in peak_activity.peak_days[:3] %}
-• {{ day_data.day }}: {{ day_data.messages | format_number }} messages
-{%- endfor %}
-{%- endif %}
-
-{%- if recent_activity %}
-
-Recent Activity (Last 7 Days):
-{%- for activity in recent_activity[:7] %}
-• {{ activity.date }}: {{ activity.messages | format_number }} messages
-{%- endfor %}
-{%- endif %}
-
-{%- if health_metrics %}
-
-📈 Channel Health Metrics (Human Activity):
-{%- if health_metrics.total_channel_members > 0 %}
-• Total Channel Members: {{ health_metrics.total_channel_members | format_number }}
-• Human Members Who Ever Posted: {{ statistics.unique_human_users or statistics.unique_users | format_number }} ({{ health_metrics.participation_rate | format_percentage }}%)
-• Weekly Active Human Members: {{ health_metrics.weekly_active | format_number }} ({{ (health_metrics.weekly_active / health_metrics.total_channel_members * 100) | format_percentage }}% of total)
-• Recently Inactive Human Members: {{ health_metrics.inactive_users | format_number }} ({{ (health_metrics.inactive_users / (statistics.unique_human_users or statistics.unique_users) * 100) if (statistics.unique_human_users or statistics.unique_users) > 0 else 0 | format_percentage }}% of human posters)
-• Human Lurkers (Never Posted): {{ health_metrics.lurkers | format_number }} ({{ (health_metrics.lurkers / health_metrics.total_channel_members * 100) | format_percentage }}%)
-• Human Participation Rate: {{ health_metrics.participation_rate | format_percentage }}% (members who have posted)
-• Activity Ratio: {{ health_metrics.weekly_active | format_number }} active / {{ health_metrics.inactive_users | format_number }} inactive / {{ health_metrics.lurkers | format_number }} lurkers
-{%- else %}
-• Total Human Members Ever Active: {{ statistics.unique_human_users or statistics.unique_users | format_number }}
-• Weekly Active Human Members: {{ health_metrics.weekly_active | format_number }} ({{ (health_metrics.weekly_active / (statistics.unique_human_users or statistics.unique_users) * 100) if (statistics.unique_human_users or statistics.unique_users) > 0 else 0 | format_percentage }}%)
-• Recently Inactive Human Members: {{ health_metrics.inactive_users | format_number }} ({{ (health_metrics.inactive_users / (statistics.unique_human_users or statistics.unique_users) * 100) if (statistics.unique_human_users or statistics.unique_users) > 0 else 0 | format_percentage }}%)
-• Activity Ratio: {{ health_metrics.weekly_active | format_number }} active / {{ health_metrics.inactive_users | format_number }} inactive
-• Note: Full membership data not available - showing message-based metrics only
-{%- endif %}
-{%- endif %}
-
-{%- if top_topics %}
-
-🧠 Top Topics Discussed:
-{%- for topic in top_topics[:10] %}
-{%- if topic and topic.strip() %}
-{{ loop.index }}. {{ topic }}
-{%- endif %}
-{%- endfor %}
+{%- if lost_interest_users %}
+Lost Interest: {% for user in lost_interest_users %}{{ user.display_name or user.author_name or 'Unknown' }} ({{ user.days_inactive }} days){% if not loop.last %}, {% endif %}{% endfor %}
 {%- endif %} 

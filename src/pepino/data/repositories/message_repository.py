@@ -257,7 +257,7 @@ class MessageRepository:
         days_back: int = 30,
         granularity: str = "day",
     ) -> List[Dict[str, Any]]:
-        """Get temporal data for analysis."""
+        """Get temporal data for analysis with complete time series."""
         from datetime import datetime, timedelta
 
         threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
@@ -266,38 +266,80 @@ class MessageRepository:
         if granularity == "hour":
             date_format = "strftime('%Y-%m-%d %H:00:00', timestamp)"
             group_by = "strftime('%Y-%m-%d %H', timestamp)"
+            # For hourly, we'll use a simpler approach since generating all hours is complex
+            use_date_series = False
         elif granularity == "week":
             date_format = "strftime('%Y-W%W', timestamp)"
             group_by = "strftime('%Y-W%W', timestamp)"
+            use_date_series = False
         else:  # day
             date_format = "DATE(timestamp)"
             group_by = "DATE(timestamp)"
+            use_date_series = True
 
-        # Build WHERE conditions
-        conditions = [self.base_filter, "timestamp >= ?", "content IS NOT NULL"]
-        params = [threshold_date]
+        if use_date_series:
+            # Generate complete date series for daily granularity
+            query = f"""
+                WITH RECURSIVE date_series AS (
+                    SELECT DATE(?) as period
+                    UNION ALL
+                    SELECT DATE(period, '+1 day')
+                    FROM date_series
+                    WHERE period < DATE('now', '-1 day')
+                ),
+                message_counts AS (
+                    SELECT 
+                        {date_format} as period,
+                        COUNT(*) as message_count,
+                        COUNT(DISTINCT author_id) as unique_users,
+                        AVG(LENGTH(content)) as avg_message_length
+                    FROM messages
+                    WHERE {self.base_filter} AND timestamp >= ? AND content IS NOT NULL
+                    {f"AND channel_name = ?" if channel_name else ""}
+                    {f"AND (author_name LIKE ? OR author_display_name LIKE ?)" if user_name else ""}
+                    GROUP BY {group_by}
+                )
+                SELECT 
+                    ds.period,
+                    COALESCE(mc.message_count, 0) as message_count,
+                    COALESCE(mc.unique_users, 0) as unique_users,
+                    COALESCE(mc.avg_message_length, 0.0) as avg_message_length
+                FROM date_series ds
+                LEFT JOIN message_counts mc ON ds.period = mc.period
+                ORDER BY ds.period
+            """
+            
+            params = [threshold_date, threshold_date]
+            if channel_name:
+                params.append(channel_name)
+            if user_name:
+                params.extend([f"%{user_name}%", f"%{user_name}%"])
+        else:
+            # For hourly/weekly, use the original approach
+            conditions = [self.base_filter, "timestamp >= ?", "content IS NOT NULL"]
+            params = [threshold_date]
 
-        if channel_name:
-            conditions.append("channel_name = ?")
-            params.append(channel_name)
+            if channel_name:
+                conditions.append("channel_name = ?")
+                params.append(channel_name)
 
-        if user_name:
-            conditions.append("(author_name LIKE ? OR author_display_name LIKE ?)")
-            params.extend([f"%{user_name}%", f"%{user_name}%"])
+            if user_name:
+                conditions.append("(author_name LIKE ? OR author_display_name LIKE ?)")
+                params.extend([f"%{user_name}%", f"%{user_name}%"])
 
-        where_clause = " AND ".join(conditions)
+            where_clause = " AND ".join(conditions)
 
-        query = f"""
-            SELECT 
-                {date_format} as period,
-                COUNT(*) as message_count,
-                COUNT(DISTINCT author_id) as unique_users,
-                AVG(LENGTH(content)) as avg_message_length
-            FROM messages
-            WHERE {where_clause}
-            GROUP BY {group_by}
-            ORDER BY period
-        """
+            query = f"""
+                SELECT 
+                    {date_format} as period,
+                    COUNT(*) as message_count,
+                    COUNT(DISTINCT author_id) as unique_users,
+                    AVG(LENGTH(content)) as avg_message_length
+                FROM messages
+                WHERE {where_clause}
+                GROUP BY {group_by}
+                ORDER BY period
+            """
 
         results = self.db_manager.execute_query(query, params)
 

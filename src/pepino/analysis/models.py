@@ -12,7 +12,9 @@ class UserActivity(BaseModel):
     """User activity data for channel analysis."""
     
     username: str
+    display_name: Optional[str] = None
     message_count: int
+    avg_message_length: float = 0.0
     first_message_date: Optional[str] = None
     last_message_date: Optional[str] = None
 
@@ -33,9 +35,13 @@ class LocalChannelStatistics(BaseModel):
     total_messages: int
     unique_users: int
     messages_per_day: float
+    avg_message_length: float = 0.0
     first_message_date: Optional[str] = None
     last_message_date: Optional[str] = None
     analysis_period_days: Optional[int] = None
+    bot_messages: int = 0
+    human_messages: int = 0
+    unique_human_users: int = 0
 
 
 class LocalUserStatistics(BaseModel):

@@ -7,7 +7,7 @@ Provides a clean interface for analyzers to access data without managing reposit
 
 import logging
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, List, Dict
 
 from ..data.config import Settings
 from ..data.database.manager import DatabaseManager
@@ -121,6 +121,68 @@ class AnalysisDataFacade:
                 conn.execute("ROLLBACK")
                 logger.error(f"Transaction rolled back due to error: {e}")
                 raise
+    
+    def get_cross_channel_summary(self, days_back: int = 7, limit: int = 10) -> List[Dict]:
+        """
+        Get cross-channel summary analysis for all channels (humans only).
+        
+        Args:
+            days_back: Number of days to look back
+            limit: Maximum number of channels to return
+            
+        Returns:
+            List of channel summary dictionaries with name, message_count, etc.
+        """
+        try:
+            # Get all available channels
+            all_channels = self.channel_repository.get_available_channels()
+            channels_summary = []
+            
+            for channel_name in all_channels[:20]:  # Limit initial processing to top 20
+                try:
+                    # Get message count for this channel in the time period (humans only)
+                    channel_messages = self.message_repository.get_channel_messages(
+                        channel_name, 
+                        days_back=days_back
+                    )
+                    
+                    if channel_messages:
+                        # Filter out bot messages
+                        human_messages = [
+                            msg for msg in channel_messages 
+                            if not msg.get('author_is_bot', False)
+                        ]
+                        
+                        message_count = len(human_messages)
+                        
+                        if message_count > 0:
+                            # Calculate average message length for human messages only
+                            total_length = sum(len(msg.get('content', '')) for msg in human_messages)
+                            avg_length = total_length / message_count if message_count > 0 else 0
+                            
+                            # Get unique human users
+                            unique_human_users = len(set(
+                                msg.get('username') for msg in human_messages 
+                                if msg.get('username') and not msg.get('author_is_bot', False)
+                            ))
+                            
+                            channels_summary.append({
+                                'name': channel_name,
+                                'message_count': message_count,
+                                'avg_length': round(avg_length, 1),
+                                'unique_users': unique_human_users
+                            })
+                except Exception as e:
+                    logger.debug(f"Could not get data for channel {channel_name}: {e}")
+                    continue
+            
+            # Sort by message count (most active first) and limit results
+            channels_summary.sort(key=lambda x: x['message_count'], reverse=True)
+            return channels_summary[:limit]
+            
+        except Exception as e:
+            logger.error(f"Failed to get cross-channel summary: {e}")
+            return []
     
     def close(self):
         """Close the data facade and clean up resources."""

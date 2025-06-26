@@ -106,13 +106,13 @@ class ChannelAnalyzer:
         return ModelChannelStatistics(
             total_messages=stats.total_messages,
             unique_users=stats.unique_users,
-            avg_message_length=0.0,  # We don't calculate this yet
+            avg_message_length=stats.avg_message_length,
             first_message=safe_timestamp_to_iso(stats.first_message_date),
             last_message=safe_timestamp_to_iso(stats.last_message_date),
             active_days=0,  # We don't calculate this yet
-            bot_messages=0,  # We don't calculate this yet
-            human_messages=stats.total_messages,  # Assume all are human for now
-            unique_human_users=stats.unique_users
+            bot_messages=stats.bot_messages,
+            human_messages=stats.human_messages,
+            unique_human_users=stats.unique_human_users
         )
     
     def _convert_top_users_to_model(self, user_activities: List[UserActivity]):
@@ -121,12 +121,15 @@ class ChannelAnalyzer:
         
         converted_users = []
         for activity in user_activities:
+            # Use display name if available, otherwise username
+            display_name = activity.display_name or activity.username
+            
             converted_user = TopUserInChannel(
                 author_id="",  # We don't have author_id available
                 author_name=activity.username,  # UserActivity uses 'username' field
-                display_name=activity.username,
+                display_name=display_name,
                 message_count=activity.message_count,
-                avg_message_length=0.0  # We don't calculate this yet
+                avg_message_length=activity.avg_message_length or 0.0
             )
             converted_users.append(converted_user)
         
@@ -185,9 +188,13 @@ class ChannelAnalyzer:
                 total_messages=stats_data['total_messages'],
                 unique_users=stats_data['unique_users'],
                 messages_per_day=round(messages_per_day, 2),
+                avg_message_length=stats_data.get('avg_message_length', 0.0),
                 first_message_date=stats_data['first_message'],
                 last_message_date=stats_data['last_message'],
-                analysis_period_days=days
+                analysis_period_days=days,
+                bot_messages=stats_data.get('bot_messages', 0),
+                human_messages=stats_data.get('human_messages', 0),
+                unique_human_users=stats_data.get('unique_human_users', 0)
             )
             
         except Exception as e:
@@ -210,7 +217,9 @@ class ChannelAnalyzer:
             for data in user_data:
                 activity = UserActivity(
                     username=data['author_name'],  # Fixed: UserActivity uses 'username' field
+                    display_name=data.get('author_display_name'),  # New field
                     message_count=data['message_count'],
+                    avg_message_length=data.get('avg_message_length', 0.0),  # New field
                     first_message_date=data['first_message'],  # Fixed: model uses '_date' suffix
                     last_message_date=data['last_message']     # Fixed: model uses '_date' suffix
                 )
