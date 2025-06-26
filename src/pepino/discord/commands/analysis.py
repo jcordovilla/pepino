@@ -6,6 +6,7 @@ import logging
 import traceback
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from collections import Counter
 import os
 
 import discord
@@ -984,6 +985,49 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             except Exception as e:
                 logger.warning(f"Could not calculate recent activity for channel {channel_name}: {e}")
             
+            # Get topic analysis for frequent terms
+            topic_analysis = None
+            frequent_terms = []
+            try:
+                # Use NLPService for concept extraction instead of TopicAnalyzer
+                from ...analysis.nlp_analyzer import NLPService
+                nlp_service = NLPService()
+                nlp_service.initialize()
+                
+                # Get recent messages for NLP analysis
+                recent_messages_data = facade.message_repository.get_channel_messages(
+                    channel_name, 
+                    days_back=analyzer_params.get('days', 7), 
+                    limit=200
+                )
+                
+                if recent_messages_data:
+                    # Extract concepts from all recent messages
+                    all_concepts = []
+                    for msg in recent_messages_data:
+                        content = msg.get('content', '')
+                        if content and len(content.strip()) > 10:  # Only analyze substantial messages
+                            concepts = nlp_service.extract_concepts(content)
+                            all_concepts.extend(concepts)
+                    
+                    # Count concept frequencies
+                    concept_counts = Counter(all_concepts)
+                    
+                    # Get top 5 most frequent concepts
+                    for concept, count in concept_counts.most_common(5):
+                        if count >= 2:  # Only include concepts mentioned at least twice
+                            frequent_terms.append({
+                                'term': concept,
+                                'frequency': count,
+                                'relevance': min(count / len(recent_messages_data), 1.0)  # Normalize relevance
+                            })
+                    
+                    logger.debug(f"Found {len(frequent_terms)} frequent terms for channel {channel_name}")
+                else:
+                    logger.debug(f"No recent messages for NLP analysis in channel {channel_name}")
+            except Exception as e:
+                logger.warning(f"Could not perform NLP analysis for channel {channel_name}: {e}")
+            
             # Get recent messages for template context
             recent_messages = []
             try:
@@ -1003,6 +1047,11 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             except Exception as e:
                 logger.warning(f"Could not fetch messages for template context: {e}")
             
+            # Also get temporal data for this channel for charting
+            temporal_analyzer = TemporalAnalyzer(facade)
+            temporal_result = temporal_analyzer.analyze(channel_name=channel_name, days_back=analyzer_params.get('days', 7), granularity='day')
+            temporal_data = getattr(temporal_result, 'temporal_data', None)
+            
             # Prepare template data
             template_data = {
                 'data': {
@@ -1017,7 +1066,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     'engagement_metrics': analysis_result.engagement_metrics,
                     'health_metrics': analysis_result.health_metrics,
                     'content_analysis': {
-                        'common_words': []  # This would be populated by topic analysis if needed
+                        'common_words': frequent_terms  # Now populated by topic analysis
                     },
                     'total_human_members': total_human_members
                 },
@@ -1049,7 +1098,11 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     'total_channels': 1,
                     'total_messages': analysis_result.statistics.total_messages,
                     'total_users': analysis_result.statistics.unique_users
-                }
+                },
+                # Add topic analysis data
+                'topic_analysis': topic_analysis,
+                'frequent_terms': frequent_terms,
+                'temporal_data': temporal_data
             }
             
             # Debug logging for template data
@@ -1061,11 +1114,6 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             logger.debug(f"  bot_activity_summary: {bot_activity_summary}")
             logger.debug(f"  recent_activity_summary: {recent_activity_summary}")
             logger.debug(f"  total_human_members: {total_human_members}")
-            
-            # Also get temporal data for this channel for charting
-            temporal_analyzer = TemporalAnalyzer(facade)
-            temporal_result = temporal_analyzer.analyze(channel_name=channel_name, days_back=analyzer_params.get('days', 7), granularity='day')
-            temporal_data = getattr(temporal_result, 'temporal_data', None)
             
             # Generate daily messages chart if temporal data is available
             chart_path = None

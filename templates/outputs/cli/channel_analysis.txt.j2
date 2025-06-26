@@ -52,4 +52,12 @@ Top Contributors:
 
 {%- if lost_interest_users %}
 Lost Interest: {% for user in lost_interest_users %}{{ user.display_name or user.author_name or 'Unknown' }} ({{ user.days_inactive }} days){% if not loop.last %}, {% endif %}{% endfor %}
+{%- endif %}
+
+{%- if frequent_terms %}
+
+Frequent Terms:
+{%- for term in frequent_terms[:5] %}
+• {{ term.term | replace('*', '') | replace(':', '') | trim }} ({{ term.frequency }} mentions)
+{%- endfor %}
 {%- endif %} 
