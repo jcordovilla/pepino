@@ -1,26 +1,140 @@
-🧠 Topic Analysis{{ ': #' + channel_name if channel_name else '' }}{{ ' (' + days_back|string + ' days)' if days_back else '' }}
+🎯 Enhanced Hybrid Topic Analysis Report{% if channel_name %} - #{{ channel_name }}{% endif %}
+{{ "=" * 70 }}
 
-{%- if topics %}
+📊 Analysis Summary:
+{% if topics %}
+• Topics Found: {{ topics | length }}{% if n_topics %} (top {{ n_topics }}){% endif %}
+• Messages Analyzed: {{ message_count }}
+• Analysis Method: Hybrid BERTopic + spaCy
+{% if "bertopic_modeling" in capabilities_used %}
+• Neural Topics: BERTopic with Transformer Embeddings
+• Semantic Model: all-mpnet-base-v2 (Microsoft)
+• Clustering: HDBSCAN + UMAP dimensionality reduction
+{% endif %}
+{% if "spacy_nlp" in capabilities_used %}
+• Domain Analysis: spaCy NLP with en_core_web_sm
+• Pattern Recognition: Technical terms, business concepts, temporal trends
+• Advanced Features: Dependency parsing, complex concept extraction
+{% endif %}
+{% else %}
+• No topics found
+{% endif %}
+• Time Range: {{ days_back }} days back
 
-Top Topics Discussed:
-{% for topic in topics[:20] %}
-{{ loop.index }}. {{ topic.topic | title }}
-   Frequency: {{ topic.frequency | format_number }} mentions
-   Relevance: {{ (topic.relevance_score * 100) | round(1) }}%
-
+{% if topics %}
+🧠 Neural Topic Discovery (BERTopic):
+{{ "=" * 50 }}
+{% for topic in topics %}
+{{ loop.index }}. {{ topic.topic }}
+   • Frequency: {{ topic.frequency }} messages
+   • Relevance: {{ "%.1f" | format(topic.relevance_score * 100) }}%
+   
 {% endfor %}
-{%- else %}
+{% endif %}
 
-No topics found for the specified criteria.
-{%- endif %}
+{% if _domain_analysis %}
+🔍 Domain-Specific Analysis (spaCy):
+{{ "=" * 50 }}
 
-{%- if message_count %}
+{% if _domain_analysis and _domain_analysis.technical_terms %}
+🔧 Technical Terms:
+{% for term, count in _domain_analysis.technical_terms.most_common(8) %}
+{% if count >= 3 %}
+   • {{ term }}: {{ count }} discussions
+{% endif %}
+{% endfor %}
 
-📈 Analysis Summary:
-• Messages Analyzed: {{ message_count | format_number }}
-• Topics Found: {{ topics | length }}
-• Most Relevant: {{ topics[0].topic | title if topics else 'None' }}
-{%- if capabilities_used %}
-• Analysis Methods: {{ capabilities_used | join(', ') | title }}
-{%- endif %}
-{%- endif %} 
+{% endif %}
+{% if _domain_analysis and _domain_analysis.business_concepts %}
+💼 Business Concepts:
+{% for concept, count in _domain_analysis.business_concepts.most_common(6) %}
+{% if count >= 3 %}
+   • {{ concept.title() }}: {{ count }} mentions
+{% endif %}
+{% endfor %}
+
+{% endif %}
+{% if _domain_analysis and _domain_analysis.key_discussions %}
+🎯 Key Discussion Threads:
+{% for discussion, count in _domain_analysis.key_discussions.most_common(8) %}
+{% if count >= 2 %}
+   • {{ discussion }}: {{ count }} discussions
+{% endif %}
+{% endfor %}
+
+{% endif %}
+{% if _domain_analysis and _domain_analysis.emerging_topics %}
+📈 Trending Topics:
+{% for concept, count, ratio in _domain_analysis.emerging_topics[:3] %}
+   • {{ concept.title() }}: {{ "%.1f" | format(ratio) }}x growth ({{ count }} recent mentions)
+{% endfor %}
+
+{% endif %}
+{% endif %}
+
+{% if "bertopic_modeling" in capabilities_used %}
+🚀 Enhanced Neural Analysis Features:
+{{ "=" * 50 }}
+✨ BERTopic Neural Topic Modeling:
+   • Uses transformer-based embeddings for semantic understanding
+   • Handles technical AI/ML terminology effectively  
+   • Automatically filters noise from generic discussion words
+   • Groups semantically related concepts together
+
+🧠 Pre-trained Model Components:
+   • Sentence Embeddings: all-mpnet-base-v2 (Microsoft)
+   • Dimensionality Reduction: UMAP (Uniform Manifold Approximation)
+   • Clustering Algorithm: HDBSCAN (Hierarchical Density-Based)
+   • Vectorization: Enhanced CountVectorizer with tech stop words
+
+{% if "spacy_nlp" in capabilities_used %}
+🔬 Advanced NLP Analysis (spaCy):
+   • Dependency parsing for complex concept extraction
+   • Named entity recognition and part-of-speech tagging
+   • Multi-word technical phrase identification
+   • Temporal trend analysis with week-over-week growth tracking
+   • Domain-specific pattern matching for AI/tech discussions
+
+{% endif %}
+📈 Quality Improvements vs Legacy Analysis:
+   • Semantic coherence over simple keyword frequency
+   • Better compound term recognition ("Generative AI", "Machine Learning")
+   • Domain-aware processing for AI/tech discussions
+   • Confidence scoring for topic quality assessment
+   • Temporal trending with emerging topic detection
+
+{% elif capabilities_used %}
+📊 Analysis Method: {{ capabilities_used | join(", ") | title }}
+{{ "=" * 50 }}
+ℹ️  For enhanced topic modeling with neural networks and pre-trained models:
+   Run: python scripts/install_bertopic.py
+   
+   Enhanced features include:
+   • BERTopic neural topic modeling
+   • Transformer-based semantic embeddings
+   • Better AI/tech terminology handling
+   • Improved topic coherence and quality
+   • spaCy-based domain analysis with temporal trends
+
+{% endif %}
+
+{% if _domain_analysis and _domain_analysis.temporal_trends %}
+⏰ Temporal Analysis Summary:
+{{ "=" * 50 }}
+• Analysis covers {{ _domain_analysis.temporal_trends | length }} week periods
+• Tracks concept emergence and growth patterns
+• Identifies trending topics with 2x+ growth in recent weeks
+• Enables early detection of shifting discussion themes
+
+{% endif %}
+
+💡 Usage Tips:
+{{ "=" * 20 }}
+• Neural topics show automatically discovered semantic clusters
+• Domain analysis reveals field-specific terminology and trends
+• Emerging topics highlight recent conversation shifts
+• Use this data to understand community focus areas and evolution
+
+---
+Generated by Pepino Discord Analysis Tool
+Enhanced with {% if "bertopic_modeling" in capabilities_used %}BERTopic + Pre-trained Models{% else %}Traditional Topic Modeling{% endif %} 

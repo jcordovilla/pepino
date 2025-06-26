@@ -283,6 +283,39 @@ files = [
 ]
 
 [[package]]
+name = "bertopic"
+version = "0.16.4"
+description = "BERTopic performs topic Modeling with state-of-the-art transformer models."
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "bertopic-0.16.4-py3-none-any.whl", hash = "sha256:c73676be03f9bd472f8b124c959824d7fd827682732fb6066981e3dd21b94b70"},
+    {file = "bertopic-0.16.4.tar.gz", hash = "sha256:acbe5e9be4ca3c8b89fbfc39a92d172cf7a2bb2f0842dfdb4b227c16ad232d45"},
+]
+
+[package.dependencies]
+hdbscan = ">=0.8.29"
+numpy = ">=1.20.0"
+pandas = ">=1.1.5"
+plotly = ">=4.7.0"
+scikit-learn = ">=0.22.2.post1"
+sentence-transformers = ">=0.4.1"
+tqdm = ">=4.41.1"
+umap-learn = ">=0.5.0"
+
+[package.extras]
+datamap = ["datamapplot (>=0.1)", "matplotlib (>=3.8)"]
+dev = ["bertopic[docs,test]"]
+docs = ["mkdocs (==1.5.3)", "mkdocs-material (==9.5.18)", "mkdocstrings (==0.24.3)", "mkdocstrings-python (==1.10.0)"]
+flair = ["flair (>=0.7)", "torch (>=1.4.0)", "transformers (>=3.5.1)"]
+gensim = ["gensim (>=4.0.0)"]
+spacy = ["spacy (>=3.0.1)"]
+test = ["pytest (>=5.4.3)", "pytest-cov (>=2.6.1)", "ruff (>=0.4.7,<0.5.0)"]
+use = ["tensorflow", "tensorflow-hub", "tensorflow-text"]
+vision = ["Pillow (>=9.2.0)", "accelerate (>=0.19.0)"]
+
+[[package]]
 name = "black"
 version = "23.12.1"
 description = "The uncompromising code formatter."
@@ -1085,6 +1118,37 @@ files = [
 speedup = ["python-levenshtein (>=0.12)"]
 
 [[package]]
+name = "hdbscan"
+version = "0.8.40"
+description = "Clustering based on density with variable density clusters"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "hdbscan-0.8.40-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:811a248e57353a4aa815019176879fd16bace55ed633583a6b47734edcb5397c"},
+    {file = "hdbscan-0.8.40-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cda06a6f4e65c6c34bed083bb8cdf29fdb1ffcb15580829d79b2906c7bdc6dbc"},
+    {file = "hdbscan-0.8.40-cp310-cp310-win_amd64.whl", hash = "sha256:9ba82e510508921e0b30a234b639f5d84a7d475746e7db814517c5c4d1589016"},
+    {file = "hdbscan-0.8.40-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:5e958f0d7a33cd2b5e8e927b47f7360bf8a3e7d72355dd65a701e8aabe407b27"},
+    {file = "hdbscan-0.8.40-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6e0d6197ee045b173e1f16e6884386f335a56091e373a839dd24f7331a8fa9ed"},
+    {file = "hdbscan-0.8.40-cp311-cp311-win_amd64.whl", hash = "sha256:127cbe8c858dc77adfde33a3e1ce4f3bea810f78b01d2bd47b1147d4b5a50472"},
+    {file = "hdbscan-0.8.40-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:353eaa22e42bee69df095744dbb8b29360e516bd9dcb84580dceeeb755f004cc"},
+    {file = "hdbscan-0.8.40-cp312-cp312-win_amd64.whl", hash = "sha256:1b55a935ed7b329adac52072e1c4028979dfc54312ca08de2deece9c97d6ebb1"},
+    {file = "hdbscan-0.8.40-cp38-cp38-macosx_12_0_x86_64.whl", hash = "sha256:c18947947af7f843f47c0111f21ffd5a5fd31789fcae39689a44e8b01433e504"},
+    {file = "hdbscan-0.8.40-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c5a16f38e1816ab69ad315a1eab429e5a7c725210d88e71d273496cce3a2693c"},
+    {file = "hdbscan-0.8.40-cp38-cp38-win_amd64.whl", hash = "sha256:7ebe69a0ad2f86d090a518b17d4635dfc65d3402b8c453aa2942f9c7dc895b9e"},
+    {file = "hdbscan-0.8.40-cp39-cp39-macosx_12_0_x86_64.whl", hash = "sha256:cf094aeea4df4513644333b9dda408ef8ef385d0ab5f3f8681e239a9008cbeb5"},
+    {file = "hdbscan-0.8.40-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:05668ae7a17479a9061676290a66a810a62f2a4ec577ba18f561088b726ab01d"},
+    {file = "hdbscan-0.8.40-cp39-cp39-win_amd64.whl", hash = "sha256:56d3057d483d112ff8e0f0a49f0d59df8c078d444dbd5dea7b987faab0c6fb49"},
+    {file = "hdbscan-0.8.40.tar.gz", hash = "sha256:c9e383ff17beee0591075ff65d524bda5b5a35dfb01d218245a7ba30c8d48a17"},
+]
+
+[package.dependencies]
+joblib = ">=1.0"
+numpy = ">=1.20,<3"
+scikit-learn = ">=0.20"
+scipy = ">=1.0"
+
+[[package]]
 name = "huggingface-hub"
 version = "0.19.4"
 description = "Client library to download and publish models, datasets and other repos on the huggingface.co hub"
@@ -1438,6 +1502,37 @@ files = [
 
 [package.dependencies]
 rapidfuzz = ">=3.1.0,<4.0.0"
+
+[[package]]
+name = "llvmlite"
+version = "0.44.0"
+description = "lightweight wrapper around basic LLVM functionality"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "llvmlite-0.44.0-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:9fbadbfba8422123bab5535b293da1cf72f9f478a65645ecd73e781f962ca614"},
+    {file = "llvmlite-0.44.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:cccf8eb28f24840f2689fb1a45f9c0f7e582dd24e088dcf96e424834af11f791"},
+    {file = "llvmlite-0.44.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7202b678cdf904823c764ee0fe2dfe38a76981f4c1e51715b4cb5abb6cf1d9e8"},
+    {file = "llvmlite-0.44.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:40526fb5e313d7b96bda4cbb2c85cd5374e04d80732dd36a282d72a560bb6408"},
+    {file = "llvmlite-0.44.0-cp310-cp310-win_amd64.whl", hash = "sha256:41e3839150db4330e1b2716c0be3b5c4672525b4c9005e17c7597f835f351ce2"},
+    {file = "llvmlite-0.44.0-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:eed7d5f29136bda63b6d7804c279e2b72e08c952b7c5df61f45db408e0ee52f3"},
+    {file = "llvmlite-0.44.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:ace564d9fa44bb91eb6e6d8e7754977783c68e90a471ea7ce913bff30bd62427"},
+    {file = "llvmlite-0.44.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c5d22c3bfc842668168a786af4205ec8e3ad29fb1bc03fd11fd48460d0df64c1"},
+    {file = "llvmlite-0.44.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f01a394e9c9b7b1d4e63c327b096d10f6f0ed149ef53d38a09b3749dcf8c9610"},
+    {file = "llvmlite-0.44.0-cp311-cp311-win_amd64.whl", hash = "sha256:d8489634d43c20cd0ad71330dde1d5bc7b9966937a263ff1ec1cebb90dc50955"},
+    {file = "llvmlite-0.44.0-cp312-cp312-macosx_10_14_x86_64.whl", hash = "sha256:1d671a56acf725bf1b531d5ef76b86660a5ab8ef19bb6a46064a705c6ca80aad"},
+    {file = "llvmlite-0.44.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:5f79a728e0435493611c9f405168682bb75ffd1fbe6fc360733b850c80a026db"},
+    {file = "llvmlite-0.44.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c0143a5ef336da14deaa8ec26c5449ad5b6a2b564df82fcef4be040b9cacfea9"},
+    {file = "llvmlite-0.44.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d752f89e31b66db6f8da06df8b39f9b91e78c5feea1bf9e8c1fba1d1c24c065d"},
+    {file = "llvmlite-0.44.0-cp312-cp312-win_amd64.whl", hash = "sha256:eae7e2d4ca8f88f89d315b48c6b741dcb925d6a1042da694aa16ab3dd4cbd3a1"},
+    {file = "llvmlite-0.44.0-cp313-cp313-macosx_10_14_x86_64.whl", hash = "sha256:319bddd44e5f71ae2689859b7203080716448a3cd1128fb144fe5c055219d516"},
+    {file = "llvmlite-0.44.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:9c58867118bad04a0bb22a2e0068c693719658105e40009ffe95c7000fcde88e"},
+    {file = "llvmlite-0.44.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:46224058b13c96af1365290bdfebe9a6264ae62fb79b2b55693deed11657a8bf"},
+    {file = "llvmlite-0.44.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:aa0097052c32bf721a4efc03bd109d335dfa57d9bffb3d4c24cc680711b8b4fc"},
+    {file = "llvmlite-0.44.0-cp313-cp313-win_amd64.whl", hash = "sha256:2fb7c4f2fb86cbae6dca3db9ab203eeea0e22d73b99bc2341cdf9de93612e930"},
+    {file = "llvmlite-0.44.0.tar.gz", hash = "sha256:07667d66a5d150abed9157ab6c0b9393c9356f229784a4385c02f99e94fc94d4"},
+]
 
 [[package]]
 name = "marisa-trie"
@@ -1960,6 +2055,31 @@ files = [
 ]
 
 [[package]]
+name = "narwhals"
+version = "1.44.0"
+description = "Extremely lightweight compatibility layer between dataframe libraries"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "narwhals-1.44.0-py3-none-any.whl", hash = "sha256:a170ea0bab4cf1f323d9f8bf17f2d7042c3d73802bea321996b39bf075d57de5"},
+    {file = "narwhals-1.44.0.tar.gz", hash = "sha256:8cf0616d4f6f21225b3b56fcde96ccab6d05023561a0f162402aa9b8c33ad31d"},
+]
+
+[package.extras]
+cudf = ["cudf (>=24.10.0)"]
+dask = ["dask[dataframe] (>=2024.8)"]
+duckdb = ["duckdb (>=1.0)"]
+ibis = ["ibis-framework (>=6.0.0)", "packaging", "pyarrow-hotfix", "rich"]
+modin = ["modin"]
+pandas = ["pandas (>=1.1.3)"]
+polars = ["polars (>=0.20.3)"]
+pyarrow = ["pyarrow (>=11.0.0)"]
+pyspark = ["pyspark (>=3.5.0)"]
+pyspark-connect = ["pyspark[connect] (>=3.5.0)"]
+sqlframe = ["sqlframe (>=3.22.0)"]
+
+[[package]]
 name = "networkx"
 version = "3.5"
 description = "Python package for creating and manipulating graphs and networks"
@@ -2005,6 +2125,41 @@ machine-learning = ["numpy", "python-crfsuite", "scikit-learn", "scipy"]
 plot = ["matplotlib"]
 tgrep = ["pyparsing"]
 twitter = ["twython"]
+
+[[package]]
+name = "numba"
+version = "0.61.2"
+description = "compiling Python code using LLVM"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "numba-0.61.2-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:cf9f9fc00d6eca0c23fc840817ce9f439b9f03c8f03d6246c0e7f0cb15b7162a"},
+    {file = "numba-0.61.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:ea0247617edcb5dd61f6106a56255baab031acc4257bddaeddb3a1003b4ca3fd"},
+    {file = "numba-0.61.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:ae8c7a522c26215d5f62ebec436e3d341f7f590079245a2f1008dfd498cc1642"},
+    {file = "numba-0.61.2-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:bd1e74609855aa43661edffca37346e4e8462f6903889917e9f41db40907daa2"},
+    {file = "numba-0.61.2-cp310-cp310-win_amd64.whl", hash = "sha256:ae45830b129c6137294093b269ef0a22998ccc27bf7cf096ab8dcf7bca8946f9"},
+    {file = "numba-0.61.2-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:efd3db391df53aaa5cfbee189b6c910a5b471488749fd6606c3f33fc984c2ae2"},
+    {file = "numba-0.61.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:49c980e4171948ffebf6b9a2520ea81feed113c1f4890747ba7f59e74be84b1b"},
+    {file = "numba-0.61.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3945615cd73c2c7eba2a85ccc9c1730c21cd3958bfcf5a44302abae0fb07bb60"},
+    {file = "numba-0.61.2-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:bbfdf4eca202cebade0b7d43896978e146f39398909a42941c9303f82f403a18"},
+    {file = "numba-0.61.2-cp311-cp311-win_amd64.whl", hash = "sha256:76bcec9f46259cedf888041b9886e257ae101c6268261b19fda8cfbc52bec9d1"},
+    {file = "numba-0.61.2-cp312-cp312-macosx_10_14_x86_64.whl", hash = "sha256:34fba9406078bac7ab052efbf0d13939426c753ad72946baaa5bf9ae0ebb8dd2"},
+    {file = "numba-0.61.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:4ddce10009bc097b080fc96876d14c051cc0c7679e99de3e0af59014dab7dfe8"},
+    {file = "numba-0.61.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:5b1bb509d01f23d70325d3a5a0e237cbc9544dd50e50588bc581ba860c213546"},
+    {file = "numba-0.61.2-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:48a53a3de8f8793526cbe330f2a39fe9a6638efcbf11bd63f3d2f9757ae345cd"},
+    {file = "numba-0.61.2-cp312-cp312-win_amd64.whl", hash = "sha256:97cf4f12c728cf77c9c1d7c23707e4d8fb4632b46275f8f3397de33e5877af18"},
+    {file = "numba-0.61.2-cp313-cp313-macosx_10_14_x86_64.whl", hash = "sha256:3a10a8fc9afac40b1eac55717cece1b8b1ac0b946f5065c89e00bde646b5b154"},
+    {file = "numba-0.61.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:7d3bcada3c9afba3bed413fba45845f2fb9cd0d2b27dd58a1be90257e293d140"},
+    {file = "numba-0.61.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:bdbca73ad81fa196bd53dc12e3aaf1564ae036e0c125f237c7644fe64a4928ab"},
+    {file = "numba-0.61.2-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:5f154aaea625fb32cfbe3b80c5456d514d416fcdf79733dd69c0df3a11348e9e"},
+    {file = "numba-0.61.2-cp313-cp313-win_amd64.whl", hash = "sha256:59321215e2e0ac5fa928a8020ab00b8e57cda8a97384963ac0dfa4d4e6aa54e7"},
+    {file = "numba-0.61.2.tar.gz", hash = "sha256:8750ee147940a6637b80ecf7f95062185ad8726c8c28a2295b8ec1160a196f7d"},
+]
+
+[package.dependencies]
+llvmlite = "==0.44.*"
+numpy = ">=1.24,<2.3"
 
 [[package]]
 name = "numpy"
@@ -2499,6 +2654,27 @@ test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=8.3.4)", "pytest-
 type = ["mypy (>=1.14.1)"]
 
 [[package]]
+name = "plotly"
+version = "6.1.2"
+description = "An open-source interactive data visualization library for Python"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "plotly-6.1.2-py3-none-any.whl", hash = "sha256:f1548a8ed9158d59e03d7fed548c7db5549f3130d9ae19293c8638c202648f6d"},
+    {file = "plotly-6.1.2.tar.gz", hash = "sha256:4fdaa228926ba3e3a213f4d1713287e69dcad1a7e66cf2025bd7d7026d5014b4"},
+]
+
+[package.dependencies]
+narwhals = ">=1.15.1"
+packaging = "*"
+
+[package.extras]
+dev = ["black (==25.1.0)"]
+express = ["numpy"]
+kaleido = ["kaleido (==1.0.0rc13)"]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 description = "plugin and hook calling mechanisms for python"
@@ -2865,6 +3041,25 @@ files = [
 
 [package.extras]
 windows-terminal = ["colorama (>=0.4.6)"]
+
+[[package]]
+name = "pynndescent"
+version = "0.5.13"
+description = "Nearest Neighbor Descent"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "pynndescent-0.5.13-py3-none-any.whl", hash = "sha256:69aabb8f394bc631b6ac475a1c7f3994c54adf3f51cd63b2730fefba5771b949"},
+    {file = "pynndescent-0.5.13.tar.gz", hash = "sha256:d74254c0ee0a1eeec84597d5fe89fedcf778593eeabe32c2f97412934a9800fb"},
+]
+
+[package.dependencies]
+joblib = ">=0.11"
+llvmlite = ">=0.30"
+numba = ">=0.51.2"
+scikit-learn = ">=0.18"
+scipy = ">=1.0"
 
 [[package]]
 name = "pyparsing"
@@ -4204,6 +4399,31 @@ files = [
 ]
 
 [[package]]
+name = "umap-learn"
+version = "0.5.7"
+description = "Uniform Manifold Approximation and Projection"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "umap-learn-0.5.7.tar.gz", hash = "sha256:b2a97973e4c6ffcebf241100a8de589a4c84126a832ab40f296c6d9fcc5eb19e"},
+    {file = "umap_learn-0.5.7-py3-none-any.whl", hash = "sha256:6a7e0be2facfa365a5ed6588447102bdbef32a0ef449535c25c97ea7e680073c"},
+]
+
+[package.dependencies]
+numba = ">=0.51.2"
+numpy = ">=1.17"
+pynndescent = ">=0.5"
+scikit-learn = ">=0.22"
+scipy = ">=1.3.1"
+tqdm = "*"
+
+[package.extras]
+parametric-umap = ["tensorflow (>=2.1)"]
+plot = ["bokeh", "colorcet", "datashader", "holoviews", "matplotlib", "pandas", "scikit-image", "seaborn"]
+tbb = ["tbb (>=2019.0)"]
+
+[[package]]
 name = "urllib3"
 version = "2.5.0"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -4600,4 +4820,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "baf7d9061cdf7b0f193929143f4062c662ff316baee9679e79c5a0c033b8faff"
+content-hash = "3364b30d68c7817217da5a02fa49a8eee1365a98581bb1f81146b2a7e15220d1"

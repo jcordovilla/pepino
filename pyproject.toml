@@ -32,6 +32,13 @@ pydantic-settings = "^2.10.1"
 click = "^8.2.1"
 networkx = "^3.5"
 jinja2 = "^3.1.6"
+# Enhanced topic modeling with BERTopic
+bertopic = "^0.16.0"
+umap-learn = "^0.5.3"
+hdbscan = "^0.8.33"
+# Enhanced embeddings and transformers
+transformers = "^4.36.0"
+torch = "^2.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.0"

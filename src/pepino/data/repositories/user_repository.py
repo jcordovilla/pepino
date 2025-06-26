@@ -180,15 +180,15 @@ class UserRepository:
             for row in results
         ] if results else []
 
-    def get_available_users(self, limit: int = 100) -> List[str]:
+    def get_available_users(self, limit: int = 500) -> List[str]:
         """
         Get list of available users.
         
         Args:
-            limit: Maximum number of users to return
+            limit: Maximum number of users to return (default: 500 for better autocomplete)
             
         Returns:
-            List of usernames
+            List of usernames sorted alphabetically
         """
         query = """
         SELECT DISTINCT author_name

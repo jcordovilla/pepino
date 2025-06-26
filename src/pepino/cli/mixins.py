@@ -35,32 +35,70 @@ class CLITemplateMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        # Initialize template engine (lazy loaded)
-        self._template_engine = None
-        
+        # Template engine instances will be created per-operation with specific context
         logger.debug("CLITemplateMixin initialized")
     
-    @property
-    def template_engine(self) -> TemplateEngine:
-        """Get or create the template engine instance (lazy loading)."""
-        if self._template_engine is None:
-            self._template_engine = TemplateEngine()
-            logger.debug("Template engine initialized for CLI")
-        return self._template_engine
+    def create_template_engine(self, data_facade=None):
+        """Create template engine with analyzer helpers and NLP capabilities for CLI."""
+        # Try to import analyzers and NLP service
+        try:
+            from pepino.analysis.channel_analyzer import ChannelAnalyzer
+            from pepino.analysis.user_analyzer import UserAnalyzer
+            from pepino.analysis.topic_analyzer import TopicAnalyzer
+            from pepino.analysis.temporal_analyzer import TemporalAnalyzer
+            
+            # Try to import NLP service, handle gracefully if unavailable
+            try:
+                from pepino.analysis.nlp_analyzer import NLPService
+                nlp_service = NLPService()
+            except ImportError:
+                logger.warning("NLP service not available in CLI, templates will have limited NLP capabilities")
+                nlp_service = None
+            
+            # Create analyzers if data facade is provided
+            analyzers = {}
+            if data_facade:
+                analyzers = {
+                    'channel': ChannelAnalyzer(data_facade),
+                    'user': UserAnalyzer(data_facade),
+                    'topic': TopicAnalyzer(data_facade),
+                    'temporal': TemporalAnalyzer(data_facade)
+                }
+            
+            return TemplateEngine(
+                analyzers=analyzers,
+                data_facade=data_facade,
+                nlp_service=nlp_service
+            )
+            
+        except ImportError as e:
+            logger.warning(f"Could not load analyzer classes for templates: {e}")
+            # Fallback to basic template engine
+            return TemplateEngine()
     
-    def render_cli_template(self, template_name: str, data: Dict[str, Any]) -> str:
+    def render_cli_template(self, template_name: str, data: Dict[str, Any], 
+                           data_facade=None, messages=None) -> str:
         """
-        Render a CLI template with the given data.
+        Render a CLI template with the given data and optional analyzer helpers.
         
         Args:
             template_name: Template filename (e.g., 'channel_analysis.txt.j2')
             data: Data to pass to the template
+            data_facade: Optional data facade for analyzer helpers
+            messages: Optional list of message dicts for NLP analysis
             
         Returns:
             Rendered template string
         """
         try:
-            return self.template_engine.render_template(f"outputs/cli/{template_name}", **data)
+            # Create template engine with analyzer helpers if data facade provided
+            template_engine = self.create_template_engine(data_facade)
+            
+            return template_engine.render_template(
+                f"outputs/cli/{template_name}", 
+                messages=messages,
+                **data
+            )
         except Exception as e:
             logger.error(f"Error rendering CLI template {template_name}: {e}")
             return f"❌ Error rendering output: {e}"
@@ -70,7 +108,9 @@ class CLITemplateMixin:
         data: Dict[str, Any], 
         output_file: Optional[str] = None, 
         output_format: str = "text",
-        template_name: Optional[str] = None
+        template_name: Optional[str] = None,
+        data_facade=None,
+        messages=None
     ):
         """
         Handle output formatting and writing for CLI commands.
@@ -80,16 +120,18 @@ class CLITemplateMixin:
             output_file: Optional file to write to
             output_format: Format to use (text, json, csv)
             template_name: Template to use for text format (e.g., 'analysis.txt.j2')
+            data_facade: Optional data facade for analyzer helpers
+            messages: Optional list of message dicts for NLP analysis
         """
         
         if output_format == "text" and not output_file and template_name:
             # Render template and display directly
-            formatted_output = self.render_cli_template(template_name, data)
+            formatted_output = self.render_cli_template(template_name, data, data_facade, messages)
             click.echo(formatted_output)
         
         elif output_format == "text" and output_file and template_name:
             # Render template and write to file
-            formatted_output = self.render_cli_template(template_name, data)
+            formatted_output = self.render_cli_template(template_name, data, data_facade, messages)
             with open(output_file, 'w') as f:
                 f.write(formatted_output)
             click.echo(f"✅ Template output written to {output_file}")
@@ -190,7 +232,9 @@ class CLIAnalysisMixin(CLITemplateMixin):
         operation_name: str,
         template_name: str,
         output_file: Optional[str] = None,
-        output_format: str = "text"
+        output_format: str = "text",
+        data_facade=None,
+        messages=None
     ):
         """
         Handle analysis result with consistent error checking and output formatting.
@@ -201,6 +245,8 @@ class CLIAnalysisMixin(CLITemplateMixin):
             template_name: Template to use for text output
             output_file: Optional output file
             output_format: Output format
+            data_facade: Optional data facade for analyzer helpers
+            messages: Optional list of message dicts for NLP analysis
         """
         
         # Check for errors in result
@@ -218,7 +264,7 @@ class CLIAnalysisMixin(CLITemplateMixin):
             return
         
         # Handle successful result
-        self.handle_output(result, output_file, output_format, template_name)
+        self.handle_output(result, output_file, output_format, template_name, data_facade, messages)
         
         # Success message removed for cleaner output
     

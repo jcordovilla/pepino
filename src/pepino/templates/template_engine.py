@@ -2,11 +2,23 @@
 Discord Template Engine
 
 Jinja2-based template rendering engine for Discord bot analysis responses.
-Provides template loading, custom filters, and chart generation integration for Discord message formatting.
+Provides template loading, custom filters, chart generation integration, analyzer helpers,
+and NLP capabilities for Discord message formatting.
 """
 from jinja2 import Environment, FileSystemLoader, Template
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pepino.analysis.data_facade import AnalysisDataFacade
+    from pepino.analysis.nlp_analyzer import NLPService
+    from pepino.analysis.channel_analyzer import ChannelAnalyzer
+    from pepino.analysis.user_analyzer import UserAnalyzer
+    from pepino.analysis.topic_analyzer import TopicAnalyzer
+    from pepino.analysis.temporal_analyzer import TemporalAnalyzer
+
+# Type alias for supported analyzer types
+AnalyzerType = Union['ChannelAnalyzer', 'UserAnalyzer', 'TopicAnalyzer', 'TemporalAnalyzer']
 from datetime import datetime
 import json
 import yaml
@@ -24,36 +36,46 @@ logger = get_logger(__name__)
 
 class TemplateEngine:
     """
-    Configurable Jinja2 template engine for multi-domain template rendering.
+    Configurable Jinja2 template engine for multi-domain template rendering with analyzer helpers.
     
-    Provides template loading, customizable filters, and chart generation integration
-    for creating rich formatted outputs across different domains (Discord, reports, etc.).
+    Provides template loading, customizable filters, chart generation integration,
+    analyzer helper functions, and NLP capabilities for creating rich formatted outputs
+    across different domains (Discord, reports, etc.).
     
     Features:
     - Template loading from configurable directory
     - Pluggable filter system for domain-specific formatting
     - Chart generation functions available in templates
+    - Analyzer helper functions for dynamic analysis
+    - NLP helper functions for text analysis
+    - Message data access for template-driven analysis
     - Custom number and date formatting
     - Error handling and logging
     - Support for multiple output formats
     
     Usage:
-        # General usage
-        engine = TemplateEngine()
-        result = engine.render_template("reports/monthly_summary.md.j2", data=report_data)
+        # With analyzer helpers
+        engine = TemplateEngine(analyzers=analyzer_dict, data_facade=facade)
+        result = engine.render_template("discord/channel_analysis.md.j2", 
+                                       data=analysis_data, 
+                                       messages=message_list)
         
-        # Discord-specific usage (with Discord filters loaded by default)
-        engine = TemplateEngine()
-        result = engine.render_template("discord/channel_analysis.md.j2", data=analysis_data)
+        # Templates can now use:
+        # {{ analyze_sentiment(messages | join(' ')) }}
+        # {{ extract_concepts(data.content) }}
+        # {{ channel_analyzer.get_top_users(limit=5) }}
     """
 
-    def __init__(self, templates_dir: str = "templates", analyzers: Optional[Dict[str, Any]] = None):
+    def __init__(self, templates_dir: str = "templates", analyzers: Optional[Dict[str, AnalyzerType]] = None, 
+                 data_facade: Optional['AnalysisDataFacade'] = None, nlp_service: Optional['NLPService'] = None):
         """
-        Initialize the template engine.
+        Initialize the template engine with analyzer helpers and NLP capabilities.
         
         Args:
             templates_dir: Base directory for templates (default: "templates")
             analyzers: Optional dict of analyzer instances for template use
+            data_facade: Optional data facade for database access
+            nlp_service: Optional NLP service for text analysis
         """
         
         templates_path = Path(templates_dir)
@@ -73,8 +95,10 @@ class TemplateEngine:
                 lstrip_blocks=True
             )
         
-        # Store analyzer references for template use
-        self.analyzers = analyzers or {}
+        # Store analyzer and service references for template use
+        self.analyzers: Dict[str, AnalyzerType] = analyzers or {}
+        self.data_facade: Optional['AnalysisDataFacade'] = data_facade
+        self.nlp_service: Optional['NLPService'] = nlp_service
         
         # Add custom filters that match current formatting
         self.env.filters.update({
@@ -89,7 +113,12 @@ class TemplateEngine:
             'format_trend': self._format_trend,
             # CLI-specific filters
             'cli_safe': self._cli_safe_text,
-            'terminal_width': self._terminal_width_wrap
+            'terminal_width': self._terminal_width_wrap,
+            # New NLP filters
+            'extract_concepts': self._filter_extract_concepts,
+            'analyze_sentiment': self._filter_analyze_sentiment,
+            'get_entities': self._filter_get_entities,
+            'extract_phrases': self._filter_extract_phrases
         })
         
         # Add custom functions
@@ -108,15 +137,18 @@ class TemplateEngine:
             'create_wordcloud': self._create_wordcloud
         })
         
-        # Make analyzer functions available in templates
+        # Make analyzer functions and NLP helpers available in templates
         self._register_analyzer_functions()
+        self._register_nlp_functions()
+        self._register_data_helpers()
     
-    def render_template(self, template_name: str, **kwargs) -> str:
+    def render_template(self, template_name: str, messages: Optional[List[Dict]] = None, **kwargs) -> str:
         """
-        Render a template with the provided data.
+        Render a template with the provided data, including optional message context.
         
         Args:
             template_name: Template file path relative to templates directory
+            messages: Optional list of message dicts for NLP analysis
             **kwargs: Data to pass to the template
             
         Returns:
@@ -128,24 +160,43 @@ class TemplateEngine:
         """
         try:
             template = self.env.get_template(template_name)
+            
+            # Add message data to template context if provided
+            if messages:
+                kwargs['messages'] = messages
+                kwargs['message_count'] = len(messages)
+                # Pre-compute some common message aggregations
+                kwargs['all_message_text'] = ' '.join(msg.get('content', '') for msg in messages if msg.get('content'))
+                kwargs['message_authors'] = list(set(msg.get('author', '') for msg in messages if msg.get('author')))
+            
             return template.render(**kwargs)
         except Exception as e:
             logger.error(f"Error rendering template {template_name}: {str(e)}", exc_info=True)
             return f"❌ Error rendering template: {str(e)}"
 
-    def render_string(self, template_string: str, **kwargs) -> str:
+    def render_string(self, template_string: str, messages: Optional[List[Dict]] = None, **kwargs) -> str:
         """
-        Render a template from a string.
+        Render a template from a string with optional message context.
         
         Args:
             template_string: Template content as string
+            messages: Optional list of message dicts for NLP analysis
             **kwargs: Data to pass to the template
             
         Returns:
             Rendered template as string
         """
         try:
-            template = Template(template_string)
+            # Use the environment to create template so it has access to all registered functions
+            template = self.env.from_string(template_string)
+            
+            # Add message data to template context if provided
+            if messages:
+                kwargs['messages'] = messages
+                kwargs['message_count'] = len(messages)
+                kwargs['all_message_text'] = ' '.join(msg.get('content', '') for msg in messages if msg.get('content'))
+                kwargs['message_authors'] = list(set(msg.get('author', '') for msg in messages if msg.get('author')))
+            
             return template.render(**kwargs)
         except Exception as e:
             logger.error(f"Error rendering template string: {str(e)}", exc_info=True)
@@ -155,8 +206,221 @@ class TemplateEngine:
         """Register analyzer functions for use in templates."""
         if self.analyzers:
             for name, analyzer in self.analyzers.items():
-                self.env.globals[f"{name}_analyze"] = analyzer.analyze
-                # Add any other analyzer methods as needed
+                # Register the analyzer instance itself
+                self.env.globals[f"{name}_analyzer"] = analyzer
+                
+                # Register common analyzer methods directly
+                if hasattr(analyzer, 'analyze'):
+                    self.env.globals[f"{name}_analyze"] = analyzer.analyze
+                if hasattr(analyzer, 'get_top_users'):
+                    self.env.globals[f"get_top_users"] = analyzer.get_top_users
+                if hasattr(analyzer, 'get_top_channels'):
+                    self.env.globals[f"get_top_channels"] = analyzer.get_top_channels
+                if hasattr(analyzer, 'get_available_users'):
+                    self.env.globals[f"get_available_users"] = analyzer.get_available_users
+                if hasattr(analyzer, 'get_available_channels'):
+                    self.env.globals[f"get_available_channels"] = analyzer.get_available_channels
+
+    def _register_nlp_functions(self):
+        """Register NLP helper functions for templates."""
+        if self.nlp_service:
+            # Direct NLP functions
+            self.env.globals['extract_concepts'] = self._safe_extract_concepts
+            self.env.globals['analyze_sentiment'] = self._safe_analyze_sentiment
+            self.env.globals['get_named_entities'] = self._safe_get_entities
+            self.env.globals['extract_key_phrases'] = self._safe_extract_phrases
+            self.env.globals['analyze_complexity'] = self._safe_analyze_complexity
+            
+            # Batch processing helpers
+            self.env.globals['analyze_messages_sentiment'] = self._analyze_messages_sentiment
+            self.env.globals['extract_message_concepts'] = self._extract_message_concepts
+            self.env.globals['get_message_entities'] = self._get_message_entities
+        else:
+            # Provide no-op functions if NLP service not available
+            self.env.globals['extract_concepts'] = lambda text: []
+            self.env.globals['analyze_sentiment'] = lambda text: {'sentiment': 'neutral', 'score': 0.0}
+            self.env.globals['get_named_entities'] = lambda text: []
+            self.env.globals['extract_key_phrases'] = lambda text: []
+            self.env.globals['analyze_complexity'] = lambda text: {'complexity': 'medium', 'score': 0.5}
+            self.env.globals['analyze_messages_sentiment'] = lambda messages: []
+            self.env.globals['extract_message_concepts'] = lambda messages: []
+            self.env.globals['get_message_entities'] = lambda messages: []
+
+    def _register_data_helpers(self):
+        """Register data access helper functions for templates."""
+        if self.data_facade:
+            # Repository access helpers
+            self.env.globals['get_messages_by_channel'] = self._get_messages_by_channel
+            self.env.globals['get_messages_by_user'] = self._get_messages_by_user
+            self.env.globals['get_recent_messages'] = self._get_recent_messages
+            self.env.globals['search_messages'] = self._search_messages
+
+    # NLP Filter Functions (for use with | syntax)
+    def _filter_extract_concepts(self, text: str) -> List[str]:
+        """Filter to extract concepts from text."""
+        return self._safe_extract_concepts(text)
+
+    def _filter_analyze_sentiment(self, text: str) -> Dict[str, Any]:
+        """Filter to analyze sentiment of text."""
+        return self._safe_analyze_sentiment(text)
+
+    def _filter_get_entities(self, text: str) -> List[Dict]:
+        """Filter to get named entities from text."""
+        return self._safe_get_entities(text)
+
+    def _filter_extract_phrases(self, text: str) -> List[str]:
+        """Filter to extract key phrases from text."""
+        return self._safe_extract_phrases(text)
+
+    # Safe NLP Function Wrappers
+    def _safe_extract_concepts(self, text: str) -> List[str]:
+        """Safely extract concepts with error handling."""
+        if not self.nlp_service or not text:
+            return []
+        try:
+            return self.nlp_service.extract_concepts(text)
+        except Exception as e:
+            logger.error(f"Error extracting concepts: {e}")
+            return []
+
+    def _safe_analyze_sentiment(self, text: str) -> Dict[str, Any]:
+        """Safely analyze sentiment with error handling."""
+        if not self.nlp_service or not text:
+            return {'sentiment': 'neutral', 'score': 0.0}
+        try:
+            return self.nlp_service.analyze_sentiment(text)
+        except Exception as e:
+            logger.error(f"Error analyzing sentiment: {e}")
+            return {'sentiment': 'neutral', 'score': 0.0}
+
+    def _safe_get_entities(self, text: str) -> List[Dict]:
+        """Safely get named entities with error handling."""
+        if not self.nlp_service or not text:
+            return []
+        try:
+            return self.nlp_service.get_named_entities(text)
+        except Exception as e:
+            logger.error(f"Error getting entities: {e}")
+            return []
+
+    def _safe_extract_phrases(self, text: str) -> List[str]:
+        """Safely extract key phrases with error handling."""
+        if not self.nlp_service or not text:
+            return []
+        try:
+            return self.nlp_service.extract_key_phrases(text)
+        except Exception as e:
+            logger.error(f"Error extracting phrases: {e}")
+            return []
+
+    def _safe_analyze_complexity(self, text: str) -> Dict[str, Any]:
+        """Safely analyze text complexity with error handling."""
+        if not self.nlp_service or not text:
+            return {'complexity': 'medium', 'score': 0.5}
+        try:
+            return self.nlp_service.analyze_text_complexity(text)
+        except Exception as e:
+            logger.error(f"Error analyzing complexity: {e}")
+            return {'complexity': 'medium', 'score': 0.5}
+
+    # Batch Message Processing Functions
+    def _analyze_messages_sentiment(self, messages: List[Dict]) -> List[Dict]:
+        """Analyze sentiment for a list of messages."""
+        if not messages or not self.nlp_service:
+            return []
+        
+        results = []
+        for msg in messages:
+            content = msg.get('content', '')
+            if content:
+                sentiment = self._safe_analyze_sentiment(content)
+                results.append({
+                    'message_id': msg.get('id'),
+                    'author': msg.get('author'),
+                    'sentiment': sentiment['sentiment'],
+                    'score': sentiment['score'],
+                    'content_preview': content[:100] + '...' if len(content) > 100 else content
+                })
+        return results
+
+    def _extract_message_concepts(self, messages: List[Dict]) -> List[Dict]:
+        """Extract concepts from a list of messages."""
+        if not messages or not self.nlp_service:
+            return []
+        
+        all_concepts = []
+        for msg in messages:
+            content = msg.get('content', '')
+            if content:
+                concepts = self._safe_extract_concepts(content)
+                if concepts:
+                    all_concepts.extend([{
+                        'concept': concept,
+                        'message_id': msg.get('id'),
+                        'author': msg.get('author')
+                    } for concept in concepts])
+        return all_concepts
+
+    def _get_message_entities(self, messages: List[Dict]) -> List[Dict]:
+        """Extract named entities from a list of messages."""
+        if not messages or not self.nlp_service:
+            return []
+        
+        all_entities = []
+        for msg in messages:
+            content = msg.get('content', '')
+            if content:
+                entities = self._safe_get_entities(content)
+                if entities:
+                    for entity in entities:
+                        entity['message_id'] = msg.get('id')
+                        entity['author'] = msg.get('author')
+                    all_entities.extend(entities)
+        return all_entities
+
+    # Data Access Helper Functions
+    def _get_messages_by_channel(self, channel_name: str, limit: int = 100) -> List[Dict]:
+        """Get recent messages from a specific channel."""
+        if not self.data_facade:
+            return []
+        try:
+            return self.data_facade.message_repository.get_messages_by_channel(channel_name, limit)
+        except Exception as e:
+            logger.error(f"Error getting messages by channel: {e}")
+            return []
+
+    def _get_messages_by_user(self, username: str, limit: int = 100) -> List[Dict]:
+        """Get recent messages from a specific user."""
+        if not self.data_facade:
+            return []
+        try:
+            return self.data_facade.message_repository.get_messages_by_user(username, limit)
+        except Exception as e:
+            logger.error(f"Error getting messages by user: {e}")
+            return []
+
+    def _get_recent_messages(self, limit: int = 100, channel_name: Optional[str] = None) -> List[Dict]:
+        """Get recent messages, optionally filtered by channel."""
+        if not self.data_facade:
+            return []
+        try:
+            if channel_name:
+                return self.data_facade.message_repository.get_messages_by_channel(channel_name, limit)
+            else:
+                return self.data_facade.message_repository.get_recent_messages(limit)
+        except Exception as e:
+            logger.error(f"Error getting recent messages: {e}")
+            return []
+
+    def _search_messages(self, query: str, limit: int = 50) -> List[Dict]:
+        """Search messages by content."""
+        if not self.data_facade:
+            return []
+        try:
+            return self.data_facade.message_repository.search_messages(query, limit)
+        except Exception as e:
+            logger.error(f"Error searching messages: {e}")
+            return []
 
     # Custom filters that match current formatting behavior
     def _format_number(self, value: Union[int, float]) -> str:

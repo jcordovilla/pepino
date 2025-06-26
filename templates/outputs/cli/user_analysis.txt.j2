@@ -38,4 +38,66 @@ Peak Days:
 • Activity Level: {{ summary.activity_level or 'Unknown' }}
 • Engagement Score: {{ summary.engagement_score | round(1) if summary.engagement_score else 'N/A' }}
 • Primary Channels: {{ summary.primary_channels[:3] | join(', ') if summary.primary_channels else 'N/A' }}
+{%- endif %}
+
+{%- if messages %}
+
+🧠 NLP Analysis of Recent Messages:
+
+{% set user_sentiment = analyze_messages_sentiment(messages[:30]) %}
+{%- if user_sentiment %}
+Sentiment Profile:
+{%- set positive_count = user_sentiment | selectattr('sentiment', 'equalto', 'positive') | list | length %}
+{%- set negative_count = user_sentiment | selectattr('sentiment', 'equalto', 'negative') | list | length %}
+{%- set neutral_count = user_sentiment | selectattr('sentiment', 'equalto', 'neutral') | list | length %}
+• Positive: {{ positive_count }} messages ({{ (positive_count / user_sentiment | length * 100) | round(1) }}%)
+• Negative: {{ negative_count }} messages ({{ (negative_count / user_sentiment | length * 100) | round(1) }}%)
+• Neutral: {{ neutral_count }} messages ({{ (neutral_count / user_sentiment | length * 100) | round(1) }}%)
+{%- endif %}
+
+{% set user_concepts = extract_message_concepts(messages[:50]) %}
+{%- if user_concepts %}
+Key Topics Discussed:
+{%- set concept_counts = {} %}
+{%- for item in user_concepts %}
+{%- set _ = concept_counts.update({item.concept: concept_counts.get(item.concept, 0) + 1}) %}
+{%- endfor %}
+{%- set sorted_concepts = concept_counts.items() | sort(attribute=1, reverse=true) %}
+{%- for concept, count in sorted_concepts[:8] %}
+• {{ concept }} ({{ count }} times)
+{%- endfor %}
+{%- endif %}
+
+{%- if all_message_text %}
+{% set complexity = analyze_complexity(all_message_text) %}
+Communication Style:
+• Text Complexity: {{ complexity.complexity }} ({{ complexity.score | round(2) }}/1.0)
+• Avg Sentence Length: {{ complexity.avg_sentence_length | round(1) }} words
+• Vocabulary Diversity: {{ complexity.lexical_diversity | round(3) }}
+{%- endif %}
+
+{%- endif %}
+
+{%- if user_analyzer %}
+
+🔄 Live Comparison:
+{%- set top_users = user_analyzer.get_top_users(limit=10) %}
+{%- if top_users %}
+{%- for user in top_users %}
+{%- if user.username == username %}
+• Rank: #{{ loop.index }} of {{ top_users | length }} active users
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+{%- endif %}
+
+{%- if channel_analyzer and channel_activity %}
+
+Cross-Channel Insights:
+{%- for activity in channel_activity[:3] %}
+{%- set channel_analysis = channel_analyzer.analyze(channel_name=activity.channel_name) %}
+{%- if channel_analysis and channel_analysis.statistics %}
+• #{{ activity.channel_name }}: {{ ((activity.message_count / channel_analysis.statistics.total_messages) * 100) | round(1) }}% of channel activity
+{%- endif %}
+{%- endfor %}
 {%- endif %} 

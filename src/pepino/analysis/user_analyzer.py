@@ -174,7 +174,7 @@ class UserAnalyzer:
         except Exception as e:
             logger.error(f"Failed to get user channel activity via repository: {e}")
             return []
-    
+
     def _analyze_time_patterns_via_repository(self, username: str, days: Optional[int]) -> Dict[str, any]:
         """Analyze user time patterns using data facade."""
         

@@ -181,15 +181,15 @@ class ChannelRepository:
             for row in results
         ] if results else []
 
-    def get_available_channels(self, limit: int = 100) -> List[str]:
+    def get_available_channels(self, limit: int = 500) -> List[str]:
         """
         Get list of available channels.
         
         Args:
-            limit: Maximum number of channels to return
+            limit: Maximum number of channels to return (default: 500 for better autocomplete)
             
         Returns:
-            List of channel names
+            List of channel names sorted alphabetically
         """
         query = """
         SELECT DISTINCT channel_name

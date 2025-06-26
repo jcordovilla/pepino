@@ -144,26 +144,97 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
         output: Optional[str],
         output_format: str,
     ):
-        """Analyze topics with template integration."""
+        """Analyze topics with template integration and NLP capabilities."""
         try:
-            from .persistence import analyze_topics
+            from .persistence import get_database_manager
+            from ..analysis.data_facade import get_analysis_data_facade
+            from ..analysis.topic_analyzer import TopicAnalyzer
+            from ..data.config import Settings
 
-            data = analyze_topics(
-                channel, n_topics, days_back, ctx_obj.get("db_path")
-            )
+            # Enhanced topic analysis with NLP capabilities
+            settings = Settings()
+            db_path = ctx_obj.get("db_path") or settings.db_path
 
-            # Handle Pydantic response models
-            if "topic_analysis" in data:
-                result = data["topic_analysis"]
+            with get_database_manager(db_path) as db_manager:
+                # Create data facade with proper base filter
+                data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+                
+                # Create topic analyzer
+                topic_analyzer = TopicAnalyzer(data_facade)
+                
+                # Perform analysis
+                analysis_result = topic_analyzer.analyze(
+                    channel_name=channel, 
+                    top_n=n_topics, 
+                    days_back=days_back
+                )
+                
+                if not analysis_result:
+                    self.show_template_error("Topic analysis", "No analysis result returned")
+                    return
+                
+                # Check if we got an error response
+                if hasattr(analysis_result, 'error') and analysis_result.error:
+                    self.show_template_error("Topic analysis", analysis_result.error)
+                    return
+                
+                # Check if we have topics
+                if not hasattr(analysis_result, 'topics') or not analysis_result.topics:
+                    self.show_template_error("Topic analysis", "No topics found for the specified criteria")
+                    return
+                
+                # Get recent messages for NLP analysis context (increased limit for better concept extraction)
+                recent_messages = []
+                try:
+                    if channel:
+                        messages_data = data_facade.message_repository.get_messages_by_channel(channel, limit=500)
+                    else:
+                        messages_data = data_facade.message_repository.get_recent_messages(limit=500, days_back=days_back)
+                    
+                    if messages_data:
+                        recent_messages = [
+                            {
+                                'id': msg.get('id'),
+                                'content': msg.get('content', ''),
+                                'author': msg.get('username') or msg.get('author', ''),
+                                'timestamp': msg.get('timestamp', ''),
+                                'channel': msg.get('channel_name', channel or 'all')
+                            }
+                            for msg in messages_data
+                        ]
+                except Exception as e:
+                    if ctx_obj.get("verbose"):
+                        self.show_template_error("Message context loading", f"Could not fetch messages for NLP analysis: {e}")
+                
+                # Prepare enhanced template data with NLP capabilities
+                template_data = {
+                    'channel_name': channel,
+                    'days_back': days_back,
+                    'n_topics': n_topics,
+                    'analysis': analysis_result,
+                    'topics': analysis_result.topics,
+                    'message_count': analysis_result.message_count,
+                    'capabilities_used': analysis_result.capabilities_used if hasattr(analysis_result, 'capabilities_used') else ['topic_analysis']
+                }
+                
+                # Add domain analysis data if available from hybrid approach
+                if hasattr(analysis_result, '_domain_analysis'):
+                    template_data['_domain_analysis'] = analysis_result._domain_analysis
+                
+                # Convert Pydantic model to dict for compatibility
+                result_dict = analysis_result.model_dump() if hasattr(analysis_result, "model_dump") else analysis_result
+                final_data = {**template_data, **result_dict}
+                
+                # Handle template rendering with NLP context
                 self.handle_analysis_result(
-                    result, 
+                    final_data,
                     "Topic analysis", 
                     "topic_analysis.txt.j2",
                     output, 
-                    output_format
+                    output_format,
+                    data_facade=data_facade,
+                    messages=recent_messages
                 )
-            else:
-                self.handle_output(data, output, output_format)
 
         except RuntimeError as e:
             self.show_template_error("Topic analysis", str(e))

@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import ChannelAnalysisResponse
 from .models import LocalChannelStatistics, UserActivity
+from .utils import safe_timestamp_to_iso
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,8 @@ class ChannelAnalyzer:
             logger.error(f"Channel analysis failed for {channel_name}: {e}")
             return None
     
+    # Removed local method - now using shared utility
+    
     def _convert_to_channel_statistics_model(self, stats: LocalChannelStatistics):
         """Convert our LocalChannelStatistics to the model expected by ChannelAnalysisResponse."""
         from .models import ChannelStatistics as ModelChannelStatistics
@@ -104,8 +107,8 @@ class ChannelAnalyzer:
             total_messages=stats.total_messages,
             unique_users=stats.unique_users,
             avg_message_length=0.0,  # We don't calculate this yet
-            first_message=stats.first_message_date.isoformat() if stats.first_message_date else None,
-            last_message=stats.last_message_date.isoformat() if stats.last_message_date else None,
+            first_message=safe_timestamp_to_iso(stats.first_message_date),
+            last_message=safe_timestamp_to_iso(stats.last_message_date),
             active_days=0,  # We don't calculate this yet
             bot_messages=0,  # We don't calculate this yet
             human_messages=stats.total_messages,  # Assume all are human for now

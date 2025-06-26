@@ -31,13 +31,10 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     - Comprehensive error handling
     - Parallel analysis operations when possible
     """
-    
+
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
-        
-        # Initialize template system
-        self.template_engine = TemplateEngine()
         
         # Database manager and settings will be initialized per command
         self.db_manager = None
@@ -55,6 +52,36 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         from pepino.data.config import Settings
         return Settings()
     
+    def _create_template_engine(self, data_facade):
+        """Create template engine with analyzer helpers and NLP capabilities."""
+        from ...templates.template_engine import TemplateEngine
+        from ...analysis.channel_analyzer import ChannelAnalyzer
+        from ...analysis.user_analyzer import UserAnalyzer
+        from ...analysis.topic_analyzer import TopicAnalyzer
+        from ...analysis.temporal_analyzer import TemporalAnalyzer
+        
+        # Try to import NLP service, handle gracefully if unavailable
+        try:
+            from ...analysis.nlp_analyzer import NLPService
+            nlp_service = NLPService()
+        except ImportError:
+            logger.warning("NLP service not available, templates will have limited NLP capabilities")
+            nlp_service = None
+        
+        # Create analyzers
+        analyzers = {
+            'channel': ChannelAnalyzer(data_facade),
+            'user': UserAnalyzer(data_facade),
+            'topic': TopicAnalyzer(data_facade),
+            'temporal': TemporalAnalyzer(data_facade)
+        }
+        
+        return TemplateEngine(
+            analyzers=analyzers,
+            data_facade=data_facade,
+            nlp_service=nlp_service
+        )
+    
     async def cog_unload(self):
         """Clean up resources when cog is unloaded."""
         await self.cleanup_thread_pool()
@@ -66,7 +93,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete function for channel names."""
+        """Autocomplete function for channel names with improved filtering."""
         try:
             # Get available channels directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
@@ -74,16 +101,27 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             
             settings = Settings()
             with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
-                channels = facade.channel_repository.get_available_channels(limit=50)
+                # Get more channels for better autocomplete experience
+                channels = facade.channel_repository.get_available_channels(limit=200)
             
-            # Filter channels based on current input
+            # Enhanced filtering logic
             if current:
-                filtered_channels = [
-                    ch for ch in channels 
-                    if current.lower() in ch.lower()
-                ][:25]  # Discord limit
+                current_lower = current.lower()
+                
+                # Priority 1: Exact matches (case insensitive)
+                exact_matches = [ch for ch in channels if ch.lower() == current_lower]
+                
+                # Priority 2: Starts with the input
+                starts_with = [ch for ch in channels if ch.lower().startswith(current_lower) and ch.lower() != current_lower]
+                
+                # Priority 3: Contains the input anywhere
+                contains = [ch for ch in channels if current_lower in ch.lower() and not ch.lower().startswith(current_lower)]
+                
+                # Combine with priority order and limit to Discord's 25 choice limit
+                filtered_channels = (exact_matches + starts_with + contains)[:25]
             else:
-                filtered_channels = channels[:25]
+                # No input - return first 25 channels (alphabetically sorted)
+                filtered_channels = sorted(channels)[:25]
             
             return [
                 app_commands.Choice(name=channel, value=channel)
@@ -99,30 +137,44 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete function for usernames."""
+        """Autocomplete function for usernames with improved filtering."""
         try:
             # Get available users directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
             from ...data.config import Settings
-            
+
             settings = Settings()
             with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
-                users = facade.user_repository.get_available_users(limit=50)
-            
-            # Filter users based on current input
+                # Get more users for better autocomplete experience
+                users = facade.user_repository.get_available_users(limit=200)
+
+            # Filter out empty/None usernames
+            valid_users = [user for user in users if user and user.strip()]
+
+            # Enhanced filtering logic
             if current:
-                filtered_users = [
-                    user for user in users 
-                    if user and current.lower() in user.lower()
-                ][:25]  # Discord limit
+                current_lower = current.lower()
+                
+                # Priority 1: Exact matches (case insensitive)
+                exact_matches = [user for user in valid_users if user.lower() == current_lower]
+                
+                # Priority 2: Starts with the input
+                starts_with = [user for user in valid_users if user.lower().startswith(current_lower) and user.lower() != current_lower]
+                
+                # Priority 3: Contains the input anywhere
+                contains = [user for user in valid_users if current_lower in user.lower() and not user.lower().startswith(current_lower)]
+                
+                # Combine with priority order and limit to Discord's 25 choice limit
+                filtered_users = (exact_matches + starts_with + contains)[:25]
             else:
-                filtered_users = [u for u in users if u][:25]
-            
+                # No input - return first 25 users (alphabetically sorted)
+                filtered_users = sorted(valid_users)[:25]
+
             return [
                 app_commands.Choice(name=user, value=user)
                 for user in filtered_users
             ]
-            
+
         except Exception as e:
             logger.error(f"User autocomplete failed: {e}")
             return []  # Return empty list instead of error choice
@@ -146,7 +198,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Defer the response immediately to avoid timeout
             await interaction.response.defer()
-            
+
             # Determine target channel
             if not channel_name:
                 if isinstance(interaction.channel, discord.DMChannel):
@@ -167,7 +219,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await self._send_long_message_slash(interaction, final_message)
             else:
                 await interaction.followup.send(f"❌ No data found for channel **{channel_name}**")
-                
+
         except Exception as e:
             logger.error(f"Channel analysis failed: {e}")
             logger.error(traceback.format_exc())
@@ -177,13 +229,17 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
     
     def _sync_channel_analysis(self, channel_name: str) -> str:
-        """Sync channel analysis using template system."""
+        """Sync channel analysis using enhanced template system with analyzer helpers."""
         
         from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.channel_analyzer import ChannelAnalyzer
         from ...data.config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
             channel_analyzer = ChannelAnalyzer(facade)
             
             # Get channel analysis data
@@ -192,19 +248,55 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             if not analysis_result or not analysis_result.statistics:
                 return None
             
-            # Prepare template data
+            # Get recent messages for template context
+            recent_messages = []
+            try:
+                # Use synchronous method that returns data directly
+                messages_data = facade.message_repository.get_channel_messages(channel_name, days_back=7, limit=100)
+                if messages_data:
+                    recent_messages = [
+                        {
+                            'id': msg.get('id'),
+                            'content': msg.get('content', ''),
+                            'author': msg.get('username') or msg.get('author', ''),
+                            'timestamp': msg.get('timestamp', ''),
+                            'channel': msg.get('channel_name', channel_name)
+                        }
+                        for msg in messages_data
+                    ]
+            except Exception as e:
+                logger.warning(f"Could not fetch messages for template context: {e}")
+            
+            # Prepare enhanced template data using correct ChannelAnalysisResponse attributes
             template_data = {
-                'channel_name': channel_name,
+                'data': {
+                    'channel_name': channel_name,
+                    'date_range': {
+                        'start': analysis_result.statistics.first_message or 'Unknown',
+                        'end': analysis_result.statistics.last_message or 'Unknown'
+                    },
+                    'statistics': analysis_result.statistics,
+                    'user_stats': analysis_result.top_users or [],
+                    'peak_activity': analysis_result.peak_activity,
+                    'engagement_metrics': analysis_result.engagement_metrics,
+                    'health_metrics': analysis_result.health_metrics,
+                    'content_analysis': {
+                        'common_words': []  # This would be populated by topic analysis if needed
+                    }
+                },
                 'analysis': analysis_result,
-                'statistics': analysis_result.statistics,
+                'channel_name': channel_name,
                 'top_users': analysis_result.top_users or [],
-                'time_patterns': analysis_result.time_patterns or {},
-                'summary': analysis_result.summary or {}
+                'peak_activity': analysis_result.peak_activity,
+                'engagement_metrics': analysis_result.engagement_metrics,
+                'health_metrics': analysis_result.health_metrics,
+                'recent_activity': analysis_result.recent_activity or []
             }
             
-            # Render template
-            return self.template_engine.render_template(
-                'discord/channel_analysis.md.j2',
+            # Render template with message context
+            return template_engine.render_template(
+                'outputs/discord/channel_analysis.md.j2',
+                messages=recent_messages,
                 **template_data
             )
     
@@ -227,7 +319,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Defer the response immediately to avoid timeout
             await interaction.response.defer()
-            
+
             # Determine target user
             if not username:
                 username = interaction.user.display_name
@@ -245,7 +337,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await self._send_long_message_slash(interaction, final_message)
             else:
                 await interaction.followup.send(f"❌ No data found for user **{username}**")
-                
+
         except Exception as e:
             logger.error(f"User analysis failed: {e}")
             logger.error(traceback.format_exc())
@@ -255,11 +347,17 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
     
     def _sync_user_analysis(self, username: str) -> str:
-        """Sync user analysis using template system."""
+        """Sync user analysis using enhanced template system with analyzer helpers."""
         
         from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.user_analyzer import UserAnalyzer
+        from ...data.config import Settings
         
-        with get_analysis_data_facade() as facade:
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
             user_analyzer = UserAnalyzer(facade)
             
             # Get user analysis data
@@ -268,19 +366,38 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             if not analysis_result or not analysis_result.statistics:
                 return None
             
-            # Prepare template data
+            # Get recent messages from this user for template context
+            recent_messages = []
+            try:
+                # Use synchronous method that returns data directly
+                messages_data = facade.message_repository.get_user_messages(username, days_back=7, limit=100)
+                if messages_data:
+                    recent_messages = [
+                        {
+                            'id': msg.get('id'),
+                            'content': msg.get('content', ''),
+                            'author': username,
+                            'timestamp': msg.get('timestamp', ''),
+                            'channel': msg.get('channel_name', '')
+                        }
+                        for msg in messages_data
+                    ]
+            except Exception as e:
+                logger.warning(f"Could not fetch user messages for template context: {e}")
+            
+            # Prepare enhanced template data using correct UserAnalysisResponse attributes
             template_data = {
                 'username': username,
                 'analysis': analysis_result,
                 'statistics': analysis_result.statistics,
-                'channel_activity': analysis_result.channel_activity or [],
-                'time_patterns': analysis_result.time_patterns or {},
-                'summary': analysis_result.summary or {}
+                'user_info': analysis_result.user_info,
+                'concepts': analysis_result.concepts or []
             }
             
-            # Render template
-            return self.template_engine.render_template(
-                'discord/user_analysis.md.j2',
+            # Render template with message context
+            return template_engine.render_template(
+                'outputs/discord/user_analysis.md.j2',
+                messages=recent_messages,
                 **template_data
             )
     
@@ -305,16 +422,14 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         """
         
         try:
-            # Defer the response immediately to avoid timeout
-            await interaction.response.defer()
-            
-            # Determine target channel
+            # Determine target channel first
             if not channel_name:
                 if isinstance(interaction.channel, discord.DMChannel):
-                    await interaction.followup.send("❌ Please specify a channel name when using this command in DMs.")
+                    await interaction.response.send_message("❌ Please specify a channel name when using this command in DMs.")
                     return
                 channel_name = interaction.channel.name
             
+            # Send initial response and defer for long operation
             await interaction.response.send_message(f"🔍 Analyzing topics in **{channel_name}** (last {days} days)... This may take a moment.")
             
             # Execute sync operation in thread pool with performance tracking
@@ -330,7 +445,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"✅ Topics analysis completed in {exec_time:.2f}s")
             else:
                 await interaction.followup.send(f"❌ No topic data found for channel **{channel_name}**")
-                
+
         except Exception as e:
             logger.error(f"Topics analysis failed: {e}")
             logger.error(traceback.format_exc())
@@ -340,11 +455,17 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
     
     def _sync_topics_analysis(self, channel_name: str, days: int) -> str:
-        """Sync topics analysis using template system."""
+        """Sync topics analysis using enhanced template system with analyzer helpers."""
         
         from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.topic_analyzer import TopicAnalyzer
+        from ...data.config import Settings
         
-        with get_analysis_data_facade() as facade:
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
             topic_analyzer = TopicAnalyzer(facade)
             
             # Get topics analysis data  
@@ -353,21 +474,50 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 days_back=days
             )
             
-            if not analysis_result or not analysis_result.topics:
+            # Check if analysis was successful
+            if not analysis_result or not hasattr(analysis_result, 'success') or not analysis_result.success:
+                return None
+                
+            if not hasattr(analysis_result, 'topics') or not analysis_result.topics:
                 return None
             
-            # Prepare template data
+            # Get recent messages for template context and NLP analysis
+            recent_messages = []
+            try:
+                # Use synchronous method that returns data directly
+                messages_data = facade.message_repository.get_channel_messages(channel_name, days_back=days, limit=200)
+                if messages_data:
+                    recent_messages = [
+                        {
+                            'id': msg.get('id'),
+                            'content': msg.get('content', ''),
+                            'author': msg.get('username') or msg.get('author', ''),
+                            'timestamp': msg.get('timestamp', ''),
+                            'channel': msg.get('channel_name', channel_name)
+                        }
+                        for msg in messages_data
+                    ]
+            except Exception as e:
+                logger.warning(f"Could not fetch messages for template context: {e}")
+            
+            # Prepare enhanced template data
             template_data = {
                 'channel_name': channel_name,
                 'days': days,
                 'analysis': analysis_result,
                 'topics': analysis_result.topics,
-                'message_count': analysis_result.message_count
+                'message_count': analysis_result.message_count,
+                'capabilities_used': analysis_result.capabilities_used if hasattr(analysis_result, 'capabilities_used') else ['topic_analysis']
             }
             
-            # Render template
-            return self.template_engine.render_template(
-                'discord/topic_analysis.md.j2',
+            # Add domain analysis data if available from hybrid approach
+            if hasattr(analysis_result, '_domain_analysis'):
+                template_data['_domain_analysis'] = analysis_result._domain_analysis
+            
+            # Render template with message context for enhanced NLP analysis
+            return template_engine.render_template(
+                'outputs/discord/topic_analysis.md.j2',
+                messages=recent_messages,
                 **template_data
             )
     
@@ -392,16 +542,14 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         """
         
         try:
-            # Defer the response immediately to avoid timeout
-            await interaction.response.defer()
-            
-            # Determine target channel
+            # Determine target channel first
             if not channel_name:
                 if isinstance(interaction.channel, discord.DMChannel):
-                    await interaction.followup.send("❌ Please specify a channel name when using this command in DMs.")
+                    await interaction.response.send_message("❌ Please specify a channel name when using this command in DMs.")
                     return
                 channel_name = interaction.channel.name
             
+            # Send initial response and defer for long operation
             await interaction.response.send_message(f"🔍 Analyzing activity trends in **{channel_name}** (last {days} days)... This may take a moment.")
             
             # Execute sync operation in thread pool with performance tracking
@@ -417,7 +565,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"✅ Activity trends analysis completed in {exec_time:.2f}s")
             else:
                 await interaction.followup.send(f"❌ No activity data found for channel **{channel_name}**")
-                
+
         except Exception as e:
             logger.error(f"Activity trends analysis failed: {e}")
             logger.error(traceback.format_exc())
@@ -427,11 +575,17 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
     
     def _sync_activity_trends(self, channel_name: str, days: int) -> str:
-        """Sync activity trends analysis using template system."""
+        """Sync activity trends analysis using enhanced template system with analyzer helpers."""
         
         from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.temporal_analyzer import TemporalAnalyzer
+        from ...data.config import Settings
         
-        with get_analysis_data_facade() as facade:
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
             temporal_analyzer = TemporalAnalyzer(facade)
             
             # Get temporal analysis data
@@ -444,7 +598,26 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             if not analysis_result or not analysis_result.temporal_data:
                 return None
             
-            # Prepare template data
+            # Get recent messages for template context
+            recent_messages = []
+            try:
+                # Use synchronous method that returns data directly
+                messages_data = facade.message_repository.get_channel_messages(channel_name, days_back=days, limit=150)
+                if messages_data:
+                    recent_messages = [
+                        {
+                            'id': msg.get('id'),
+                            'content': msg.get('content', ''),
+                            'author': msg.get('username') or msg.get('author', ''),
+                            'timestamp': msg.get('timestamp', ''),
+                            'channel': msg.get('channel_name', channel_name)
+                        }
+                        for msg in messages_data
+                    ]
+            except Exception as e:
+                logger.warning(f"Could not fetch messages for template context: {e}")
+            
+            # Prepare enhanced template data
             template_data = {
                 'channel_name': channel_name,
                 'days': days,
@@ -453,9 +626,10 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 'patterns': analysis_result.patterns
             }
             
-            # Render template
-            return self.template_engine.render_template(
-                'discord/activity_trends.md.j2',
+            # Render template with message context
+            return template_engine.render_template(
+                'outputs/discord/activity_trends.md.j2',
+                messages=recent_messages,
                 **template_data
             )
     
@@ -481,7 +655,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Defer the response immediately to avoid timeout
             await interaction.response.defer()
-            
+
             # Execute sync operation in thread pool with performance tracking
             result, exec_time = await self.execute_tracked_sync_operation(
                 "top_users",
@@ -495,7 +669,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await self._send_long_message_slash(interaction, final_message)
             else:
                 await interaction.followup.send(f"❌ No user data found")
-                
+
         except Exception as e:
             logger.error(f"Top users analysis failed: {e}")
             logger.error(traceback.format_exc())
@@ -505,11 +679,17 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
     
     def _sync_top_users(self, limit: int, days: int) -> str:
-        """Sync top users analysis using template system."""
+        """Sync top users analysis using enhanced template system with analyzer helpers."""
         
         from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.user_analyzer import UserAnalyzer
+        from ...data.config import Settings
         
-        with get_analysis_data_facade() as facade:
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
             user_analyzer = UserAnalyzer(facade)
             
             # Get top users data
@@ -518,7 +698,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             if not top_users:
                 return None
             
-            # Prepare template data
+            # Prepare enhanced template data
             template_data = {
                 'limit': limit,
                 'days': days,
@@ -526,9 +706,9 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 'total_users': len(top_users)
             }
             
-            # Render template
-            return self.template_engine.render_template(
-                'discord/top_users.md.j2',
+            # Render template (no specific messages needed for top users overview)
+            return template_engine.render_template(
+                'outputs/discord/top_users.md.j2',
                 **template_data
             )
     
@@ -539,7 +719,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Defer the response immediately to avoid timeout
             await interaction.response.defer()
-            
+
             # Execute sync operation in thread pool
             channels, exec_time = await self.execute_tracked_sync_operation(
                 "list_channels",
@@ -560,7 +740,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(embed=embed)
             else:
                 await interaction.followup.send("❌ No channels found in database")
-                
+
         except Exception as e:
             logger.error(f"List channels failed: {e}")
             if not interaction.response.is_done():
@@ -582,7 +762,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Defer the response immediately to avoid timeout
             await interaction.response.defer()
-            
+
             # Execute sync operation in thread pool
             users, exec_time = await self.execute_tracked_sync_operation(
                 "list_users",
@@ -654,7 +834,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             )
             
             await interaction.response.send_message(embed=embed)
-            
+
         except Exception as e:
             logger.error(f"Performance metrics failed: {e}")
             await interaction.response.send_message(f"❌ Failed to get metrics: {str(e)}")

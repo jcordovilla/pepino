@@ -1,18 +1,55 @@
-## 🎯 Topic Analysis{% if channel_name %} in #{{ channel_name }}{% else %} across all channels{% endif %}
+## 🎯 Enhanced Topic Analysis{% if channel_name %} in #{{ channel_name }}{% else %} across all channels{% endif %}
 
-**📊 Analysis Scope:**
+**📊 Analysis Summary:**
 • Messages Analyzed: {{ message_count | format_number }}
-• Time Period: 30 days
+• Analysis Method: {% if "bertopic_modeling" in capabilities_used %}Hybrid BERTopic + spaCy{% else %}Standard Analysis{% endif %}
+{% if days %}• Time Period: {{ days }} days{% endif %}
+{% if "bertopic_modeling" in capabilities_used %}• Neural Model: all-mpnet-base-v2 (Transformer){% endif %}
 
 {% if topics and topics | length > 0 -%}
-**🔥 Top Topics:**
-{% for topic in topics[:10] -%}
-{% if topic.topic is defined -%}
-{{ loop.index }}. **{{ topic.topic }}** - {{ topic.frequency }} mentions
-{% else -%}
-{{ loop.index }}. **{{ topic }}** - N/A mentions
+**🧠 Neural Topics Discovered:**
+{% for topic in topics[:8] -%}
+{% if topic.keywords and topic.keywords | length > 0 -%}
+{{ loop.index }}. **{{ topic.keywords[:3] | join(" + ") }}** ({{ topic.frequency }} messages)
+   {% if topic.keywords | length > 3 %}*Additional terms: {{ topic.keywords[3:6] | join(", ") }}*{% endif %}
 {% endif -%}
 {% endfor -%}
+
+{% if _domain_analysis -%}
+**🔬 Domain Analysis:**
+
+{% if _domain_analysis.technical_terms -%}
+**🔧 Technical Discussions:**
+{% for term, count in _domain_analysis.technical_terms.items()[:6] -%}
+• **{{ term.upper() }}**: {{ count }} discussions
+{% endfor -%}
+{% endif -%}
+
+{% if _domain_analysis.business_concepts -%}
+**💼 Business Concepts:**
+{% for concept, count in _domain_analysis.business_concepts.items()[:6] -%}
+• **{{ concept | title }}**: {{ count }} mentions
+{% endfor -%}
+{% endif -%}
+
+{% if _domain_analysis.emerging_topics -%}
+**🚀 Emerging Topics:**
+{% for topic in _domain_analysis.emerging_topics[:5] -%}
+• **{{ topic.pattern }}** ({{ topic.frequency }} discussions)
+{% endfor -%}
+{% endif -%}
+
+{% if _domain_analysis.temporal_trends -%}
+**📈 Temporal Trends:**
+{% for trend in _domain_analysis.temporal_trends[:4] -%}
+• **{{ trend.topic }}**: {{ trend.change_direction }} ({{ trend.frequency }} mentions)
+{% endfor -%}
+{% endif -%}
+{% endif -%}
+
 {% else -%}
-No significant topics found in the analyzed messages.
-{% endif %} 
+❌ No significant topics found in the analyzed messages.
+{% endif %}
+
+---
+*Enhanced by neural topic modeling + domain-specific analysis* 
