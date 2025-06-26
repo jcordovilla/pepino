@@ -9,7 +9,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from ..data.database.manager import DatabaseManager
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import UserAnalysisResponse, LocalUserStatistics, ChannelActivity
 
@@ -29,9 +28,12 @@ class UserAnalyzer:
     - Time-based activity patterns
     - User engagement metrics
     - Cross-channel behavior analysis
+    
+    All database operations are abstracted through the data facade for proper
+    separation of concerns and dependency injection support.
     """
     
-    def __init__(self, data_facade: Optional[AnalysisDataFacade] = None, base_filter: Optional[Dict] = None):
+    def __init__(self, data_facade: Optional[AnalysisDataFacade] = None):
         """Initialize user analyzer with data facade."""
         if data_facade is None:
             self.data_facade = get_analysis_data_facade()
@@ -40,7 +42,6 @@ class UserAnalyzer:
             self.data_facade = data_facade
             self._owns_facade = False
             
-        self.base_filter = base_filter or {}
         logger.info("UserAnalyzer initialized with data facade pattern")
     
     def analyze(

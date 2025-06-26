@@ -34,14 +34,16 @@ class AnalysisDataFacade:
     - Connection pooling
     - Error handling and logging
     - Consistent configuration
+    - Base filter management for dependency injection and testability
     """
     
-    def __init__(self, db_manager: Optional[DatabaseManager] = None):
+    def __init__(self, db_manager: Optional[DatabaseManager] = None, base_filter: Optional[str] = None):
         """
         Initialize the analysis data facade.
         
         Args:
             db_manager: Optional database manager. If None, creates a new one.
+            base_filter: Optional base filter for data queries. If None, uses Settings default.
         """
         self.settings = Settings()
         
@@ -51,6 +53,12 @@ class AnalysisDataFacade:
         else:
             self.db_manager = db_manager
             self._owns_db_manager = False
+            
+        # Handle base filter - use provided or fallback to settings
+        if base_filter is None:
+            self.base_filter = self.settings.base_filter
+        else:
+            self.base_filter = base_filter
         
         # Initialize repositories
         self._user_repository = None
@@ -58,34 +66,42 @@ class AnalysisDataFacade:
         self._message_repository = None
         self._embedding_repository = None
         
-        logger.info("AnalysisDataFacade initialized")
+        logger.info("AnalysisDataFacade initialized with dependency injection support")
     
     @property
     def user_repository(self) -> UserRepository:
-        """Get user repository instance."""
+        """Get user repository instance with configured base filter."""
         if self._user_repository is None:
             self._user_repository = UserRepository(self.db_manager)
+            # Override the base filter with our configured one
+            self._user_repository.base_filter = self.base_filter.strip()
         return self._user_repository
     
     @property
     def channel_repository(self) -> ChannelRepository:
-        """Get channel repository instance."""
+        """Get channel repository instance with configured base filter."""
         if self._channel_repository is None:
             self._channel_repository = ChannelRepository(self.db_manager)
+            # Override the base filter with our configured one
+            self._channel_repository.base_filter = self.base_filter.strip()
         return self._channel_repository
     
     @property
     def message_repository(self) -> MessageRepository:
-        """Get message repository instance."""
+        """Get message repository instance with configured base filter."""
         if self._message_repository is None:
             self._message_repository = MessageRepository(self.db_manager)
+            # Override the base filter with our configured one
+            self._message_repository.base_filter = self.base_filter.strip()
         return self._message_repository
     
     @property
     def embedding_repository(self) -> EmbeddingRepository:
-        """Get embedding repository instance."""
+        """Get embedding repository instance with configured base filter."""
         if self._embedding_repository is None:
             self._embedding_repository = EmbeddingRepository(self.db_manager)
+            # Override the base filter with our configured one
+            self._embedding_repository.base_filter = self.base_filter.strip()
         return self._embedding_repository
     
     @contextmanager
@@ -122,31 +138,33 @@ class AnalysisDataFacade:
 
 
 # Convenience function for getting a data facade instance
-def get_analysis_data_facade(db_manager: Optional[DatabaseManager] = None) -> AnalysisDataFacade:
+def get_analysis_data_facade(db_manager: Optional[DatabaseManager] = None, base_filter: Optional[str] = None) -> AnalysisDataFacade:
     """
     Get an analysis data facade instance.
     
     Args:
         db_manager: Optional database manager. If None, creates a new one.
+        base_filter: Optional base filter for data queries. If None, uses Settings default.
         
     Returns:
         AnalysisDataFacade instance
     """
-    return AnalysisDataFacade(db_manager)
+    return AnalysisDataFacade(db_manager, base_filter)
 
 
 # Context manager for transactional analysis operations
 @contextmanager
-def analysis_transaction(db_manager: Optional[DatabaseManager] = None):
+def analysis_transaction(db_manager: Optional[DatabaseManager] = None, base_filter: Optional[str] = None):
     """
     Context manager for analysis operations requiring transaction support.
     
     Args:
         db_manager: Optional database manager. If None, creates a new one.
+        base_filter: Optional base filter for data queries. If None, uses Settings default.
         
     Yields:
         AnalysisDataFacade instance within a transaction context
     """
-    with get_analysis_data_facade(db_manager) as facade:
+    with get_analysis_data_facade(db_manager, base_filter) as facade:
         with facade.transaction():
             yield facade 

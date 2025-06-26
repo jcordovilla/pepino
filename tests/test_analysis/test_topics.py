@@ -51,7 +51,7 @@ async def test_topic_analyzer():
             channel_name=None,
             days_back=30,
             min_word_length=4,
-            base_filter=analyzer.base_filter,
+            base_filter=analyzer.data_facade.base_filter,
         )
 
 
@@ -89,7 +89,7 @@ async def test_topic_analyzer_with_channel():
             channel_name="python-dev",
             days_back=30,
             min_word_length=4,
-            base_filter=analyzer.base_filter,
+            base_filter=analyzer.data_facade.base_filter,
         )
 
 
@@ -128,7 +128,7 @@ async def test_topic_analyzer_with_custom_parameters():
             channel_name="ai-research",
             days_back=7,
             min_word_length=5,
-            base_filter=analyzer.base_filter,
+            base_filter=analyzer.data_facade.base_filter,
         )
 
 

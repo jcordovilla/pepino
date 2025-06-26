@@ -70,8 +70,10 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Get available channels directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
+            from ...data.config import Settings
             
-            with get_analysis_data_facade() as facade:
+            settings = Settings()
+            with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
                 channels = facade.channel_repository.get_available_channels(limit=50)
             
             # Filter channels based on current input
@@ -101,8 +103,10 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Get available users directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
+            from ...data.config import Settings
             
-            with get_analysis_data_facade() as facade:
+            settings = Settings()
+            with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
                 users = facade.user_repository.get_available_users(limit=50)
             
             # Filter users based on current input
@@ -176,8 +180,10 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         """Sync channel analysis using template system."""
         
         from ...analysis.data_facade import get_analysis_data_facade
+        from ...data.config import Settings
         
-        with get_analysis_data_facade() as facade:
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
             channel_analyzer = ChannelAnalyzer(facade)
             
             # Get channel analysis data

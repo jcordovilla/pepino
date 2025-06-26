@@ -51,7 +51,9 @@ def analyze_user(
 
     try:
         with get_database_manager(db_path) as db_manager:
-            user_analyzer = UserAnalyzer(db_manager, settings.base_filter)
+            from ..analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            user_analyzer = UserAnalyzer(data_facade)
 
             if user:
                 # Returns a validated Pydantic model
@@ -91,7 +93,9 @@ def analyze_channel(
 
     try:
         with get_database_manager(db_path) as db_manager:
-            channel_analyzer = ChannelAnalyzer(db_manager, settings.base_filter)
+            from ..analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            channel_analyzer = ChannelAnalyzer(data_facade)
 
             if channel:
                 # Returns a validated Pydantic model
@@ -211,20 +215,22 @@ def analyze_sentiment_async(
         nlp_service = NLPService()
         nlp_service.initialize()
         
-        # Get database manager  
+        # Get database manager and create data facade
         with get_database_manager(db_path) as db_manager:
-            message_repo = MessageRepository(db_manager)
+            settings = Settings()
+            from ..analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
             
             # Get messages for analysis
             if user_name:
                 # Get messages from specific user
-                messages = message_repo.get_user_messages(user_name, days_back=days_back)
+                messages = data_facade.message_repository.get_user_messages(user_name, days_back=days_back)
             elif channel_name:
                 # Get messages from specific channel
-                messages = message_repo.get_channel_messages(channel_name, days_back=days_back)
+                messages = data_facade.message_repository.get_channel_messages(channel_name, days_back=days_back)
             else:
                 # Get recent messages
-                messages = message_repo.get_recent_messages(limit=1000, days_back=days_back)
+                messages = data_facade.message_repository.get_recent_messages(limit=1000, days_back=days_back)
             
             if not messages:
                 return {"error": "No messages found for sentiment analysis"}
@@ -282,12 +288,15 @@ def detect_duplicates_async(
         # Initialize similarity service
         similarity_service = SimilarityService()
         
-        # Get channel ID if channel name provided
+        # Get channel ID if channel name provided using data facade
         channel_id = None
         if channel_name:
             with get_database_manager(db_path) as db_manager:
-                channel_repo = ChannelRepository(db_manager)
-                channel = channel_repo.get_channel_by_name(channel_name)
+                settings = Settings()
+                from ..analysis.data_facade import get_analysis_data_facade
+                data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+                
+                channel = data_facade.channel_repository.get_channel_by_name(channel_name)
                 if channel:
                     channel_id = channel.channel_id
                 else:
@@ -316,13 +325,14 @@ def get_database_statistics(
     """Get aggregated database statistics by orchestrating repository calls."""
     try:
         with get_database_manager(db_path) as db_manager:
-            message_repo = MessageRepository(db_manager)
-            channel_repo = ChannelRepository(db_manager)
+            settings = Settings()
+            from ..analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
 
             # Orchestrate multiple repository calls to aggregate statistics
-            message_count = message_repo.get_total_message_count()
-            channel_count = channel_repo.get_distinct_channel_count()
-            user_count = message_repo.get_distinct_user_count()
+            message_count = data_facade.message_repository.get_total_message_count()
+            channel_count = data_facade.channel_repository.get_distinct_channel_count()
+            user_count = data_facade.message_repository.get_distinct_user_count()
 
             return {
                 "message_count": message_count,

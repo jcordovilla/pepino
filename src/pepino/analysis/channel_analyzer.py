@@ -9,7 +9,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from ..data.database.manager import DatabaseManager
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import ChannelAnalysisResponse
 from .models import LocalChannelStatistics, UserActivity
@@ -28,9 +27,12 @@ class ChannelAnalyzer:
     - Time-based patterns
     - Content analysis
     - Engagement metrics
+    
+    All database operations are abstracted through the data facade for proper
+    separation of concerns and dependency injection support.
     """
     
-    def __init__(self, data_facade: Optional[AnalysisDataFacade] = None, base_filter: Optional[Dict] = None):
+    def __init__(self, data_facade: Optional[AnalysisDataFacade] = None):
         """Initialize channel analyzer with data facade."""
         if data_facade is None:
             self.data_facade = get_analysis_data_facade()
@@ -39,7 +41,6 @@ class ChannelAnalyzer:
             self.data_facade = data_facade
             self._owns_facade = False
             
-        self.base_filter = base_filter or {}
         logger.info("ChannelAnalyzer initialized with data facade pattern")
     
     def analyze(
@@ -294,8 +295,8 @@ class ChannelAnalyzer:
         
         try:
             # Get basic stats
-            recent_stats = self.channel_repository.get_channel_message_statistics(channel_name, days=7)
-            overall_stats = self.channel_repository.get_channel_message_statistics(channel_name, days=None)
+            recent_stats = self.data_facade.channel_repository.get_channel_message_statistics(channel_name, days=7)
+            overall_stats = self.data_facade.channel_repository.get_channel_message_statistics(channel_name, days=None)
             
             if not overall_stats or overall_stats.get('total_messages', 0) == 0:
                 return {

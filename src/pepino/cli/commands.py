@@ -1228,7 +1228,9 @@ def _list_channels(
         
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
-            channel_analyzer = ChannelAnalyzer(db_manager, settings.base_filter)
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            channel_analyzer = ChannelAnalyzer(data_facade)
 
             # Get all channels
             channels = channel_analyzer.get_available_channels()
@@ -1243,28 +1245,20 @@ def _list_channels(
 
             # Prepare data for output
             if output_format in ["json", "csv"]:
-                # Rich format with metadata
+                # Rich format with metadata - use data facade instead of direct queries
                 channel_data = []
                 for channel in channels:
                     try:
-                        # Get basic channel statistics using synchronous query
-                        stats_query = """
-                            SELECT 
-                                COUNT(*) as total_messages,
-                                COUNT(DISTINCT author_name) as unique_users,
-                                AVG(LENGTH(content)) as avg_message_length
-                            FROM messages 
-                            WHERE channel_name = ?
-                        """
-                        stats_result = db_manager.execute_query(stats_query, (channel,), fetch_one=True)
+                        # Get basic channel statistics using data facade repository
+                        stats_data = data_facade.channel_repository.get_channel_message_statistics(channel)
                         
-                        if stats_result:
+                        if stats_data:
                             channel_data.append(
                                 {
                                     "name": channel,
-                                    "message_count": stats_result["total_messages"] or 0,
-                                    "unique_users": stats_result["unique_users"] or 0,
-                                    "avg_message_length": round(stats_result["avg_message_length"] or 0.0, 2),
+                                    "message_count": stats_data.get("total_messages", 0),
+                                    "unique_users": stats_data.get("unique_users", 0),
+                                    "avg_message_length": round(stats_data.get("avg_message_length", 0.0), 2),
                                 }
                             )
                         else:
@@ -1298,25 +1292,17 @@ def _list_channels(
                 channel_data = []
                 for channel in channels:
                     try:
-                        # Get basic channel statistics using synchronous query
-                        stats_query = """
-                            SELECT 
-                                COUNT(*) as total_messages,
-                                COUNT(DISTINCT author_name) as unique_users,
-                                AVG(LENGTH(content)) as avg_message_length
-                            FROM messages 
-                            WHERE channel_name = ?
-                        """
-                        stats_result = db_manager.execute_query(stats_query, (channel,), fetch_one=True)
+                        # Get basic channel statistics using data facade repository
+                        stats_data = data_facade.channel_repository.get_channel_message_statistics(channel)
                         
-                        if stats_result:
+                        if stats_data:
                             channel_data.append(
                                 {
                                     "channel_name": channel,
                                     "name": channel,
-                                    "message_count": stats_result["total_messages"] or 0,
-                                    "unique_users": stats_result["unique_users"] or 0,
-                                    "avg_message_length": stats_result["avg_message_length"] or 0.0,
+                                    "message_count": stats_data.get("total_messages", 0),
+                                    "unique_users": stats_data.get("unique_users", 0),
+                                    "avg_message_length": stats_data.get("avg_message_length", 0.0),
                                 }
                             )
                         else:
@@ -1383,7 +1369,9 @@ def _list_users(
         
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
-            user_analyzer = UserAnalyzer(db_manager, settings.base_filter)
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            user_analyzer = UserAnalyzer(data_facade)
 
             # Get all users
             users = user_analyzer.get_available_users()
@@ -1402,24 +1390,17 @@ def _list_users(
                 user_data = []
                 for user in users:
                     try:
-                        # Get basic user statistics using synchronous query
-                        stats_query = """
-                            SELECT 
-                                COUNT(*) as message_count,
-                                COUNT(DISTINCT channel_name) as channels_active
-                            FROM messages 
-                            WHERE author_name = ?
-                        """
-                        stats_result = db_manager.execute_query(stats_query, (user,), fetch_one=True)
+                        # Get basic user statistics using data facade repository
+                        stats_data = data_facade.user_repository.get_user_message_statistics(user)
                         
-                        if stats_result:
+                        if stats_data:
                             user_data.append(
                                 {
                                     "name": user,
                                     "display_name": user,
                                     "author_id": "",  # We don't have easy access to author_id in this context
-                                    "message_count": stats_result["message_count"] or 0,
-                                    "channels_active": stats_result["channels_active"] or 0,
+                                    "message_count": stats_data.get("total_messages", 0),
+                                    "channels_active": stats_data.get("channels_active", 0),
                                 }
                             )
                         else:
@@ -1478,19 +1459,13 @@ def _list_stats(
         
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
 
-            # Get basic counts using synchronous queries
-            channel_query = "SELECT DISTINCT channel_name FROM messages"
-            channels_result = db_manager.execute_query(channel_query, fetch_all=True)
-            channels = [row["channel_name"] for row in channels_result] if channels_result else []
-            
-            user_query = "SELECT COUNT(DISTINCT author_name) as user_count FROM messages"
-            user_result = db_manager.execute_query(user_query, fetch_one=True)
-            user_count = user_result["user_count"] if user_result else 0
-            
-            message_query = "SELECT COUNT(*) as message_count FROM messages"
-            message_result = db_manager.execute_query(message_query, fetch_one=True)
-            message_count = message_result["message_count"] if message_result else 0
+            # Get basic counts using data facade repository
+            channels = data_facade.channel_repository.get_available_channels()
+            user_count = data_facade.message_repository.get_distinct_user_count()
+            message_count = data_facade.message_repository.get_total_message_count()
 
             # Prepare stats data
             stats_data = {

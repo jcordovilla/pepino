@@ -50,7 +50,7 @@ async def test_user_analyzer_get_top_users():
         assert top_users[1]["message_count"] == 120
 
         # Verify the repository method was called correctly
-        mock_get_top_users.assert_called_once_with(5, analyzer.base_filter)
+        mock_get_top_users.assert_called_once_with(5, analyzer.data_facade.base_filter)
 
 
 @pytest.mark.asyncio
@@ -101,7 +101,7 @@ async def test_user_analyzer_analyze_by_name():
 
         # Verify repository methods were called correctly
         mock_find_user.assert_called_once_with("alice")
-        mock_get_stats.assert_called_once_with("user123", analyzer.base_filter)
+        mock_get_stats.assert_called_once_with("user123", analyzer.data_facade.base_filter)
         mock_get_concepts.assert_called_once_with("user123")
 
 
@@ -195,7 +195,7 @@ async def test_user_analyzer_analyze_no_data():
         assert "No data found for user 'charlie'" in result.error
 
         mock_find_user.assert_called_once_with("charlie")
-        mock_get_stats.assert_called_once_with("user789", analyzer.base_filter)
+        mock_get_stats.assert_called_once_with("user789", analyzer.data_facade.base_filter)
 
 
 @pytest.mark.asyncio
@@ -222,7 +222,7 @@ async def test_user_analyzer_get_available_users():
         assert "Bob" in users  # author_name when no display_name
         assert "Carol Brown" in users  # display_name preferred
 
-        mock_get_user_list.assert_called_once_with(analyzer.base_filter)
+        mock_get_user_list.assert_called_once_with(analyzer.data_facade.base_filter)
 
 
 @pytest.mark.asyncio

@@ -6,28 +6,29 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
-from ..data.config import Settings
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import AnalysisErrorResponse, TopicAnalysisResponse, TopicItem
 
 
 class TopicAnalyzer:
-    """Topic analysis plugin."""
+    """
+    Topic analysis plugin.
+    
+    Analyzes topics and word patterns in message data using the data facade pattern
+    for centralized repository management and proper separation of concerns.
+    
+    All database operations are abstracted through the data facade for proper
+    dependency injection support and testability.
+    """
 
-    def __init__(self, data_facade: Optional[AnalysisDataFacade] = None, base_filter: Optional[str] = None):
+    def __init__(self, data_facade: Optional[AnalysisDataFacade] = None):
+        """Initialize topic analyzer with data facade."""
         if data_facade is None:
             self.data_facade = get_analysis_data_facade()
             self._owns_facade = True
         else:
             self.data_facade = data_facade
             self._owns_facade = False
-            
-        # Use provided base_filter or fallback to settings
-        if base_filter is None:
-            from pepino.data.config import Settings
-            settings = Settings()
-            base_filter = settings.base_filter
-        self.base_filter = base_filter
 
     def analyze(
         self, **kwargs
