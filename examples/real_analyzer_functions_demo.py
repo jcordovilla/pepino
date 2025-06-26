@@ -17,6 +17,7 @@ from pepino.analysis.channel_analyzer import ChannelAnalyzer
 from pepino.analysis.user_analyzer import UserAnalyzer
 from pepino.analysis.topic_analyzer import TopicAnalyzer
 from pepino.analysis.temporal_analyzer import TemporalAnalyzer
+from pepino.analysis.data_facade import get_analysis_data_facade
 from pepino.data.config import Settings
 
 
@@ -53,8 +54,8 @@ async def demo_real_analyzer_functions():
         
         settings = Settings()
         analyzers = {
-            'channel_analyzer': ChannelAnalyzer(db_manager, settings.base_filter),
-            'user_analyzer': UserAnalyzer(db_manager, settings.base_filter),
+            'channel_analyzer': ChannelAnalyzer(get_analysis_data_facade(db_manager, settings.base_filter)),
+            'user_analyzer': UserAnalyzer(get_analysis_data_facade(db_manager, settings.base_filter)),
         }
         
         print("\n🧪 Testing Real Functions:")

@@ -78,16 +78,14 @@ class ChannelAnalyzer:
             if include_patterns:
                 time_patterns = self._analyze_time_patterns_via_repository(channel_name, days)
             
-            # Create summary
-            summary = self._create_channel_summary(statistics, top_users, time_patterns)
-            
             # Build result
             from .models import ChannelInfo
             
             analysis = ChannelAnalysisResponse(
                 channel_info=ChannelInfo(channel_name=channel_name),
                 statistics=self._convert_to_channel_statistics_model(statistics),
-                top_users=[],  # Will be converted later
+                top_users=self._convert_top_users_to_model(top_users),
+                peak_activity=self._convert_time_patterns_to_peak_activity(time_patterns) if time_patterns else None,
                 # Other fields will use defaults
             )
             
@@ -112,6 +110,52 @@ class ChannelAnalyzer:
             bot_messages=0,  # We don't calculate this yet
             human_messages=stats.total_messages,  # Assume all are human for now
             unique_human_users=stats.unique_users
+        )
+    
+    def _convert_top_users_to_model(self, user_activities: List[UserActivity]):
+        """Convert UserActivity list to TopUserInChannel model list."""
+        from .models import TopUserInChannel
+        
+        converted_users = []
+        for activity in user_activities:
+            converted_user = TopUserInChannel(
+                author_id="",  # We don't have author_id available
+                author_name=activity.username,  # UserActivity uses 'username' field
+                display_name=activity.username,
+                message_count=activity.message_count,
+                avg_message_length=0.0  # We don't calculate this yet
+            )
+            converted_users.append(converted_user)
+        
+        return converted_users
+    
+    def _convert_time_patterns_to_peak_activity(self, time_patterns: Dict[str, any]):
+        """Convert time patterns to PeakActivity model."""
+        from .models import PeakActivity, PeakActivityHour, PeakActivityDay
+        
+        peak_hours = []
+        hourly_activity = time_patterns.get('hourly_activity', {})
+        # Get top 3 peak hours
+        sorted_hours = sorted(hourly_activity.items(), key=lambda x: x[1], reverse=True)[:3]
+        for hour, count in sorted_hours:
+            peak_hours.append(PeakActivityHour(
+                hour=f"{hour:02d}:00-{hour:02d}:59",
+                messages=count
+            ))
+        
+        peak_days = []
+        daily_activity = time_patterns.get('daily_activity', {})
+        # Get top 3 peak days
+        sorted_days = sorted(daily_activity.items(), key=lambda x: x[1], reverse=True)[:3]
+        for date, count in sorted_days:
+            peak_days.append(PeakActivityDay(
+                day=date,
+                messages=count
+            ))
+        
+        return PeakActivity(
+            peak_hours=peak_hours,
+            peak_days=peak_days
         )
     
     def _get_channel_statistics_via_repository(self, channel_name: str, days: Optional[int]) -> Optional[LocalChannelStatistics]:
@@ -162,10 +206,10 @@ class ChannelAnalyzer:
             user_activities = []
             for data in user_data:
                 activity = UserActivity(
-                    author_name=data['author_name'],
+                    username=data['author_name'],  # Fixed: UserActivity uses 'username' field
                     message_count=data['message_count'],
-                    first_message=data['first_message'],
-                    last_message=data['last_message']
+                    first_message_date=data['first_message'],  # Fixed: model uses '_date' suffix
+                    last_message_date=data['last_message']     # Fixed: model uses '_date' suffix
                 )
                 user_activities.append(activity)
             

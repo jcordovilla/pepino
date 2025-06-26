@@ -48,7 +48,9 @@ async def demo_integration():
         await asyncio.wait_for(db_manager.initialize(), timeout=10.0)
         
         settings = Settings()
-        channel_analyzer = ChannelAnalyzer(db_manager, settings.base_filter)
+        from pepino.analysis.data_facade import get_analysis_data_facade
+        data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+        channel_analyzer = ChannelAnalyzer(data_facade)
         
         # Get sample channel
         channels = await asyncio.wait_for(

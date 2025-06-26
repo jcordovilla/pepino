@@ -14,6 +14,7 @@ from pepino.analysis.template_executor import TemplateExecutor
 from pepino.data.database.manager import DatabaseManager
 from pepino.analysis.channel_analyzer import ChannelAnalyzer
 from pepino.analysis.user_analyzer import UserAnalyzer
+from pepino.analysis.data_facade import get_analysis_data_facade
 from pepino.data.config import Settings
 
 
@@ -30,8 +31,8 @@ async def test_simple_template():
         
         settings = Settings()
         analyzers = {
-            'channel_analyzer': ChannelAnalyzer(db_manager, settings.base_filter),
-            'user_analyzer': UserAnalyzer(db_manager, settings.base_filter),
+            'channel_analyzer': ChannelAnalyzer(get_analysis_data_facade(db_manager, settings.base_filter)),
+            'user_analyzer': UserAnalyzer(get_analysis_data_facade(db_manager, settings.base_filter)),
         }
         
         # Create template executor
