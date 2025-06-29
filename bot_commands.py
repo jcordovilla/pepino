@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from analysis import DiscordBotAnalyzer
+from models import DiscordBotAnalyzer
 import asyncio
 from typing import Optional, Union, List, Dict
 from difflib import get_close_matches
@@ -133,16 +133,14 @@ class AnalysisCommands(commands.Cog):
                 await interaction.followup.send(f"Error initializing database: {str(e)}")
                 return
             
-            # Validate limit
-            if limit > 50:
-                limit = 50
-            elif limit < 1:
+            # Remove the hard limit of 50
+            if limit < 1:
                 limit = 25
-                
+            
             channels = await self.analyzer.get_available_channels()
             if channels:
                 total_channels = len(channels)
-                limited_channels = channels[:limit]
+                limited_channels = channels[:limit] if limit < total_channels else channels
                 
                 # Create the channel list
                 channel_list = "\n".join([f"• {c}" for c in limited_channels])
