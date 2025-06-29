@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.models import User
 from pepino.data.repositories.user_repository import UserRepository

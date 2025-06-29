@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import yaml
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 
 

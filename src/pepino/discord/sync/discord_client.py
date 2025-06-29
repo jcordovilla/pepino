@@ -101,9 +101,6 @@ class DiscordClient(discord.Client):
                     logger.error(
                         f"    ❌ Error syncing channel #{channel.name}: {str(e)}"
                     )
-                    self.sync_logger.add_error(
-                        str(e), guild.name, channel.name, str(channel.id)
-                    )
                     continue
 
             self.sync_logger.complete_guild_sync(guild.name)

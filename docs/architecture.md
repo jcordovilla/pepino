@@ -7,37 +7,47 @@ Pepino is a modern Discord analytics platform built with a **layered service arc
 ## Core Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐
-│   Discord Bot   │    │   CLI Interface │
-│   (Real-time)   │    │   (Batch Mode)  │
-└─────────┬───────┘    └─────────┬───────┘
-          │                      │
-          └──────────┬───────────┘
-                     │
-        ┌────────────▼─────────────┐
-        │    Analysis Services     │
-        │  (Business Logic Layer)  │
-        └────────────┬─────────────┘
-                     │
-        ┌────────────▼─────────────┐
-        │   Repository Layer       │
-        │  (Data Access Objects)   │
-        └────────────┬─────────────┘
-                     │
-        ┌────────────▼─────────────┐
-        │   Database Manager       │
-        │   (Infrastructure)       │
-        └──────────────────────────┘
+┌─────────────────┐        ┌─────────────────┐
+│   Discord Bot   │        │   CLI Interface │
+│   (Real-time)   │        │   (Batch Mode)  │
+└─────────┬───────┘        └─────────┬───────┘
+          │                          │
+          └──────────┬───────────────┘──────────────┬
+                     │                              │
+        ┌────────────▼─────────────┐    ┌───────────▼──────────┐
+        │    Analysis Services     │    │   Discord Data Sync  │
+        │  (Business Logic Layer)  │    │         (ETL)        │
+        └────────────┬─────────────┘    └───────────┬──────────┘
+                     │                              │
+                     └────────────┬─────────────────┘
+                                  │
+                     ┌────────────▼─────────────┐
+                     │    Repository Layer      │
+                     │   (Data Access Objects)  │
+                     └────────────┬─────────────┘
+                                  │
+                     ┌────────────▼─────────────┐
+                     │     Database Manager     │
+                     │     (Infrastructure)     │
+                     └──────────────────────────┘
 ```
 
 ## Package Structure
 
+### Core Packages
+| Package | Purpose | Key Components |
+|---------|---------|----------------|
+| **`pepino.discord`** | Discord integration | Bot, slash commands, message sync |
+| **`pepino.cli`** | Command-line interface | Click-based analysis and data sync terminal commands |
+| **`pepino.analysis`** | Analytics engine | Analytic helper functions for reports, charts |
+| **`pepino.data`** | Data management | Database, repositories, models |
+| **`pepino.templates`** | Template engine | Jinja2 template processing engine with analyzer integration and chart generation |
+
+### Utility Modules
 | Module | Purpose | Key Components |
 |--------|---------|----------------|
-| **`pepino.discord`** | Discord integration | Bot, slash commands, message sync |
-| **`pepino.cli`** | Command-line interface | Click-based analysis commands |
-| **`pepino.analysis`** | Analytics engine | Analyzers, services, visualization |
-| **`pepino.data`** | Data management | Database, repositories, configuration |
+| **`pepino.config`** | Configuration Management | Unified Settings, Environment Variables, Validation |
+| **`pepino.logging_config`** | Logging Infrastructure | Console & File Logging, Colored Output, File Rotation |
 
 ## Analysis Engine Architecture
 

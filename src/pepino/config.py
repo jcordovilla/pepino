@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     # Discord Bot Configuration
     discord_token: Optional[str] = None
+    guild_id: Optional[str] = None
     command_prefix: str = Field(default="!", description="Bot command prefix")
     message_content_intent: bool = Field(
         default=True, description="Enable message content intent"
@@ -65,12 +66,6 @@ class Settings(BaseSettings):
     spacy_model: str = Field(default="en_core_web_sm", description="spaCy model")
     nltk_data: Union[List[str], str] = Field(
         default=["punkt", "stopwords"], description="NLTK data"
-    )
-
-    # Optional API Keys
-    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
-    huggingface_api_key: Optional[str] = Field(
-        default=None, description="HuggingFace API key"
     )
 
     # Base Filter for Analysis
@@ -200,4 +195,4 @@ class Settings(BaseSettings):
 
 
 # Global settings instance
-settings = Settings()
+settings = Settings() 

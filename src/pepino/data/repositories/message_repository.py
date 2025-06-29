@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from ..config import settings
+from pepino.config import settings
 from ..database.manager import DatabaseManager
 from ..models.message import Message
 

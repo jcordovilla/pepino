@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 import os
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 
 
 class ColoredFormatter(logging.Formatter):
@@ -41,7 +41,6 @@ def setup_logging(
     settings: Optional[Settings] = None,
     console_output: bool = True,
     file_output: bool = True,
-    structured: bool = False,
 ) -> None:
     """
     Set up professional logging configuration.
@@ -50,7 +49,6 @@ def setup_logging(
         settings: Application settings (optional)
         console_output: Whether to enable console logging
         file_output: Whether to enable file logging
-        structured: Whether to use structured (JSON) logging format
     """
     if settings is None:
         settings = Settings()
@@ -63,20 +61,10 @@ def setup_logging(
     logs_dir.mkdir(exist_ok=True)
 
     # Define formatters
-    if structured:
-        # Structured logging format for production
-        console_format = (
-            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
-            '"logger": "%(name)s", "message": "%(message)s", '
-            '"module": "%(module)s", "function": "%(funcName)s", "line": %(lineno)d}'
-        )
-        file_format = console_format
-    else:
-        # Human-readable format for development
-        console_format = "%(asctime)s [%(levelname)-8s] %(name)-20s: %(message)s"
-        file_format = (
-            "%(asctime)s [%(levelname)-8s] %(name)-20s [%(module)s.%(funcName)s:%(lineno)d]: %(message)s"
-        )
+    console_format = "%(asctime)s [%(levelname)-8s] %(name)-20s: %(message)s"
+    file_format = (
+        "%(asctime)s [%(levelname)-8s] %(name)-20s [%(module)s.%(funcName)s:%(lineno)d]: %(message)s"
+    )
 
     # Configure logging
     config = {
@@ -253,7 +241,6 @@ def setup_cli_logging(verbose: bool = False) -> None:
         settings=settings,
         console_output=True,
         file_output=True,  # Still log to files for debugging
-        structured=False,
     )
     
     # Configure third-party loggers
@@ -269,7 +256,6 @@ def setup_bot_logging() -> None:
         settings=settings,
         console_output=True,
         file_output=True,
-        structured=False,
     )
     
     # Configure third-party loggers

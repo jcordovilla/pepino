@@ -20,7 +20,7 @@ from pepino.analysis.similarity_analyzer import SimilarityService
 from pepino.analysis.temporal_analyzer import TemporalAnalyzer
 from pepino.analysis.topic_analyzer import TopicAnalyzer
 from pepino.analysis.user_analyzer import UserAnalyzer
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.repositories import ChannelRepository, MessageRepository
 
@@ -149,7 +149,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             from .persistence import get_database_manager
             from ..analysis.data_facade import get_analysis_data_facade
             from ..analysis.topic_analyzer import TopicAnalyzer
-            from ..data.config import Settings
+            from ..config import Settings
 
             # Enhanced topic analysis with NLP capabilities
             settings = Settings()
@@ -652,7 +652,6 @@ def export_data(ctx, table: Optional[str], output: Optional[str], output_format:
 def start(ctx, token: Optional[str], prefix: str, debug: bool):
     """Start the Discord bot for interactive analysis."""
     try:
-        from pepino.data.config import Settings
         from pepino.discord.bot import run_bot as start_bot
 
         # Update settings if command line options provided

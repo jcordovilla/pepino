@@ -5,7 +5,7 @@ Database persistence operations for Discord data.
 import os
 from typing import Any, Dict
 
-from pepino.data.config import settings
+from pepino.config import settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.models.sync import SyncLogEntry
 from pepino.data.repositories import (

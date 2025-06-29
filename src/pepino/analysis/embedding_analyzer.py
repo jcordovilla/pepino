@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.repositories.embedding_repository import EmbeddingRepository
 

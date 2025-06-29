@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 import discord
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.database.schema import init_database
 from pepino.data.models.sync import SyncLogEntry

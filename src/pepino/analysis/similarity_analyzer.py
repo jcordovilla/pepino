@@ -9,7 +9,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.repositories import EmbeddingRepository, MessageRepository
 from pepino.logging_config import get_logger

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import spacy
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.logging_config import get_logger
 
 logger = get_logger(__name__)

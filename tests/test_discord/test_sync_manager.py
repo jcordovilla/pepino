@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.discord.sync.sync_manager import SyncManager
 
 

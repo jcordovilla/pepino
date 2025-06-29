@@ -5,7 +5,7 @@ Main Discord bot instance and setup.
 import discord
 from discord.ext import commands
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.logging_config import get_logger, setup_bot_logging
 

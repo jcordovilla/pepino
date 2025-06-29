@@ -9,7 +9,7 @@ import logging
 from contextlib import contextmanager
 from typing import Optional, List, Dict
 
-from ..data.config import Settings
+from ..config import Settings
 from ..data.database.manager import DatabaseManager
 from ..data.repositories import (
     ChannelRepository,

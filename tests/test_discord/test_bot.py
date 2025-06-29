@@ -10,7 +10,7 @@ import discord
 import pytest
 from discord.ext import commands
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.discord.bot import bot, db_manager
 
 

@@ -55,7 +55,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     
     def _get_settings(self):
         """Get settings instance.""" 
-        from pepino.data.config import Settings
+        from pepino.config import Settings
         return Settings()
     
     def _create_template_engine(self, data_facade):
@@ -103,7 +103,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Get available channels directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
-            from ...data.config import Settings
+            from ...config import Settings
             
             settings = Settings()
             with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -147,7 +147,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         try:
             # Get available users directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
-            from ...data.config import Settings
+            from ...config import Settings
 
             settings = Settings()
             with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -339,7 +339,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         
         from ...analysis.data_facade import get_analysis_data_facade
         from ...analysis.user_analyzer import UserAnalyzer
-        from ...data.config import Settings
+        from ...config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -447,7 +447,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         
         from ...analysis.data_facade import get_analysis_data_facade
         from ...analysis.topic_analyzer import TopicAnalyzer
-        from ...data.config import Settings
+        from ...config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -567,7 +567,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         
         from ...analysis.data_facade import get_analysis_data_facade
         from ...analysis.temporal_analyzer import TemporalAnalyzer
-        from ...data.config import Settings
+        from ...config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -671,7 +671,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         
         from ...analysis.data_facade import get_analysis_data_facade
         from ...analysis.user_analyzer import UserAnalyzer
-        from ...data.config import Settings
+        from ...config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -792,7 +792,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         from ...analysis.data_facade import get_analysis_data_facade
         from ...analysis.channel_analyzer import ChannelAnalyzer
         from ...analysis.temporal_analyzer import TemporalAnalyzer
-        from ...data.config import Settings
+        from ...config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
@@ -1143,7 +1143,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         
         from ...analysis.data_facade import get_analysis_data_facade
         from ...analysis.temporal_analyzer import TemporalAnalyzer
-        from ...data.config import Settings
+        from ...config import Settings
         
         settings = Settings()
         with get_analysis_data_facade(base_filter=settings.base_filter) as facade:

@@ -7,7 +7,7 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
-from pepino.data.config import Settings
+from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.repositories import (
     ChannelRepository,

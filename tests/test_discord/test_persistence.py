@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pepino.data.config import settings
+from pepino.config import settings
 from pepino.data.database.schema import init_database
 from pepino.discord.data import persistence
 

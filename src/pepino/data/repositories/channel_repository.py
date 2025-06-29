@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from ..config import settings
+from pepino.config import settings
 from ..database.manager import DatabaseManager
 from ..models.channel import Channel
 
