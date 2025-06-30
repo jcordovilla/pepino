@@ -12,6 +12,7 @@ from pathlib import Path
 import click
 
 from pepino.templates.template_engine import TemplateEngine
+from pepino.cli.validation import ValidationError, ErrorHandler, InputValidator
 
 logger = logging.getLogger(__name__)
 
@@ -208,14 +209,74 @@ class CLITemplateMixin:
     
     def show_template_success(self, operation: str, template_name: str = None, exec_time: float = None):
         """Show success message for template-based operations."""
-        message = f"✅ {operation} completed"
+        ErrorHandler.show_success_message(operation, f"template: {template_name}" if template_name else None)
         if exec_time:
-            message += f" in {exec_time:.2f}s"
-        click.echo(message)
+            click.echo(f"⏱️  Execution time: {exec_time:.2f}s")
     
     def show_template_error(self, operation: str, error: str):
         """Show error message for template operations."""
-        click.echo(f"❌ {operation} failed: {error}", err=True)
+        ErrorHandler.handle_generic_error(Exception(error), operation)
+    
+    def validate_and_sanitize_inputs(self, **kwargs) -> Dict[str, Any]:
+        """
+        Validate and sanitize CLI inputs using the validation utilities.
+        
+        Args:
+            **kwargs: Input parameters to validate
+            
+        Returns:
+            Dictionary of validated inputs
+            
+        Raises:
+            ValidationError: If any input is invalid
+        """
+        try:
+            from pepino.cli.validation import validate_cli_inputs
+            return validate_cli_inputs(**kwargs)
+        except ValidationError as e:
+            ErrorHandler.handle_validation_error(e)
+            raise
+    
+    def safe_render_template(self, template_name: str, data: Dict[str, Any], 
+                           data_facade=None, messages=None, ctx=None) -> str:
+        """
+        Safely render a template with comprehensive error handling.
+        
+        Args:
+            template_name: Template filename
+            data: Data to pass to the template
+            data_facade: Optional data facade
+            messages: Optional message list
+            ctx: Click context for error handling
+            
+        Returns:
+            Rendered template string or error message
+        """
+        try:
+            return self.render_cli_template(template_name, data, data_facade, messages)
+        except Exception as e:
+            ErrorHandler.handle_template_error(e, template_name, ctx)
+            return f"❌ Template rendering failed: {str(e)}"
+    
+    def safe_handle_output(self, data: Dict[str, Any], output_file: Optional[str] = None, 
+                          output_format: str = "text", template_name: Optional[str] = None,
+                          data_facade=None, messages=None, ctx=None):
+        """
+        Safely handle output with comprehensive error handling.
+        
+        Args:
+            data: Data to output
+            output_file: Optional output file
+            output_format: Output format
+            template_name: Template name for text format
+            data_facade: Optional data facade
+            messages: Optional message list
+            ctx: Click context for error handling
+        """
+        try:
+            self.handle_output(data, output_file, output_format, template_name, data_facade, messages)
+        except Exception as e:
+            ErrorHandler.handle_generic_error(e, "output handling", ctx)
 
 
 class CLIAnalysisMixin(CLITemplateMixin):
@@ -234,7 +295,8 @@ class CLIAnalysisMixin(CLITemplateMixin):
         output_file: Optional[str] = None,
         output_format: str = "text",
         data_facade=None,
-        messages=None
+        messages=None,
+        ctx=None
     ):
         """
         Handle analysis result with consistent error checking and output formatting.
@@ -247,26 +309,29 @@ class CLIAnalysisMixin(CLITemplateMixin):
             output_format: Output format
             data_facade: Optional data facade for analyzer helpers
             messages: Optional list of message dicts for NLP analysis
+            ctx: Click context for error handling
         """
         
         # Check for errors in result
         if not result:
-            self.show_template_error(operation_name, "No data returned from analysis")
+            ErrorHandler.handle_analysis_error(Exception("No data returned"), operation_name, ctx)
             return
         
         if isinstance(result, dict) and result.get('error'):
-            self.show_template_error(operation_name, result['error'])
+            ErrorHandler.handle_analysis_error(Exception(result['error']), operation_name, ctx)
             return
         
         if isinstance(result, dict) and not result.get('success', True):
             error_msg = result.get('error', 'Analysis failed')
-            self.show_template_error(operation_name, error_msg)
+            ErrorHandler.handle_analysis_error(Exception(error_msg), operation_name, ctx)
             return
         
-        # Handle successful result
-        self.handle_output(result, output_file, output_format, template_name, data_facade, messages)
-        
-        # Success message removed for cleaner output
+        # Handle successful result with safe output handling
+        try:
+            self.safe_handle_output(result, output_file, output_format, template_name, data_facade, messages, ctx)
+            ErrorHandler.show_success_message(operation_name)
+        except Exception as e:
+            ErrorHandler.handle_analysis_error(e, operation_name, ctx)
     
     def handle_list_result(
         self,
@@ -275,7 +340,8 @@ class CLIAnalysisMixin(CLITemplateMixin):
         template_name: str,
         output_file: Optional[str] = None,
         output_format: str = "text",
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        ctx=None
     ):
         """
         Handle list result (users, channels, etc.) with template formatting.
@@ -287,10 +353,11 @@ class CLIAnalysisMixin(CLITemplateMixin):
             output_file: Optional output file
             output_format: Output format
             limit: Optional limit for items shown
+            ctx: Click context for error handling
         """
         
         if not items:
-            self.show_template_error(operation_name, "No items found")
+            ErrorHandler.show_warning_message(f"No items found for {operation_name}")
             return
         
         # Prepare data for template
@@ -301,6 +368,8 @@ class CLIAnalysisMixin(CLITemplateMixin):
             'has_more': limit and len(items) > limit
         }
         
-        self.handle_output(data, output_file, output_format, template_name)
-        
-        # Success message removed for cleaner output 
+        try:
+            self.safe_handle_output(data, output_file, output_format, template_name, ctx=ctx)
+            ErrorHandler.show_success_message(operation_name, f"found {len(items)} items")
+        except Exception as e:
+            ErrorHandler.handle_generic_error(e, operation_name, ctx) 
