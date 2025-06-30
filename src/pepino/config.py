@@ -70,16 +70,7 @@ class Settings(BaseSettings):
 
     # Base Filter for Analysis
     base_filter: str = Field(
-        default="""
-            author_id != 'sesh' 
-            AND author_id != '1362434210895364327'
-            AND author_name != 'sesh'
-            AND LOWER(author_name) != 'pepe'
-            AND LOWER(author_name) != 'pepino'
-            AND channel_name NOT LIKE '%test%' 
-            AND channel_name NOT LIKE '%playground%' 
-            AND channel_name NOT LIKE '%pg%'
-        """,
+        default="author_id != 'sesh' AND author_id != '1362434210895364327' AND author_name != 'sesh' AND LOWER(author_name) != 'pepe' AND LOWER(author_name) != 'pepino' AND channel_name NOT LIKE '%test%' AND channel_name NOT LIKE '%playground%' AND channel_name NOT LIKE '%pg%'",
         description="Base filter for excluding bots and test channels",
     )
 
@@ -178,6 +169,18 @@ class Settings(BaseSettings):
         if v.upper() not in valid_levels:
             raise ValueError(f"log_level must be one of {valid_levels}")
         return v.upper()
+
+    @field_validator("base_filter")
+    @classmethod
+    def validate_base_filter(cls, v):
+        """Ensure base filter is properly formatted for SQL usage."""
+        if not v or not v.strip():
+            return "1=1"  # Always true condition when no filter is needed
+        # Strip whitespace and ensure it doesn't start with AND
+        cleaned = v.strip()
+        if cleaned.upper().startswith("AND "):
+            cleaned = cleaned[4:]  # Remove leading "AND "
+        return cleaned
 
     def validate_required(self) -> bool:
         """Validate required configuration."""
