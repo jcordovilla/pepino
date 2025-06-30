@@ -53,9 +53,6 @@ def setup_logging(
     if settings is None:
         settings = Settings()
 
-    # TEMPORARY: Force DEBUG level for testing
-    settings.log_level = "DEBUG"
-
     # Create logs directory
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)

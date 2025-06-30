@@ -13,8 +13,9 @@ from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import ChannelAnalysisResponse
 from .models import LocalChannelStatistics, UserActivity
 from .utils import safe_timestamp_to_iso
+from pepino.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ChannelAnalyzer:
