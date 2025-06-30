@@ -5,7 +5,7 @@ import aiosqlite
 from typing import List, Dict, Optional, Any, Union, Tuple
 from models.base_analyzer import MessageAnalyzer
 from database import get_available_channels, get_available_users, get_channel_name_mapping, get_available_channels_with_mapping, filter_boilerplate_phrases
-from analysis.statistics import update_user_statistics
+from analysis.statistics import update_user_statistics, update_temporal_stats_async, get_enhanced_activity_trends
 from analysis.topics import analyze_topics_spacy, extract_concepts_from_content
 from analysis.insights import resolve_channel_name, get_user_insights, get_channel_insights
 
@@ -95,6 +95,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         """Enhanced user activity statistics with concept analysis - overrides base class method"""
         await self.initialize()
         return await update_user_statistics(self.pool, self.base_filter, args)
+
+    async def update_temporal_stats(self) -> str:
+        """Update temporal statistics for activity trends - overrides base class method"""
+        await self.initialize()
+        return await get_enhanced_activity_trends(self.pool, self.base_filter)
 
     async def resolve_channel_name(self, user_input: str, bot_guilds=None) -> str:
         """Resolve user input to the actual database channel name"""

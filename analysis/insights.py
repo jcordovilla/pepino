@@ -9,7 +9,9 @@ from visualization import create_user_activity_chart, create_channel_activity_ch
 from database import get_channel_name_mapping
 from .topics import extract_concepts_from_content
 from database import filter_boilerplate_phrases
-from core import nlp
+from core import nlp, get_analysis_patterns, clean_content
+from collections import Counter
+import re
 
 
 async def resolve_channel_name(pool, user_input: str, base_filter: str, bot_guilds=None) -> str:
@@ -164,14 +166,117 @@ async def get_user_insights(pool, base_filter: str, user_name: str) -> Union[str
         """, (author_id,)) as cursor:
             recent_messages = await cursor.fetchall()
         
-        # Extract key concepts using advanced spaCy analysis (same as channel analysis)
+        # Enhanced semantic analysis using spaCy (same as channel analysis)
+        entities = Counter()
+        topics = Counter()
+        tech_terms = Counter()
         user_concepts = []
         
         if recent_messages:
             try:
-                user_concepts = await extract_concepts_from_content(recent_messages)
+                # Check if spaCy is available
+                from core import nlp
+                if nlp is None:
+                    # Fallback to basic concept extraction
+                    user_concepts = await extract_concepts_from_content(recent_messages)
+                else:
+                    # Combine all message content with better preprocessing
+                    all_text = ' '.join([msg[0] for msg in recent_messages if msg[0]])
+                    
+                    if all_text.strip():
+                        # Clean the text before processing
+                        cleaned_text = clean_content(all_text)
+                        
+                        # Process with spaCy
+                        doc = nlp(cleaned_text[:500000])  # Limit processing
+                        
+                        # Extract named entities
+                        for ent in doc.ents:
+                            if ent.label_ in ["ORG", "PRODUCT", "TECH", "PERSON", "GPE"]:
+                                # Normalize entity text
+                                entity_text = ent.text.strip().lower()
+                                if len(entity_text) > 2 and len(entity_text) < 50:
+                                    entities[entity_text] += 1
+                        
+                        # Extract noun phrases and compound nouns with better filtering
+                        for chunk in doc.noun_chunks:
+                            chunk_text = chunk.text.strip().lower()
+                            # Better filtering for meaningful topics
+                            if (len(chunk_text.split()) >= 2 and 
+                                len(chunk_text) > 8 and 
+                                len(chunk_text) < 60 and
+                                not chunk_text.startswith(('a ', 'an ', 'the ')) and
+                                not chunk_text.endswith((' a', ' an', ' the'))):
+                                topics[chunk_text] += 1
+                        
+                        # Extract technology patterns
+                        tech_patterns_tuple = get_analysis_patterns()
+                        all_patterns = []
+                        for pattern_group in tech_patterns_tuple:
+                            all_patterns.extend(pattern_group)
+                        
+                        for pattern in all_patterns:
+                            try:
+                                matches = re.findall(pattern, cleaned_text, re.IGNORECASE)
+                                for match in matches:
+                                    if isinstance(match, tuple):
+                                        # Handle regex groups
+                                        for group in match:
+                                            if group:
+                                                tech_terms[group.lower()] += 1
+                                    else:
+                                        tech_terms[match.lower()] += 1
+                            except (TypeError, re.error) as e:
+                                print(f"Error with pattern {pattern}: {e}")
+                                continue
+                        
+                        # Extract compound terms using dependency parsing with better filtering
+                        for i, token in enumerate(doc[:-1]):
+                            if (token.pos_ in ["NOUN", "PROPN", "ADJ"] and 
+                                doc[i+1].pos_ in ["NOUN", "PROPN"] and
+                                len(token.text) > 2 and len(doc[i+1].text) > 2):
+                                compound = f"{token.text} {doc[i+1].text}".lower().strip()
+                                if (len(compound.split()) >= 2 and 
+                                    len(compound) > 8 and 
+                                    len(compound) < 50 and
+                                    not compound.startswith(('a ', 'an ', 'the '))):
+                                    topics[compound] += 1
+                        
+                        # Use custom concept extraction with better filtering
+                        custom_concepts = await extract_concepts_from_content(recent_messages)
+                        # Filter out poor quality concepts
+                        filtered_concepts = []
+                        for concept in custom_concepts:
+                            concept_lower = concept.lower().strip()
+                            if (len(concept_lower) > 8 and 
+                                len(concept_lower) < 60 and
+                                len(concept_lower.split()) >= 2 and
+                                not concept_lower.startswith(('a ', 'an ', 'the ')) and
+                                not concept_lower.endswith((' a', ' an', ' the')) and
+                                not concept_lower in ['a meeting', 'a letter', 'a call', 'a session']):
+                                filtered_concepts.append(concept)
+                        user_concepts.extend(filtered_concepts)
+                        
+                        # Filter boilerplate phrases
+                        topics = Counter(filter_boilerplate_phrases(list(topics.keys())))
+                        
+                        # Additional filtering for topics
+                        filtered_topics = Counter()
+                        for topic, count in topics.items():
+                            if (count > 1 and 
+                                len(topic) > 8 and 
+                                not topic.startswith(('a ', 'an ', 'the ')) and
+                                not topic.endswith((' a', ' an', ' the'))):
+                                filtered_topics[topic] = count
+                        topics = filtered_topics
+                    
             except Exception as e:
-                print(f"Error extracting user concepts: {e}")
+                print(f"Error in enhanced semantic analysis: {e}")
+                # Fallback to basic concept extraction
+                try:
+                    user_concepts = await extract_concepts_from_content(recent_messages)
+                except Exception as e2:
+                    print(f"Error in fallback concept extraction: {e2}")
         
         # Generate user activity chart for past 30 days
         chart_path = None
@@ -237,12 +342,45 @@ async def get_user_insights(pool, base_filter: str, user_name: str) -> Union[str
                 result += f"• {period}: {count} messages\n"
             result += "\n"
         
-        # Key Topics & Concepts
+        # Enhanced Semantic Analysis Results
+        result += f"**🧠 Semantic Analysis Results:**\n"
+        
+        # Key Entities
+        if entities:
+            result += f"**🏢 Key Entities Mentioned:**\n"
+            for entity, count in entities.most_common(6):
+                if count > 1:  # Filter noise
+                    # Proper case formatting for entities
+                    formatted_entity = ' '.join(word.capitalize() for word in entity.split())
+                    result += f"• {formatted_entity}: {count} mentions\n"
+            result += "\n"
+        
+        # Main Topics
+        if topics:
+            result += f"**💬 Main Topics Discussed:**\n"
+            for topic, count in topics.most_common(8):
+                if count > 1:  # Filter noise
+                    # Proper case formatting for topics
+                    formatted_topic = ' '.join(word.capitalize() for word in topic.split())
+                    result += f"• {formatted_topic}: {count} discussions\n"
+            result += "\n"
+        
+        # Technology Terms
+        if tech_terms:
+            result += f"**💻 Technology Terms:**\n"
+            for term, count in tech_terms.most_common(6):
+                if count > 1:
+                    # Keep tech terms in uppercase for consistency
+                    result += f"• {term.upper()}: {count} mentions\n"
+            result += "\n"
+        
+        # Key Concepts & Topics
         if user_concepts:
-            result += f"**🧠 Key Topics & Concepts:**\n"
+            result += f"**🔍 Key Concepts & Topics:**\n"
             # Format concepts with title case and bullet points
             formatted_concepts = []
             for concept in user_concepts[:8]:
+                # Better formatting for concepts
                 formatted_concept = ' '.join(word.capitalize() for word in concept.split())
                 formatted_concepts.append(f"• {formatted_concept}")
             
@@ -444,8 +582,6 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
         # Extract top topics using advanced spaCy analysis
         top_topics = []
         try:
-            from collections import Counter
-            
             # Get content for topic analysis
             async with pool.execute(f"""
                 SELECT content

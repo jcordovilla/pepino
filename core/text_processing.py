@@ -10,22 +10,54 @@ from typing import List, Dict, Any
 
 # Download required NLTK data
 def download_nltk_data():
-    """Download required NLTK data"""
-    nltk.download('punkt')
-    nltk.download('stopwords')
+    """Download required NLTK data with error handling"""
+    try:
+        import nltk
+        # Check if data is already downloaded
+        try:
+            nltk.data.find('tokenizers/punkt')
+            nltk.data.find('corpora/stopwords')
+            print("NLTK data already available")
+            return
+        except LookupError:
+            pass
+        
+        # Try to download with timeout
+        import urllib.request
+        import socket
+        
+        # Set a reasonable timeout
+        socket.setdefaulttimeout(10)
+        
+        print("Downloading NLTK data...")
+        nltk.download('punkt', quiet=True)
+        nltk.download('stopwords', quiet=True)
+        print("NLTK data downloaded successfully")
+        
+    except Exception as e:
+        print(f"Warning: Could not download NLTK data: {e}")
+        print("NLTK features may not work properly, but the bot will continue to run")
+        # Continue without NLTK data
+        pass
 
 
 # Load spaCy model for advanced NLP
 def load_spacy_model():
     """Load spaCy model with error handling"""
     try:
+        import spacy
         nlp = spacy.load('en_core_web_sm')
         return nlp
     except OSError:
-        print("Downloading spaCy model...")
-        spacy.cli.download('en_core_web_sm')
-        nlp = spacy.load('en_core_web_sm')
-        return nlp
+        print("Warning: spaCy English model not found.")
+        print("Some advanced NLP features may not work properly.")
+        print("To install: python -m spacy download en_core_web_sm")
+        # Return a minimal fallback
+        return None
+    except Exception as e:
+        print(f"Warning: Could not load spaCy model: {e}")
+        print("Some advanced NLP features may not work properly.")
+        return None
 
 
 def preprocess_text(text: str) -> str:
@@ -79,6 +111,9 @@ def clean_content_extended(text):
 
 def extract_complex_concepts(doc):
     """Advanced concept extraction using spaCy"""
+    if doc is None:
+        return []
+    
     concepts = []
     
     # Extract compound subjects with their predicates
@@ -161,5 +196,11 @@ def get_topic_analysis_patterns():
 
 
 # Initialize NLP components when module is imported
-download_nltk_data()
-nlp = load_spacy_model()
+try:
+    download_nltk_data()
+    nlp = load_spacy_model()
+    if nlp is None:
+        print("Warning: spaCy model not available. Some NLP features will be limited.")
+except Exception as e:
+    print(f"Warning: Error initializing NLP components: {e}")
+    nlp = None

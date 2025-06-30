@@ -465,18 +465,25 @@ class AnalysisCommands(commands.Cog):
             
             result = await self.analyzer.update_temporal_stats()
             
-            # Handle the result (might be a file path or text)
+            # Handle both text-only and (text, chart_path) tuple results
             if isinstance(result, tuple):
-                text, file_path = result
-                if file_path and os.path.exists(file_path):
-                    with open(file_path, 'rb') as f:
-                        file = discord.File(f, filename=os.path.basename(file_path))
-                        await interaction.followup.send(text, file=file)
+                text_result, chart_path = result
+                
+                # Send the text analysis in chunks if needed
+                if len(text_result) > 2000:
+                    chunks = [text_result[i:i+1900] for i in range(0, len(text_result), 1900)]
+                    for chunk in chunks:
+                        await interaction.followup.send(chunk)
                 else:
-                    await interaction.followup.send(text)
-            elif isinstance(result, str) and os.path.isfile(result):
-                await interaction.followup.send(file=discord.File(result))
+                    await interaction.followup.send(text_result)
+                
+                # Send the chart as an image
+                if chart_path and os.path.exists(chart_path):
+                    with open(chart_path, 'rb') as f:
+                        chart_file = discord.File(f, filename='activity_trends_chart.png')
+                        await interaction.followup.send("📊 **Activity Trends Chart (Last 30 Days):**", file=chart_file)
             else:
+                # Handle text-only result (fallback)
                 if len(result) > 2000:
                     chunks = [result[i:i+1900] for i in range(0, len(result), 1900)]
                     for chunk in chunks:
@@ -506,7 +513,7 @@ class AnalysisCommands(commands.Cog):
 
 **📊 Enhanced Statistical Analysis Commands:**
 • `/top_users` - Top 10 most active users with statistics and main topics
-• `/activity_trends` - Server activity trends and patterns over the past 30 days
+• `/activity_trends` - **Enhanced** server activity trends with comprehensive analytics, semantic analysis, and activity charts
 
 **📋 Utility Commands:**
 • `/list_users` - Show all available users
@@ -517,6 +524,12 @@ class AnalysisCommands(commands.Cog):
 - Commands with autocomplete make it easy to find channels and users - just start typing!
 - All commands are now dedicated and focused on specific analysis types
 - Use `/list_users` or `/list_channels` if you need to see what's available
+- The enhanced `/activity_trends` command now includes:
+  - Overall server statistics and trends
+  - Activity patterns by hour and day of week
+  - Top channels and contributors
+  - Server-wide semantic analysis
+  - Activity visualization charts
         """
         await interaction.response.send_message(help_text)
         

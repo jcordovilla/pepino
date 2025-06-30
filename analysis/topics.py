@@ -171,37 +171,72 @@ async def extract_concepts_from_content(messages) -> List[str]:
         if not messages:
             return []
         
-        # Combine all message content
+        # Combine all message content with better preprocessing
+        from core import clean_content
         all_content = ' '.join([msg[0] for msg in messages if msg[0]])
         
         if not all_content.strip():
             return []
         
+        # Clean the content before processing
+        cleaned_content = clean_content(all_content)
+        
+        # Check if spaCy is available
+        from core import nlp
+        if nlp is None:
+            # Fallback to basic text processing
+            import re
+            from collections import Counter
+            
+            # Simple word-based concept extraction
+            words = re.findall(r'\b[a-zA-Z]{4,}\b', cleaned_content.lower())
+            word_counts = Counter(words)
+            
+            # Filter out common words
+            stop_words = {'this', 'that', 'with', 'have', 'will', 'from', 'they', 'know', 'want', 'been', 'good', 'much', 'some', 'very', 'when', 'there', 'can', 'more', 'about', 'many', 'then', 'them', 'these', 'so', 'people', 'into', 'just', 'like', 'time', 'two', 'more', 'go', 'no', 'way', 'could', 'my', 'than', 'first', 'been', 'call', 'who', 'its', 'now', 'find', 'long', 'down', 'day', 'did', 'get', 'come', 'made', 'may', 'part'}
+            
+            concepts = []
+            for word, count in word_counts.most_common(20):
+                if word not in stop_words and count > 1:
+                    concepts.append(word)
+            
+            return concepts[:10]
+        
         # Use spaCy to extract concepts
-        doc = nlp(all_content[:500000])  # Limit processing
+        doc = nlp(cleaned_content[:500000])  # Limit processing
         
         concepts = []
         
-        # Extract named entities
+        # Extract named entities with better filtering
         for ent in doc.ents:
             if ent.label_ in ["ORG", "PRODUCT", "PERSON", "GPE", "EVENT"]:
-                if len(ent.text) > 2 and len(ent.text) < 50:
-                    concepts.append(ent.text.strip())
+                entity_text = ent.text.strip()
+                if (len(entity_text) > 2 and 
+                    len(entity_text) < 50 and
+                    not entity_text.lower() in ['a', 'an', 'the', 'this', 'that']):
+                    concepts.append(entity_text)
         
-        # Extract noun chunks (phrases)
+        # Extract noun chunks (phrases) with better filtering
         for chunk in doc.noun_chunks:
-            if len(chunk.text.split()) >= 2 and len(chunk.text) > 5:
-                concepts.append(chunk.text.strip())
+            chunk_text = chunk.text.strip()
+            if (len(chunk_text.split()) >= 2 and 
+                len(chunk_text) > 8 and 
+                len(chunk_text) < 60 and
+                not chunk_text.lower().startswith(('a ', 'an ', 'the ')) and
+                not chunk_text.lower().endswith((' a', ' an', ' the'))):
+                concepts.append(chunk_text)
         
-        # Extract compound terms using dependency parsing
+        # Extract compound terms using dependency parsing with better filtering
         try:
             for token in doc:
                 if hasattr(token, 'pos_') and hasattr(token, 'dep_'):
                     if token.pos_ in ["NOUN", "PROPN"] and token.dep_ in ["compound", "amod"]:
                         head = token.head
                         if hasattr(head, 'pos_') and head.pos_ in ["NOUN", "PROPN"]:
-                            compound = f"{token.text} {head.text}"
-                            if len(compound) > 5:
+                            compound = f"{token.text} {head.text}".strip()
+                            if (len(compound) > 8 and 
+                                len(compound) < 50 and
+                                not compound.lower().startswith(('a ', 'an ', 'the '))):
                                 concepts.append(compound)
         except Exception as e:
             print(f"Error in dependency parsing: {e}")
@@ -210,18 +245,59 @@ async def extract_concepts_from_content(messages) -> List[str]:
         # Use custom concept extraction patterns
         try:
             custom_concepts = extract_complex_concepts(doc)  # Pass the spaCy doc, not the string
-            concepts.extend(custom_concepts)
+            # Filter custom concepts
+            filtered_custom = []
+            for concept in custom_concepts:
+                concept_text = concept.strip()
+                if (len(concept_text) > 10 and 
+                    len(concept_text) < 80 and
+                    len(concept_text.split()) >= 3 and
+                    not concept_text.lower().startswith(('a ', 'an ', 'the ')) and
+                    not concept_text.lower().endswith((' a', ' an', ' the'))):
+                    filtered_custom.append(concept_text)
+            concepts.extend(filtered_custom)
         except Exception as e:
             print(f"Error in custom concept extraction: {e}")
             # Continue without custom concepts
         
-        # Remove duplicates and filter
+        # Remove duplicates and apply comprehensive filtering
         concepts = list(set(concepts))
-        concepts = [c for c in concepts if len(c) > 3 and len(c.split()) <= 4]
+        
+        # Comprehensive filtering
+        filtered_concepts = []
+        stop_words = {'a', 'an', 'the', 'this', 'that', 'these', 'those', 'meeting', 'call', 'session', 'letter'}
+        
+        for concept in concepts:
+            concept_lower = concept.lower().strip()
+            words = concept_lower.split()
+            
+            # Skip if too short or too long
+            if len(concept) < 8 or len(concept) > 60:
+                continue
+                
+            # Skip if starts or ends with articles
+            if (concept_lower.startswith(('a ', 'an ', 'the ')) or 
+                concept_lower.endswith((' a', ' an', ' the'))):
+                continue
+                
+            # Skip if contains too many stop words
+            stop_word_count = sum(1 for word in words if word in stop_words)
+            if stop_word_count > len(words) * 0.3:  # More than 30% stop words
+                continue
+                
+            # Skip if it's just generic phrases
+            if concept_lower in ['a meeting', 'a call', 'a session', 'a letter', 'the meeting', 'the call']:
+                continue
+                
+            # Skip if it's incomplete (ends with common incomplete patterns)
+            if any(concept_lower.endswith(pattern) for pattern in ['* *', '...', 'etc', 'etc.']):
+                continue
+                
+            filtered_concepts.append(concept)
         
         # Count frequency and return most common
-        concept_counts = Counter(concepts)
-        return [concept for concept, count in concept_counts.most_common(20)]
+        concept_counts = Counter(filtered_concepts)
+        return [concept for concept, count in concept_counts.most_common(15)]
         
     except Exception as e:
         print(f"Error extracting concepts: {e}")
