@@ -50,7 +50,7 @@ class ChannelRepository:
         Returns:
             Dictionary with channel message statistics
         """
-        query = """
+        query = f"""
         SELECT 
             COUNT(*) as total_messages,
             COUNT(DISTINCT author_name) as unique_users,
@@ -61,7 +61,7 @@ class ChannelRepository:
             COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
             COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users
         FROM messages 
-        WHERE channel_name = ?
+        WHERE channel_name = ? AND {self.base_filter}
         """
         
         params = [channel_name]
@@ -105,7 +105,7 @@ class ChannelRepository:
         Returns:
             List of user activity dictionaries
         """
-        query = """
+        query = f"""
         SELECT 
             author_name,
             author_display_name,
@@ -114,7 +114,7 @@ class ChannelRepository:
             MAX(timestamp) as last_message,
             AVG(LENGTH(content)) as avg_message_length
         FROM messages 
-        WHERE channel_name = ?
+        WHERE channel_name = ? AND {self.base_filter}
         AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
@@ -161,12 +161,12 @@ class ChannelRepository:
         Returns:
             List of hourly activity data
         """
-        query = """
+        query = f"""
         SELECT 
             strftime('%H', timestamp) as hour,
             COUNT(*) as message_count
         FROM messages 
-        WHERE channel_name = ?
+        WHERE channel_name = ? AND {self.base_filter}
         AND (author_is_bot = 0 OR author_is_bot IS NULL)
         """
         
@@ -203,10 +203,10 @@ class ChannelRepository:
         Returns:
             List of channel names sorted alphabetically
         """
-        query = """
+        query = f"""
         SELECT DISTINCT channel_name
         FROM messages 
-        WHERE content IS NOT NULL
+        WHERE {self.base_filter} AND content IS NOT NULL
         ORDER BY channel_name
         LIMIT ?
         """
@@ -230,7 +230,7 @@ class ChannelRepository:
         Returns:
             List of channel statistics dictionaries
         """
-        query = """
+        query = f"""
         SELECT 
             channel_name,
             COUNT(*) as message_count,
@@ -238,7 +238,7 @@ class ChannelRepository:
             MIN(timestamp) as first_message,
             MAX(timestamp) as last_message
         FROM messages 
-        WHERE content IS NOT NULL
+        WHERE {self.base_filter} AND content IS NOT NULL
         """
         
         params = []
@@ -282,12 +282,12 @@ class ChannelRepository:
         Returns:
             List of daily activity data
         """
-        query = """
+        query = f"""
         SELECT 
             DATE(timestamp) as date,
             COUNT(*) as message_count
         FROM messages 
-        WHERE channel_name = ?
+        WHERE channel_name = ? AND {self.base_filter}
         """
         
         params = [channel_name]
