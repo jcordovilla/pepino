@@ -168,19 +168,29 @@ class ChannelAnalyzer:
         """Get basic channel statistics using data facade pattern."""
         
         try:
+            # Validate input
+            if not channel_name or not channel_name.strip():
+                logger.warning("Empty or invalid channel name provided")
+                return None
+            
             # Use data facade for repository access
             stats_data = self.data_facade.channel_repository.get_channel_message_statistics(channel_name, days)
             
             if not stats_data or stats_data.get('total_messages', 0) == 0:
+                logger.info(f"No messages found for channel: {channel_name}")
                 return None
             
             # Calculate messages per day
             total_messages = stats_data['total_messages']
             if total_messages > 0 and stats_data['first_message'] and stats_data['last_message']:
-                first_date = datetime.fromisoformat(stats_data['first_message'].replace('Z', '+00:00'))
-                last_date = datetime.fromisoformat(stats_data['last_message'].replace('Z', '+00:00'))
-                time_span = (last_date - first_date).days + 1
-                messages_per_day = total_messages / max(time_span, 1)
+                try:
+                    first_date = datetime.fromisoformat(stats_data['first_message'].replace('Z', '+00:00'))
+                    last_date = datetime.fromisoformat(stats_data['last_message'].replace('Z', '+00:00'))
+                    time_span = (last_date - first_date).days + 1
+                    messages_per_day = total_messages / max(time_span, 1)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Invalid timestamp format for channel {channel_name}: {e}")
+                    messages_per_day = 0
             else:
                 messages_per_day = 0
             
@@ -198,7 +208,7 @@ class ChannelAnalyzer:
             )
             
         except Exception as e:
-            logger.error(f"Failed to get channel statistics via repository: {e}")
+            logger.error(f"Failed to get channel statistics via repository for {channel_name}: {e}")
             return None
     
     def _get_top_users_in_channel_via_repository(
@@ -210,25 +220,38 @@ class ChannelAnalyzer:
         """Get top users by message count in this channel using data facade."""
         
         try:
+            # Validate input
+            if not channel_name or not channel_name.strip():
+                logger.warning("Empty or invalid channel name provided for user activity")
+                return []
+            
+            if limit <= 0:
+                logger.warning(f"Invalid limit provided: {limit}, using default of 10")
+                limit = 10
+            
             # Use data facade for repository access
             user_data = self.data_facade.channel_repository.get_channel_user_activity(channel_name, days, limit)
             
             user_activities = []
             for data in user_data:
-                activity = UserActivity(
-                    username=data['author_name'],  # Fixed: UserActivity uses 'username' field
-                    display_name=data.get('author_display_name'),  # New field
-                    message_count=data['message_count'],
-                    avg_message_length=data.get('avg_message_length', 0.0),  # New field
-                    first_message_date=data['first_message'],  # Fixed: model uses '_date' suffix
-                    last_message_date=data['last_message']     # Fixed: model uses '_date' suffix
-                )
-                user_activities.append(activity)
+                try:
+                    activity = UserActivity(
+                        username=data['author_name'],  # Fixed: UserActivity uses 'username' field
+                        display_name=data.get('author_display_name'),  # New field
+                        message_count=data['message_count'],
+                        avg_message_length=data.get('avg_message_length', 0.0),  # New field
+                        first_message_date=data['first_message'],  # Fixed: model uses '_date' suffix
+                        last_message_date=data['last_message']     # Fixed: model uses '_date' suffix
+                    )
+                    user_activities.append(activity)
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Skipping invalid user data for channel {channel_name}: {e}")
+                    continue
             
             return user_activities
             
         except Exception as e:
-            logger.error(f"Failed to get top users in channel via repository: {e}")
+            logger.error(f"Failed to get top users in channel via repository for {channel_name}: {e}")
             return []
     
     def _analyze_time_patterns_via_repository(self, channel_name: str, days: Optional[int]) -> Dict[str, any]:
