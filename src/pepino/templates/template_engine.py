@@ -95,6 +95,10 @@ class TemplateEngine:
                 lstrip_blocks=True
             )
         
+        # Template cache for performance
+        self._template_cache = {}
+        self._cache_enabled = True
+        
         # Store analyzer and service references for template use
         self.analyzers: Dict[str, AnalyzerType] = analyzers or {}
         self.data_facade: Optional['AnalysisDataFacade'] = data_facade
@@ -159,7 +163,22 @@ class TemplateEngine:
             TemplateSyntaxError: If template has syntax errors
         """
         try:
-            template = self.env.get_template(template_name)
+            # Check cache first
+            cached_template = self.get_cached_template(template_name)
+            if cached_template:
+                logger.debug(f"Using cached template: {template_name}")
+                template = cached_template
+            else:
+                # Validate template first
+                validation = self.validate_template(template_name)
+                if not validation['valid']:
+                    error_msg = f"Template validation failed for '{template_name}': {', '.join(validation['errors'])}"
+                    logger.error(error_msg)
+                    return f"❌ {error_msg}"
+                
+                template = self.env.get_template(template_name)
+                # Cache the template for future use
+                self.cache_template(template_name, template)
             
             # Add message data to template context if provided
             if messages:
@@ -169,10 +188,26 @@ class TemplateEngine:
                 kwargs['all_message_text'] = ' '.join(msg.get('content', '') for msg in messages if msg.get('content'))
                 kwargs['message_authors'] = list(set(msg.get('author', '') for msg in messages if msg.get('author')))
             
-            return template.render(**kwargs)
+            # Check for missing required variables (only if not cached)
+            if not cached_template:
+                missing_vars = []
+                for var in validation.get('required_variables', []):
+                    if var not in kwargs:
+                        missing_vars.append(var)
+                
+                if missing_vars:
+                    error_msg = f"Missing required variables for template '{template_name}': {', '.join(missing_vars)}"
+                    logger.error(error_msg)
+                    return f"❌ {error_msg}"
+            
+            result = template.render(**kwargs)
+            logger.debug(f"Successfully rendered template '{template_name}'")
+            return result
+            
         except Exception as e:
-            logger.error(f"Error rendering template {template_name}: {str(e)}", exc_info=True)
-            return f"❌ Error rendering template: {str(e)}"
+            error_msg = f"Error rendering template '{template_name}': {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return f"❌ {error_msg}"
 
     def render_string(self, template_string: str, messages: Optional[List[Dict]] = None, **kwargs) -> str:
         """
@@ -620,3 +655,155 @@ class TemplateEngine:
         except ImportError:
             # Fallback if textwrap not available
             return text 
+
+    def validate_template(self, template_name: str) -> Dict[str, Any]:
+        """
+        Validate a template for syntax errors and required variables.
+        
+        Args:
+            template_name: Template file path relative to templates directory
+            
+        Returns:
+            Dictionary with validation results
+        """
+        try:
+            template = self.env.get_template(template_name)
+            
+            # Check if template exists and can be loaded
+            validation_result = {
+                'valid': True,
+                'template_name': template_name,
+                'exists': True,
+                'syntax_valid': True,
+                'required_variables': [],
+                'optional_variables': [],
+                'errors': []
+            }
+            
+            # Try to render with empty context to check for required variables
+            try:
+                template.render()
+                validation_result['required_variables'] = []
+            except Exception as e:
+                # Extract variable names from error message
+                error_msg = str(e)
+                if 'UndefinedError' in error_msg:
+                    # Extract variable name from error
+                    import re
+                    var_match = re.search(r"'([^']+)' is undefined", error_msg)
+                    if var_match:
+                        validation_result['required_variables'].append(var_match.group(1))
+                    validation_result['errors'].append(f"Missing required variable: {error_msg}")
+            
+            return validation_result
+            
+        except Exception as e:
+            return {
+                'valid': False,
+                'template_name': template_name,
+                'exists': False,
+                'syntax_valid': False,
+                'required_variables': [],
+                'optional_variables': [],
+                'errors': [f"Template validation failed: {str(e)}"]
+            }
+
+    def list_available_templates(self) -> List[str]:
+        """
+        List all available templates in the templates directory.
+        
+        Returns:
+            List of template file paths
+        """
+        try:
+            templates = []
+            if hasattr(self.env.loader, 'list_templates'):
+                templates = self.env.loader.list_templates()
+            else:
+                # Fallback: scan templates directory
+                templates_path = Path(self.env.loader.searchpath[0]) if self.env.loader.searchpath else Path("templates")
+                if templates_path.exists():
+                    for template_file in templates_path.rglob("*.j2"):
+                        templates.append(str(template_file.relative_to(templates_path)))
+            
+            return sorted(templates)
+        except Exception as e:
+            logger.error(f"Error listing templates: {e}")
+            return []
+
+    def get_template_info(self, template_name: str) -> Dict[str, Any]:
+        """
+        Get detailed information about a template.
+        
+        Args:
+            template_name: Template file path relative to templates directory
+            
+        Returns:
+            Dictionary with template information
+        """
+        try:
+            template = self.env.get_template(template_name)
+            template_path = Path(self.env.loader.searchpath[0]) / template_name if self.env.loader.searchpath else Path("templates") / template_name
+            
+            info = {
+                'name': template_name,
+                'exists': template_path.exists(),
+                'size': template_path.stat().st_size if template_path.exists() else 0,
+                'modified': datetime.fromtimestamp(template_path.stat().st_mtime) if template_path.exists() else None,
+                'validation': self.validate_template(template_name)
+            }
+            
+            return info
+            
+        except Exception as e:
+            return {
+                'name': template_name,
+                'exists': False,
+                'size': 0,
+                'modified': None,
+                'validation': {'valid': False, 'errors': [str(e)]}
+            }
+
+    def clear_cache(self) -> None:
+        """
+        Clear the template cache.
+        """
+        self._template_cache.clear()
+        logger.debug("Template cache cleared")
+
+    def get_cached_template(self, template_name: str) -> Optional['Template']:
+        """
+        Get a cached template if available.
+        
+        Args:
+            template_name: Template file path
+            
+        Returns:
+            Cached template or None if not cached
+        """
+        return self._template_cache.get(template_name)
+
+    def cache_template(self, template_name: str, template: 'Template') -> None:
+        """
+        Cache a compiled template.
+        
+        Args:
+            template_name: Template file path
+            template: Compiled template object
+        """
+        if self._cache_enabled:
+            self._template_cache[template_name] = template
+            logger.debug(f"Cached template: {template_name}")
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Get template cache statistics.
+        
+        Returns:
+            Dictionary with cache statistics
+        """
+        return {
+            'cache_enabled': self._cache_enabled,
+            'cached_templates': len(self._template_cache),
+            'cache_keys': list(self._template_cache.keys())
+        } 
