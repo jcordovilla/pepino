@@ -33,7 +33,7 @@ class AnalysisCommands(commands.Cog):
         print(f'Analysis commands loaded!')
     
     @app_commands.command(
-        name="list_users",
+        name="pepino_list_users",
         description="List all available users for analysis"
     )
     @app_commands.describe(
@@ -117,7 +117,7 @@ class AnalysisCommands(commands.Cog):
             await interaction.followup.send(f"Error listing users: {str(e)}")
 
     @app_commands.command(
-        name="list_channels",
+        name="pepino_list_channels",
         description="List all available channels for analysis"
     )
     @app_commands.describe(
@@ -266,7 +266,7 @@ class AnalysisCommands(commands.Cog):
             return []
 
     @app_commands.command(
-        name="channel_analysis",
+        name="pepino_channel_analysis",
         description="Analyze a specific Discord channel"
     )
     @app_commands.describe(
@@ -319,7 +319,7 @@ class AnalysisCommands(commands.Cog):
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(
-        name="user_analysis", 
+        name="pepino_user_analysis", 
         description="Analyze a specific Discord user"
     )
     @app_commands.describe(
@@ -381,7 +381,7 @@ class AnalysisCommands(commands.Cog):
         return await self.user_autocomplete(interaction, current)
 
     @app_commands.command(
-        name="topics_analysis",
+        name="pepino_topics_analysis",
         description="Analyze topics in messages, optionally filtered by channel"
     )
     @app_commands.describe(
@@ -429,7 +429,7 @@ class AnalysisCommands(commands.Cog):
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(
-        name="top_users", 
+        name="pepino_top_users", 
         description="Top 10 most active users with statistics and main topics"
     )
     async def top_users(self, interaction: discord.Interaction):
@@ -454,7 +454,7 @@ class AnalysisCommands(commands.Cog):
                 await interaction.followup.send(f"Error during user statistics analysis: {str(e)}")
 
     @app_commands.command(
-        name="activity_trends",
+        name="pepino_activity_trends",
         description="Server activity trends and patterns over the past 30 days"
     )
     async def activity_trends(self, interaction: discord.Interaction):
@@ -498,7 +498,7 @@ class AnalysisCommands(commands.Cog):
                 await interaction.followup.send(f"Error during activity trends analysis: {str(e)}")
 
     @app_commands.command(
-        name="help_analysis",
+        name="pepino_help",
         description="Show available analysis commands and their usage"
     )
     async def help_analysis(self, interaction: discord.Interaction):
@@ -507,18 +507,18 @@ class AnalysisCommands(commands.Cog):
 **🧠 Discord Analysis Bot Commands**
 
 **🎯 Analysis Commands (with autocomplete):**
-• `/channel_analysis` - Detailed channel insights with key topics & concepts
-• `/user_analysis` - User insights with contribution analysis & key topics
-• `/topics_analysis` - Topic analysis with trends, optionally filtered by channel
+• `/pepino_channel_analysis` - Detailed channel insights with key topics & concepts
+• `/pepino_user_analysis` - User insights with contribution analysis & key topics
+• `/pepino_topics_analysis` - Topic analysis with trends, optionally filtered by channel
 
 **📊 Enhanced Statistical Analysis Commands:**
-• `/top_users` - Top 10 most active users with statistics and main topics
-• `/activity_trends` - **Enhanced** server activity trends with comprehensive analytics, semantic analysis, and activity charts
+• `/pepino_top_users` - Top 10 most active users with statistics and main topics
+• `/pepino_activity_trends` - **Enhanced** server activity trends with comprehensive analytics, semantic analysis, and activity charts
 
 **📋 Utility Commands:**
-• `/list_users` - Show all available users
-• `/list_channels` - Show all available channels
-• `/help_analysis` - Show this help message
+• `/pepino_list_users` - Show all available users
+• `/pepino_list_channels` - Show all available channels
+• `/pepino_help` - Show this help message
 
 **💡 Pro Tips:**
 - Commands with autocomplete make it easy to find channels and users - just start typing!

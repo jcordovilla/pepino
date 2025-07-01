@@ -404,6 +404,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
         resolved_channel = await resolve_channel_name(pool, channel_name, base_filter, bot_guilds)
         
         # Get basic channel statistics with bot/human differentiation
+        # First, get total messages in the channel, including all bots
         async with pool.execute(f"""
             SELECT 
                 COUNT(*) as total_messages,
@@ -415,7 +416,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
                 COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_id END) as unique_human_users
             FROM messages 
-            WHERE channel_name = ? AND {base_filter}
+            WHERE channel_name = ? 
             AND content IS NOT NULL
         """, (resolved_channel,)) as cursor:
             stats = await cursor.fetchone()

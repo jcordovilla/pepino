@@ -26,14 +26,14 @@ A comprehensive Discord analytics system with **modular architecture** that prov
 
 | Command | Description |
 |---------|-------------|
-| `/channel_analysis` | Channel insights with topics & activity charts |
-| `/user_analysis` | Individual user analysis with contribution patterns |
-| `/top_users` | Top 10 most active users with main topics |
-| `/topics_analysis` | Discussion themes and topic patterns |
-| `/activity_trends` | Server activity trends with charts |
-| `/list_users` | List all available users for analysis |
-| `/list_channels` | List all available channels for analysis |
-| `/help_analysis` | Show all available commands |
+| `/pepino_channel_analysis` | Channel insights with topics & activity charts |
+| `/pepino_user_analysis` | Individual user analysis with contribution patterns |
+| `/pepino_top_users` | Top 10 most active users with main topics |
+| `/pepino_topics_analysis` | Discussion themes and topic patterns |
+| `/pepino_activity_trends` | Server activity trends with charts |
+| `/pepino_list_users` | List all available users for analysis |
+| `/pepino_list_channels` | List all available channels for analysis |
+| `/pepino_help` | Show all available commands |
 
 ## 🛠️ Setup
 
