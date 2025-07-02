@@ -175,49 +175,34 @@ class AnalysisCommands(commands.Cog):
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete for channel names with current Discord channel mapping"""
+        """Autocomplete for channel names and forum threads with current Discord channel mapping"""
         try:
             print(f"Channel autocomplete called with current='{current}'")
-            
-            # Ensure analyzer is initialized
             await self.analyzer.initialize()
-            
-            # Get available channels with current Discord names when possible
-            bot_guilds = interaction.client.guilds if hasattr(interaction.client, 'guilds') else None
-            channels = await self.analyzer.get_available_channels_with_mapping(bot_guilds)
-            print(f"Found {len(channels)} channels (with current names)")
-            
-            # Filter channels based on current input
+            # Get all selectable channels and threads
+            entries = await self.analyzer.get_selectable_channels_and_threads()
+            # entries: List[(label, channel_name, thread_id)]
+            # Filter based on current input
             if current:
-                # Case-insensitive filtering
-                filtered_channels = [
-                    channel for channel in channels 
-                    if current.lower() in channel.lower()
-                ]
-                print(f"Filtered to {len(filtered_channels)} channels matching '{current}'")
+                filtered = [e for e in entries if current.lower() in e[0].lower()]
             else:
-                filtered_channels = channels
-                print(f"No filter, showing all {len(filtered_channels)} channels")
-            
-            # Limit to 25 choices (Discord limit)
-            filtered_channels = filtered_channels[:25]
-            
-            # Return choices
+                filtered = entries
+            filtered = filtered[:25]
+            # Store as 'label|||channel_name|||thread_id' for value
             choices = [
-                app_commands.Choice(name=channel, value=channel)
-                for channel in filtered_channels
-                if channel  # Skip empty channel names
+                app_commands.Choice(
+                    name=label,
+                    value=f"{label}|||{ch}|||{tid if tid else ''}"
+                ) for (label, ch, tid) in filtered if label
             ]
-            
             print(f"Returning {len(choices)} choices")
             return choices
-            
         except Exception as e:
             print(f"Error in channel autocomplete: {e}")
             import traceback
             traceback.print_exc()
             return []
-    
+
     async def user_autocomplete(
         self,
         interaction: discord.Interaction,
@@ -267,25 +252,29 @@ class AnalysisCommands(commands.Cog):
 
     @app_commands.command(
         name="pepino_channel_analysis",
-        description="Analyze a specific Discord channel"
+        description="Analyze a specific Discord channel or forum thread"
     )
     @app_commands.describe(
-        channel="Channel name to analyze"
+        channel="Channel or thread to analyze (autocomplete)"
     )
     async def channel_analysis(
         self,
         interaction: discord.Interaction,
         channel: str
     ):
-        """Analyze a specific Discord channel"""
+        """Analyze a specific Discord channel or forum thread"""
         try:
             print(f"Channel analysis command called with channel='{channel}'")
-            
             await self.analyzer.initialize()
             await interaction.response.defer()
-            
-            result = await self.analyzer.get_channel_insights(channel)
-            
+            # Parse channel and thread info
+            if '|||' in channel:
+                label, channel_name, thread_id = channel.split('|||', 2)
+                thread_id = thread_id if thread_id else None
+            else:
+                channel_name = channel
+                thread_id = None
+            result = await self.analyzer.get_channel_insights(channel_name, thread_id=thread_id)
             # Handle the result
             if isinstance(result, tuple):
                 text_result, file_path = result
@@ -302,7 +291,6 @@ class AnalysisCommands(commands.Cog):
                         await interaction.followup.send(chunk)
                 else:
                     await interaction.followup.send(result)
-                    
         except Exception as e:
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"Error during channel analysis: {str(e)}")
@@ -315,7 +303,7 @@ class AnalysisCommands(commands.Cog):
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete for channel analysis"""
+        """Autocomplete for channel analysis (channels and threads)"""
         return await self.channel_autocomplete(interaction, current)
 
     @app_commands.command(

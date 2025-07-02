@@ -13,7 +13,8 @@ from .queries import (
     get_available_channels_with_mapping,
     filter_boilerplate_phrases,
     get_all_channel_names,
-    find_similar_channel_names
+    find_similar_channel_names,
+    get_selectable_channels_and_threads
 )
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     "get_available_channels_with_mapping", 
     "filter_boilerplate_phrases",
     "get_all_channel_names",
-    "find_similar_channel_names"
+    "find_similar_channel_names",
+    "get_selectable_channels_and_threads"
 ]

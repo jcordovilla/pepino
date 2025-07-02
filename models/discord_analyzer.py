@@ -4,7 +4,7 @@ DiscordBotAnalyzer class for async Discord message analysis
 import aiosqlite
 from typing import List, Dict, Optional, Any, Union, Tuple
 from models.base_analyzer import MessageAnalyzer
-from database import get_available_channels, get_available_users, get_channel_name_mapping, get_available_channels_with_mapping, filter_boilerplate_phrases
+from database import get_available_channels, get_available_users, get_channel_name_mapping, get_available_channels_with_mapping, filter_boilerplate_phrases, get_selectable_channels_and_threads
 from analysis.statistics import update_user_statistics, update_temporal_stats_async, get_enhanced_activity_trends
 from analysis.topics import analyze_topics_spacy, extract_concepts_from_content
 from analysis.insights import resolve_channel_name, get_user_insights, get_channel_insights
@@ -111,7 +111,11 @@ class DiscordBotAnalyzer(MessageAnalyzer):
         await self.initialize()
         return await get_user_insights(self.pool, self.base_filter, user_name)
 
-    async def get_channel_insights(self, channel_name: str) -> Union[str, Tuple[str, str]]:
+    async def get_channel_insights(self, channel_name: str, thread_id: str = None):
         """Get comprehensive channel statistics and insights"""
         await self.initialize()
-        return await get_channel_insights(self.pool, self.base_filter, channel_name)
+        return await get_channel_insights(self.pool, self.base_filter, channel_name, thread_id=thread_id)
+
+    async def get_selectable_channels_and_threads(self):
+        await self.initialize()
+        return await get_selectable_channels_and_threads(self.pool)

@@ -397,14 +397,26 @@ async def get_user_insights(pool, base_filter: str, user_name: str) -> Union[str
         return f"Error getting user insights: {str(e)}"
 
 
-async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_guilds=None) -> Union[str, Tuple[str, str]]:
-    """Get comprehensive channel statistics and insights"""
+async def get_channel_insights(pool, base_filter: str, channel_name: str, thread_id: str = None, bot_guilds=None) -> Union[str, Tuple[str, str]]:
+    """Get comprehensive channel statistics and insights, optionally for a specific thread."""
     try:
-        # Resolve the channel name to the actual database name
-        resolved_channel = await resolve_channel_name(pool, channel_name, base_filter, bot_guilds)
-        
-        # Get basic channel statistics with bot/human differentiation
-        # First, get total messages in the channel, including all bots
+        # If thread_id is provided, filter by both channel_name and thread_id
+        thread_clause = ""
+        params = [channel_name]
+        if thread_id:
+            thread_clause = " AND thread_id = ? "
+            params.append(thread_id)
+        # Get thread name if thread_id is provided
+        thread_title = None
+        if thread_id:
+            async with pool.execute(
+                f"SELECT thread_name FROM messages WHERE channel_name = ? AND thread_id = ? LIMIT 1",
+                (channel_name, thread_id)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    thread_title = row[0]
+        # Get basic channel/thread statistics
         async with pool.execute(f"""
             SELECT 
                 COUNT(*) as total_messages,
@@ -416,30 +428,12 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
                 COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_id END) as unique_human_users
             FROM messages 
-            WHERE channel_name = ? 
+            WHERE channel_name = ? {thread_clause}
             AND content IS NOT NULL
-        """, (resolved_channel,)) as cursor:
+        """, params) as cursor:
             stats = await cursor.fetchone()
-        
         if not stats or stats[0] == 0:
-            # Try to find similar channel names
-            async with pool.execute(f"""
-                SELECT DISTINCT channel_name, COUNT(*) as msg_count
-                FROM messages 
-                WHERE {base_filter}
-                AND LOWER(channel_name) LIKE ?
-                GROUP BY channel_name
-                ORDER BY msg_count DESC
-                LIMIT 5
-            """, (f"%{channel_name.lower()}%",)) as cursor:
-                similar_channels = await cursor.fetchall()
-            
-            if similar_channels:
-                suggestions = ", ".join([ch[0] for ch in similar_channels])
-                return f"❌ No messages found for channel '{channel_name}'. Did you mean: {suggestions}?"
-            else:
-                return f"❌ No channel found matching '{channel_name}'"
-        
+            return f"❌ No messages found for {'thread' if thread_id else 'channel'} '{thread_title or channel_name}'"
         total_messages, unique_users, avg_length, first_msg, last_msg, bot_messages, human_messages, unique_human_users = stats
         
         # Get engagement metrics (excluding bots)
@@ -451,7 +445,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             FROM messages 
             WHERE channel_name = ? AND {base_filter}
             AND (author_is_bot = 0 OR author_is_bot IS NULL)
-        """, (resolved_channel,)) as cursor:
+        """, (channel_name,)) as cursor:
             engagement = await cursor.fetchone()
         
         total_replies, original_posts, posts_with_reactions = engagement
@@ -471,7 +465,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             GROUP BY author_id, author_display_name, author_name
             ORDER BY message_count DESC
             LIMIT 5
-        """, (resolved_channel,)) as cursor:
+        """, (channel_name,)) as cursor:
             contributors = await cursor.fetchall()
         
         # Get peak activity hours
@@ -485,7 +479,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             GROUP BY strftime('%H', timestamp)
             ORDER BY messages DESC
             LIMIT 3
-        """, (resolved_channel,)) as cursor:
+        """, (channel_name,)) as cursor:
             peak_hours = await cursor.fetchall()
         
         # Get activity by day of week
@@ -507,7 +501,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             GROUP BY strftime('%w', timestamp)
             ORDER BY messages DESC
             LIMIT 3
-        """, (resolved_channel,)) as cursor:
+        """, (channel_name,)) as cursor:
             day_activity = await cursor.fetchall()
         
         # Get recent activity (last 7 days)
@@ -522,7 +516,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             GROUP BY DATE(timestamp)
             ORDER BY date DESC
             LIMIT 7
-        """, (resolved_channel,)) as cursor:
+        """, (channel_name,)) as cursor:
             recent_activity = await cursor.fetchall()
         
         # Get channel health metrics (activity in last week, excluding bots)
@@ -532,7 +526,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             WHERE channel_name = ? AND {base_filter}
             AND timestamp >= datetime('now', '-7 days')
             AND (author_is_bot = 0 OR author_is_bot IS NULL)
-        """, (resolved_channel,)) as cursor:
+        """, (channel_name,)) as cursor:
             weekly_active_result = await cursor.fetchone()
         
         weekly_active = weekly_active_result[0] if weekly_active_result else 0
@@ -552,7 +546,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 AND timestamp >= datetime('now', '-7 days')
                 AND (author_is_bot = 0 OR author_is_bot IS NULL)
             )
-        """, (resolved_channel, resolved_channel)) as cursor:
+        """, (channel_name, channel_name)) as cursor:
             inactive_result = await cursor.fetchone()
         
         inactive_users = inactive_result[0] if inactive_result else 0
@@ -568,7 +562,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 SELECT COUNT(DISTINCT user_id) as total_members
                 FROM channel_members 
                 WHERE channel_name = ?
-            """, (resolved_channel,)) as cursor:
+            """, (channel_name,)) as cursor:
                 member_result = await cursor.fetchone()
             
             if member_result and member_result[0]:
@@ -592,7 +586,7 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 AND LENGTH(content) > 30
                 ORDER BY timestamp DESC
                 LIMIT 200
-            """, (resolved_channel,)) as cursor:
+            """, (channel_name,)) as cursor:
                 topic_messages = await cursor.fetchall()
             
             if topic_messages:
@@ -632,10 +626,10 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 AND DATE(timestamp) >= DATE('now', '-30 days')
                 GROUP BY DATE(timestamp)
                 ORDER BY date ASC
-            """, (resolved_channel,)) as cursor:
+            """, (channel_name,)) as cursor:
                 daily_activity = await cursor.fetchall()
             
-            chart_path = create_channel_activity_chart(daily_activity, resolved_channel)
+            chart_path = create_channel_activity_chart(daily_activity, channel_name)
             # Force cleanup after chart creation
             cleanup_matplotlib()
                     
@@ -645,9 +639,12 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
             cleanup_matplotlib()
         
         # Format results
-        result = f"**Channel Analysis: #{resolved_channel}**\n\n"
+        result = f"**Channel Analysis: #{channel_name}"
+        if thread_title:
+            result += f" / {thread_title}"
+        result += "**\n\n"
         
-        # Basic Statistics
+        # Insert thread_breakdown after basic stats
         result += f"**📊 Basic Statistics:**\n"
         result += f"• Total Messages: {total_messages:,}\n"
         result += f"  - Human Messages: {human_messages:,} ({human_messages/total_messages*100:.1f}%)\n"
@@ -668,6 +665,24 @@ async def get_channel_insights(pool, base_filter: str, channel_name: str, bot_gu
                 result += f"• Last Message: {last_msg[:16]}\n"
         
         result += "\n"
+        
+        # For forum-level (no thread_id), show a breakdown by thread
+        thread_breakdown = ""
+        if not thread_id:
+            async with pool.execute(f"""
+                SELECT thread_name, COUNT(*) as msg_count
+                FROM messages
+                WHERE channel_name = ? AND thread_id IS NOT NULL AND thread_id != ''
+                GROUP BY thread_id, thread_name
+                ORDER BY msg_count DESC
+                LIMIT 10
+            """, (channel_name,)) as cursor:
+                threads = await cursor.fetchall()
+            if threads:
+                thread_breakdown = "\n**🧵 Top Threads in Forum:**\n"
+                for tname, tcount in threads:
+                    if tname:
+                        thread_breakdown += f"• {tname}: {tcount} messages\n"
         
         # Engagement Metrics (Human Activity Only)
         result += f"**📈 Human Engagement Metrics:**\n"

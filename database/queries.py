@@ -319,3 +319,40 @@ async def find_similar_channel_names(pool, channel_name: str, base_filter: str =
     except Exception as e:
         print(f"Error finding similar channel names: {str(e)}")
         return []
+
+
+async def get_selectable_channels_and_threads(pool) -> list:
+    """Return all selectable channels and forum threads for autocomplete."""
+    try:
+        # Get all main channels (text and forum, no threads)
+        async with pool.execute('''
+            SELECT DISTINCT channel_name
+            FROM messages
+            WHERE channel_name IS NOT NULL AND channel_name != ''
+            ORDER BY channel_name
+        ''') as cursor:
+            main_channels = [row[0] for row in await cursor.fetchall() if row[0]]
+        print(f"[DEBUG] Found {len(main_channels)} main channels: {main_channels}")
+
+        # Get all forum threads (with parent forum name and thread title)
+        async with pool.execute('''
+            SELECT DISTINCT channel_name, thread_id, thread_name
+            FROM messages
+            WHERE thread_id IS NOT NULL AND thread_id != '' AND thread_name IS NOT NULL AND thread_name != ''
+            ORDER BY channel_name, thread_name
+        ''') as cursor:
+            thread_rows = await cursor.fetchall()
+        print(f"[DEBUG] Found {len(thread_rows)} threads: {thread_rows}")
+
+        # Build list: (label, channel_name, thread_id)
+        results = []
+        for ch in main_channels:
+            results.append((ch, ch, None))
+        for ch, tid, tname in thread_rows:
+            label = f"{ch} / {tname}"
+            results.append((label, ch, tid))
+        print(f"[DEBUG] Final selectable list: {results}")
+        return results
+    except Exception as e:
+        print(f"Error getting selectable channels and threads: {str(e)}")
+        return []
