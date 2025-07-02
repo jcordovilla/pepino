@@ -145,7 +145,7 @@ def create_user_activity_chart(daily_activity: List[Tuple], user_name: str) -> s
     """Generate user activity chart for past 30 days"""
     chart_path = None
     
-    if daily_activity and len(daily_activity) > 1:
+    if daily_activity and len(daily_activity) >= 1:
         # Prepare data for plotting
         dates = []
         message_counts = []
@@ -217,7 +217,7 @@ def create_channel_activity_chart(daily_activity: List[Tuple], channel_name: str
     """Generate channel activity chart for past 30 days"""
     chart_path = None
     
-    if daily_activity and len(daily_activity) > 1:
+    if daily_activity and len(daily_activity) >= 1:
         # Prepare data for plotting
         dates = []
         message_counts = []
