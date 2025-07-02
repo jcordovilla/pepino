@@ -141,7 +141,11 @@ class DiscordFetcher(discord.Client):
 
             accessible_channels = []
             inaccessible_channels = []
-            for channel in guild.text_channels:
+            for channel in guild.channels:  # Changed from guild.text_channels to guild.channels
+                # Skip channels that aren't message-able
+                if not hasattr(channel, 'history'):
+                    continue
+                    
                 perms = channel.permissions_for(guild.me)
                 if perms.read_messages and perms.read_message_history:
                     accessible_channels.append(channel)
@@ -165,29 +169,69 @@ class DiscordFetcher(discord.Client):
                 logger.info(f"  📄 Channel: #{channel.name} (ID: {channel.id})")
                 
                 try:
-                    logger.info(f"    🆕 Full fetch from beginning of channel history")
-                    
-                    # Always fetch all messages (no incremental logic)
-                    new_messages = await self.fetch_with_retry(channel, None)
-                    
-                    if new_messages:
-                        logger.info(f"    ✅ {len(new_messages)} message(s) fetched")
-                        self.sync_log_entry["total_messages_synced"] += len(new_messages)
-                        self.new_data[guild.name].setdefault(channel.name, []).extend(new_messages)
+                    # Check if this is a forum channel
+                    if isinstance(channel, discord.ForumChannel):
+                        logger.info(f"    🧵 Forum channel detected - fetching from threads")
+                        
+                        # Get all archived threads (both public and private archives)
+                        try:
+                            logger.info(f"      📚 Fetching archived threads...")
+                            thread_count = 0
+                            
+                            # Get public archived threads
+                            async for thread in channel.archived_threads(limit=None):
+                                await self._fetch_thread_messages(thread, guild)
+                                thread_count += 1
+                                
+                            # Get private archived threads if we have manage_threads permission
+                            channel_perms = channel.permissions_for(guild.me)
+                            if channel_perms.manage_threads:
+                                async for thread in channel.archived_threads(private=True, limit=None):
+                                    await self._fetch_thread_messages(thread, guild)
+                                    thread_count += 1
+                            
+                            logger.info(f"      📚 Found {thread_count} archived threads")
+                        except Exception as e:
+                            logger.error(f"      ❌ Error fetching archived threads: {str(e)}")
+                            
+                        # Get active threads using guild.threads and filter by parent
+                        try:
+                            logger.info(f"      🔥 Fetching active threads...")
+                            active_count = 0
+                            
+                            for thread in guild.threads:
+                                if thread.parent_id == channel.id:
+                                    await self._fetch_thread_messages(thread, guild)
+                                    active_count += 1
+                                    
+                            logger.info(f"      🔥 Found {active_count} active threads")
+                        except Exception as e:
+                            logger.error(f"      ❌ Error fetching active threads: {str(e)}")
                     else:
-                        logger.info(f"    📫 No messages found")
-                    
-                    # Fetch channel members
-                    logger.info(f"    👥 Fetching channel members...")
-                    channel_members = await self._fetch_channel_members(channel)
-                    
-                    if channel_members:
-                        logger.info(f"    ✅ {len(channel_members)} member(s) found")
-                        # Store channel members in new_data for saving to DB
-                        self.new_data[guild.name].setdefault('_channel_members', {})
-                        self.new_data[guild.name]['_channel_members'][channel.name] = channel_members
-                    else:
-                        logger.info(f"    👥 No accessible members found")
+                        # Regular text channel handling
+                        logger.info(f"    🆕 Full fetch from beginning of channel history")
+                        
+                        # Always fetch all messages (no incremental logic)
+                        new_messages = await self.fetch_with_retry(channel, None)
+                        
+                        if new_messages:
+                            logger.info(f"    ✅ {len(new_messages)} message(s) fetched")
+                            self.sync_log_entry["total_messages_synced"] += len(new_messages)
+                            self.new_data[guild.name].setdefault(channel.name, []).extend(new_messages)
+                        else:
+                            logger.info(f"    📫 No messages found")
+                        
+                        # Fetch channel members
+                        logger.info(f"    👥 Fetching channel members...")
+                        channel_members = await self._fetch_channel_members(channel)
+                        
+                        if channel_members:
+                            logger.info(f"    ✅ {len(channel_members)} member(s) found")
+                            # Store channel members in new_data for saving to DB
+                            self.new_data[guild.name].setdefault('_channel_members', {})
+                            self.new_data[guild.name]['_channel_members'][channel.name] = channel_members
+                        else:
+                            logger.info(f"    👥 No accessible members found")
                         
                 except Exception as e:
                     logger.error(f"    ❌ Error fetching channel #{channel.name}: {str(e)}")
@@ -307,6 +351,42 @@ class DiscordFetcher(discord.Client):
         except Exception as e:
             logger.error(f"Error fetching members for #{channel.name}: {e}")
             return []
+
+    async def _fetch_thread_messages(self, thread: discord.Thread, guild: discord.Guild):
+        """Fetch messages from a forum channel thread"""
+        try:
+            logger.info(f"      🧵 Thread: {thread.name} (ID: {thread.id})")
+            
+            # Check permissions for the thread
+            perms = thread.permissions_for(guild.me)
+            if not (perms.read_messages and perms.read_message_history):
+                logger.warning(f"        🚫 Insufficient permissions for thread {thread.name}")
+                return
+            
+            # Fetch messages from the thread
+            thread_messages = await self.fetch_with_retry(thread, None)
+            
+            if thread_messages:
+                logger.info(f"        ✅ {len(thread_messages)} message(s) fetched from thread")
+                self.sync_log_entry["total_messages_synced"] += len(thread_messages)
+                
+                # Store messages under the parent forum channel name
+                parent_channel = thread.parent
+                if parent_channel:
+                    self.new_data[guild.name].setdefault(parent_channel.name, []).extend(thread_messages)
+            else:
+                logger.info(f"        📫 No messages found in thread")
+                
+        except Exception as e:
+            logger.error(f"        ❌ Error fetching thread {thread.name}: {str(e)}")
+            self.sync_log_entry["errors"].append({
+                "error": str(e),
+                "guild_name": guild.name,
+                "thread_name": thread.name,
+                "thread_id": str(thread.id),
+                "parent_channel": thread.parent.name if thread.parent else None,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
 
     async def _convert_message_to_dict(self, message: discord.Message) -> Dict[str, Any]:
         # Helper function to safely get role type
