@@ -22,6 +22,13 @@
 {% endfor %}
 
 {% endif -%}
+{% if top_topics and top_topics | length > 0 -%}
+**🏷️ Most Common Topics:**
+{% for topic in top_topics[:8] -%}
+• {{ topic.topic }} ({{ topic.frequency }} mentions, {{ "%.1f" | format(topic.relevance_score * 100) }}% relevance)
+{% endfor %}
+
+{% endif -%}
 {% if semantic_analysis -%}
 **🧠 Semantic Analysis Results:**
 {% if semantic_analysis.key_entities and semantic_analysis.key_entities | length > 0 -%}

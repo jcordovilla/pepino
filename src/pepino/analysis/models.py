@@ -53,6 +53,14 @@ class SemanticAnalysisResult(BaseModel):
     key_concepts: List[str] = []
 
 
+class TopicItem(BaseModel):
+    """Individual topic with frequency and relevance."""
+
+    topic: str
+    frequency: int
+    relevance_score: float
+
+
 class EnhancedUserStatistics(BaseModel):
     """Enhanced user statistics with additional metrics."""
     
@@ -75,6 +83,7 @@ class EnhancedUserAnalysisResponse(BaseModel):
     channel_activity: List[EnhancedChannelActivity] = []
     time_patterns: List[TimeOfDayActivity] = []
     semantic_analysis: Optional[SemanticAnalysisResult] = None
+    top_topics: List[TopicItem] = []
     
     # Legacy fields for compatibility
     concepts: List[str] = []
@@ -285,14 +294,6 @@ class ChannelAnalysisResponse(AnalysisResponseBase):
 
 
 # Topic Analysis Models
-class TopicItem(BaseModel):
-    """Individual topic with frequency and relevance."""
-
-    topic: str
-    frequency: int
-    relevance_score: float
-
-
 class TopicAnalysisResponse(AnalysisResponseBase):
     """Response from TopicAnalyzer.analyze()."""
 

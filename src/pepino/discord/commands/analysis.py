@@ -325,15 +325,43 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         await interaction.response.defer()
         
         try:
-            # Initialize analyzer
-            analyzer = UserAnalyzer()
+            # Execute sync operation in thread pool with performance tracking
+            result, exec_time = await self.execute_tracked_sync_operation(
+                "user_analysis",
+                self._sync_user_analysis,
+                username, days, include_semantic
+            )
+            
+            # Send result
+            if result:
+                await self._send_long_message_slash(interaction, result)
+            else:
+                await interaction.followup.send(f"❌ No data found for user '{username}'")
+            
+        except Exception as e:
+            logger.error(f"User analysis failed: {e}")
+            await interaction.followup.send(f"❌ Error analyzing user: {e}")
+    
+    def _sync_user_analysis(self, username: str, days: Optional[int], include_semantic: bool) -> str:
+        """Sync user analysis using enhanced template system with analyzer helpers."""
+        
+        from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.user_analyzer import UserAnalyzer
+        from ...config import Settings
+        
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
+            # Initialize analyzer with facade
+            analyzer = UserAnalyzer(facade)
             
             # Run enhanced analysis
             analysis = analyzer.analyze_enhanced(username, days, include_semantic)
             
             if not analysis:
-                await interaction.followup.send(f"❌ No data found for user '{username}'")
-                return
+                return None
             
             # Prepare template data
             template_data = {
@@ -375,21 +403,11 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     'key_concepts': analysis.semantic_analysis.key_concepts
                 }
             
-            # Use template engine
-            from pepino.templates.template_engine import TemplateEngine
-            template_engine = TemplateEngine()
-            
-            content = template_engine.render_template(
+            # Render template (no specific messages needed for user analysis overview)
+            return template_engine.render_template(
                 "outputs/discord/user_analysis.md.j2",
-                template_data
+                **template_data
             )
-            
-            # Send response
-            await self.send_analysis_response(interaction, content, "User Analysis")
-            
-        except Exception as e:
-            logger.error(f"User analysis failed: {e}")
-            await interaction.followup.send(f"❌ Error analyzing user: {e}")
     
     @app_commands.command(name="topics_analysis", description="Analyze popular topics and keywords in a channel")
     @app_commands.describe(

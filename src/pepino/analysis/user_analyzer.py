@@ -139,6 +139,9 @@ class UserAnalyzer:
             if include_semantic:
                 semantic_analysis = self._get_semantic_analysis_via_repository(username, days)
             
+            # Get user's top topics
+            top_topics = self._get_user_topics_via_repository(username, days)
+            
             # Build result
             from .models import UserInfo
             
@@ -150,7 +153,8 @@ class UserAnalyzer:
                 statistics=statistics,
                 channel_activity=channel_activity,
                 time_patterns=time_patterns,
-                semantic_analysis=semantic_analysis
+                semantic_analysis=semantic_analysis,
+                top_topics=top_topics
             )
             
             logger.info(f"Enhanced user analysis completed for: {username}")
@@ -642,4 +646,133 @@ class UserAnalyzer:
             key_entities=[],  # No entity extraction in fallback
             technology_terms=tech_terms[:15],
             key_concepts=concepts[:20]
-        ) 
+        )
+
+    def _get_user_topics_via_repository(self, username: str, days: Optional[int]) -> List['TopicItem']:
+        """Get user's most common topics using TopicAnalyzer."""
+        
+        try:
+            from .models import TopicItem
+            from .topic_analyzer import TopicAnalyzer
+            
+            # Get user's message content (using direct query to avoid method conflict)
+            user_messages = self._get_user_messages_for_topics(username, days, 500)
+            
+            if not user_messages or len(user_messages) < 5:
+                logger.info(f"Not enough messages for topic analysis for user {username}")
+                return []
+            
+            # Initialize topic analyzer
+            topic_analyzer = TopicAnalyzer()
+            topic_analyzer.data_facade = self.data_facade  # Pass data facade for consistency
+            
+            # Extract topics from user messages
+            logger.info(f"Extracting topics from {len(user_messages)} messages for user {username}")
+            bertopic_results, domain_analysis = topic_analyzer.extract_topics(
+                user_messages, 
+                min_topic_size=2  # Allow smaller clusters for individual users
+            )
+            
+            # Convert to TopicItem models
+            topic_items = []
+            for topic_data in bertopic_results[:10]:  # Top 10 topics
+                topic_item = TopicItem(
+                    topic=topic_data["topic"],
+                    frequency=topic_data["frequency"],
+                    relevance_score=topic_data["relevance_score"]
+                )
+                topic_items.append(topic_item)
+            
+            logger.info(f"Found {len(topic_items)} topics for user {username}")
+            return topic_items
+            
+        except Exception as e:
+            logger.error(f"Failed to get user topics for {username}: {e}")
+            # Fallback to simple keyword-based topics
+            return self._fallback_user_topics(username, days)
+
+    def _fallback_user_topics(self, username: str, days: Optional[int]) -> List['TopicItem']:
+        """Fallback topic analysis using simple keyword extraction."""
+        
+        try:
+            from .models import TopicItem
+            from collections import Counter
+            import re
+            
+            # Get user's message content (using direct query to avoid method conflict)
+            user_messages = self._get_user_messages_for_topics(username, days, 200)
+            
+            if not user_messages:
+                return []
+            
+            # Combine all messages into one text
+            all_text = " ".join(user_messages).lower()
+            
+            # Extract meaningful words (3+ characters, not common words)
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', all_text)
+            
+            # Filter out common stop words
+            stop_words = {
+                'the', 'and', 'you', 'that', 'was', 'for', 'are', 'with', 'his', 'they', 'this', 
+                'have', 'from', 'not', 'but', 'can', 'all', 'any', 'had', 'her', 'one', 'our', 
+                'out', 'day', 'get', 'use', 'man', 'new', 'now', 'way', 'may', 'say', 'its', 
+                'two', 'more', 'very', 'what', 'know', 'just', 'first', 'also', 'after', 
+                'back', 'other', 'many', 'than', 'then', 'them', 'these', 'some', 'her', 
+                'would', 'make', 'like', 'into', 'him', 'has', 'more', 'go', 'no', 'so', 
+                'up', 'out', 'if', 'about', 'who', 'oil', 'sit', 'set'
+            }
+            
+            # Count word frequencies
+            word_freq = Counter(word for word in words if word not in stop_words and len(word) > 3)
+            
+            # Convert to TopicItem models
+            topic_items = []
+            total_words = sum(word_freq.values())
+            
+            for word, count in word_freq.most_common(10):
+                if count >= 2:  # Must appear at least twice
+                    relevance_score = count / total_words if total_words > 0 else 0
+                    topic_item = TopicItem(
+                        topic=word.title(),
+                        frequency=count,
+                        relevance_score=round(relevance_score, 3)
+                    )
+                    topic_items.append(topic_item)
+            
+            logger.info(f"Fallback topic analysis found {len(topic_items)} topics for user {username}")
+            return topic_items
+            
+        except Exception as e:
+            logger.error(f"Fallback topic analysis failed for {username}: {e}")
+            return []
+
+    def _get_user_messages_for_topics(self, username: str, days: Optional[int], limit: int) -> List[str]:
+        """Get user messages for topic analysis (avoiding method name conflict)."""
+        try:
+            query = """
+            SELECT content
+            FROM messages 
+            WHERE author_name = ?
+            """
+            
+            params = [username]
+            
+            if days:
+                query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
+                params.append(days)
+            
+            query += """
+            AND content IS NOT NULL
+            AND LENGTH(content) > 10
+            ORDER BY RANDOM()
+            LIMIT ?
+            """
+            params.append(limit)
+            
+            results = self.data_facade.user_repository.db_manager.execute_query(query, tuple(params))
+            
+            return [row['content'] for row in results] if results else []
+            
+        except Exception as e:
+            logger.error(f"Failed to get user messages for topics: {e}")
+            return [] 
