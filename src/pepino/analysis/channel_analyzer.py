@@ -75,10 +75,21 @@ class ChannelAnalyzer:
             # Get top users in channel through repository
             top_users = self._get_top_users_in_channel_via_repository(channel_name, days)
             
+            # Get engagement metrics
+            engagement_metrics = self._get_engagement_metrics(channel_name, days)
+            
+            # Get health metrics
+            health_metrics = self._get_health_metrics(channel_name)
+            
+            # Get recent activity
+            recent_activity = self._get_recent_activity(channel_name, days=7)
+            
             # Get time patterns if requested
             time_patterns = {}
+            weekly_breakdown = {}
             if include_patterns:
                 time_patterns = self._analyze_time_patterns_via_repository(channel_name, days)
+                weekly_breakdown = self._get_weekly_breakdown(channel_name, days)
             
             # Build result
             from .models import ChannelInfo
@@ -87,7 +98,11 @@ class ChannelAnalyzer:
                 channel_info=ChannelInfo(channel_name=channel_name),
                 statistics=self._convert_to_channel_statistics_model(statistics),
                 top_users=self._convert_top_users_to_model(top_users),
+                engagement_metrics=engagement_metrics,
+                health_metrics=health_metrics,
+                recent_activity=recent_activity,
                 peak_activity=self._convert_time_patterns_to_peak_activity(time_patterns) if time_patterns else None,
+                daily_activity_data=self._convert_weekly_breakdown_to_daily_data(weekly_breakdown) if weekly_breakdown else None,
                 # Other fields will use defaults
             )
             
@@ -459,4 +474,113 @@ class ChannelAnalyzer:
                 'status': 'error',
                 'health_score': 0,
                 'recommendations': [f'Error analyzing channel: {e}']
-            } 
+            }
+
+    def _get_engagement_metrics(self, channel_name: str, days: Optional[int]) -> Optional['EngagementMetrics']:
+        """Get engagement metrics for the channel."""
+        try:
+            from .models import EngagementMetrics
+            
+            metrics_data = self.data_facade.channel_repository.get_channel_engagement_metrics(channel_name, days)
+            if not metrics_data:
+                return None
+            
+            return EngagementMetrics(
+                total_replies=metrics_data.get('total_replies', 0),
+                original_posts=metrics_data.get('original_posts', 0),
+                posts_with_reactions=metrics_data.get('posts_with_reactions', 0),
+                replies_per_post=metrics_data.get('replies_per_post', 0.0),
+                reaction_rate=metrics_data.get('reaction_rate', 0.0),
+                human_replies=metrics_data.get('human_replies', 0),
+                human_original_posts=metrics_data.get('human_original_posts', 0),
+                human_posts_with_reactions=metrics_data.get('human_posts_with_reactions', 0),
+                human_replies_per_post=metrics_data.get('human_replies_per_post', 0.0),
+                human_reaction_rate=metrics_data.get('human_reaction_rate', 0.0)
+            )
+        except Exception as e:
+            logger.error(f"Failed to get engagement metrics: {e}")
+            return None
+
+    def _get_health_metrics(self, channel_name: str) -> Optional['HealthMetrics']:
+        """Get health metrics for the channel."""
+        try:
+            from .models import HealthMetrics
+            
+            health_data = self.data_facade.channel_repository.get_channel_health_metrics(channel_name)
+            if not health_data:
+                return None
+            
+            return HealthMetrics(
+                weekly_active=health_data.get('weekly_active', 0),
+                inactive_users=health_data.get('inactive_users', 0),
+                total_channel_members=health_data.get('total_channel_members', 0),
+                lurkers=health_data.get('lurkers', 0),
+                participation_rate=health_data.get('participation_rate', 0.0),
+                human_members_who_posted=health_data.get('human_members_who_posted', 0),
+                recently_inactive_humans=health_data.get('recently_inactive_humans', 0),
+                human_lurkers=health_data.get('human_lurkers', 0),
+                human_participation_rate=health_data.get('human_participation_rate', 0.0)
+            )
+        except Exception as e:
+            logger.error(f"Failed to get health metrics: {e}")
+            return None
+
+    def _get_recent_activity(self, channel_name: str, days: int = 7) -> List['RecentActivityItem']:
+        """Get recent activity for the channel."""
+        try:
+            from .models import RecentActivityItem
+            
+            activity_data = self.data_facade.channel_repository.get_channel_recent_activity(channel_name, days)
+            
+            return [
+                RecentActivityItem(
+                    date=item['date'],
+                    message_count=item['message_count'],
+                    unique_users=item['unique_users']
+                )
+                for item in activity_data
+            ]
+        except Exception as e:
+            logger.error(f"Failed to get recent activity: {e}")
+            return []
+
+    def _get_weekly_breakdown(self, channel_name: str, days: Optional[int]) -> Dict[str, int]:
+        """Get weekly breakdown for the channel."""
+        try:
+            return self.data_facade.channel_repository.get_channel_weekly_breakdown(channel_name, days)
+        except Exception as e:
+            logger.error(f"Failed to get weekly breakdown: {e}")
+            return {}
+
+    def _convert_weekly_breakdown_to_daily_data(self, weekly_breakdown: Dict[str, int]) -> Optional['DailyActivityData']:
+        """Convert weekly breakdown to daily activity data."""
+        try:
+            from .models import DailyActivityData, RecentActivityItem
+            
+            if not weekly_breakdown:
+                return None
+            
+            # Convert to list of activity items
+            activity_by_day = []
+            peak_day = None
+            peak_day_messages = 0
+            
+            for day, count in weekly_breakdown.items():
+                activity_by_day.append(RecentActivityItem(
+                    date=day.capitalize(),  # Monday, Tuesday, etc.
+                    message_count=count,
+                    unique_users=0  # We don't have this data in weekly breakdown
+                ))
+                
+                if count > peak_day_messages:
+                    peak_day_messages = count
+                    peak_day = day.capitalize()
+            
+            return DailyActivityData(
+                activity_by_day=activity_by_day,
+                peak_day=peak_day,
+                peak_day_messages=peak_day_messages
+            )
+        except Exception as e:
+            logger.error(f"Failed to convert weekly breakdown: {e}")
+            return None 

@@ -28,6 +28,60 @@ class ChannelActivity(BaseModel):
     last_message_date: Optional[str] = None
 
 
+class EnhancedChannelActivity(BaseModel):
+    """Enhanced channel activity data for user analysis."""
+    
+    channel_name: str
+    message_count: int
+    avg_message_length: float = 0.0
+    first_message_date: Optional[str] = None
+    last_message_date: Optional[str] = None
+
+
+class TimeOfDayActivity(BaseModel):
+    """Time of day activity patterns."""
+    
+    period: str  # e.g., "Morning (06-11)"
+    message_count: int
+
+
+class SemanticAnalysisResult(BaseModel):
+    """Semantic analysis results for user content."""
+    
+    key_entities: List[str] = []
+    technology_terms: List[str] = []
+    key_concepts: List[str] = []
+
+
+class EnhancedUserStatistics(BaseModel):
+    """Enhanced user statistics with additional metrics."""
+    
+    author_id: str
+    author_name: str
+    display_name: Optional[str] = None
+    message_count: int
+    channels_active: int
+    active_days: int
+    avg_message_length: float
+    first_message_date: Optional[str] = None
+    last_message_date: Optional[str] = None
+
+
+class EnhancedUserAnalysisResponse(BaseModel):
+    """Enhanced response model for comprehensive user analysis."""
+    
+    user_info: 'UserInfo'
+    statistics: EnhancedUserStatistics
+    channel_activity: List[EnhancedChannelActivity] = []
+    time_patterns: List[TimeOfDayActivity] = []
+    semantic_analysis: Optional[SemanticAnalysisResult] = None
+    
+    # Legacy fields for compatibility
+    concepts: List[str] = []
+    activity_patterns: List[str] = []
+    recommendations: List[str] = []
+
+
 # V2 Local statistics models  
 class LocalChannelStatistics(BaseModel):
     """Basic channel statistics for V2 analyzers."""
@@ -50,6 +104,7 @@ class LocalUserStatistics(BaseModel):
     total_messages: int
     unique_channels: int
     messages_per_day: float
+    avg_message_length: float = 0.0
     first_message_date: Optional[str] = None
     last_message_date: Optional[str] = None
     analysis_period_days: Optional[int] = None
@@ -132,6 +187,11 @@ class EngagementMetrics(BaseModel):
     posts_with_reactions: int
     replies_per_post: float
     reaction_rate: float
+    human_replies: int = 0
+    human_original_posts: int = 0
+    human_posts_with_reactions: int = 0
+    human_replies_per_post: float = 0.0
+    human_reaction_rate: float = 0.0
 
 
 class PeakActivityHour(BaseModel):
@@ -159,7 +219,28 @@ class RecentActivityItem(BaseModel):
     """Recent activity data point."""
     
     date: str
-    messages: int
+    message_count: int
+    unique_users: int = 0
+
+
+class DailyActivityData(BaseModel):
+    """Daily activity breakdown."""
+    
+    activity_by_day: List[RecentActivityItem]
+    peak_day: Optional[str] = None
+    peak_day_messages: int = 0
+
+
+class WeeklyActivityBreakdown(BaseModel):
+    """Weekly activity breakdown by day of week."""
+    
+    monday: int = 0
+    tuesday: int = 0
+    wednesday: int = 0
+    thursday: int = 0
+    friday: int = 0
+    saturday: int = 0
+    sunday: int = 0
 
 
 class HealthMetrics(BaseModel):
@@ -170,6 +251,10 @@ class HealthMetrics(BaseModel):
     total_channel_members: int = 0
     lurkers: int = 0
     participation_rate: float = 0.0
+    human_members_who_posted: int = 0
+    recently_inactive_humans: int = 0
+    human_lurkers: int = 0
+    human_participation_rate: float = 0.0
 
 
 class TopUserInChannel(BaseModel):
@@ -180,14 +265,6 @@ class TopUserInChannel(BaseModel):
     display_name: str
     message_count: int
     avg_message_length: float
-
-
-class DailyActivityData(BaseModel):
-    """Daily activity data for chart generation."""
-    
-    dates: List[str]
-    counts: List[int] 
-    average: float
 
 
 class ChannelAnalysisResponse(AnalysisResponseBase):

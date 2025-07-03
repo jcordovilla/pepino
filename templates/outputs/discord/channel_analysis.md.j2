@@ -1,70 +1,76 @@
-# 📊 Channel Analysis #{{ channel_name }}
+**Channel Analysis: #{{ data.channel_info.channel_name }}**
 
-**Period:** {{ data.statistics.first_message[:10] if data.statistics.first_message else 'Unknown' }} to {{ data.statistics.last_message[:10] if data.statistics.last_message else 'Unknown' }}
-**Active Contributors:** {{ data.statistics.unique_human_users | format_number }} ({{ (data.statistics.unique_human_users / total_human_members * 100) | round(0) if total_human_members and total_human_members > 0 else 0 }}% of all members)
-**Avg. Messages/Day:** {{ (data.statistics.total_messages / (data.statistics.active_days or 1)) | round(1) | format_number }}
+**📊 Basic Statistics:**
+• Total Messages: {{ data.statistics.total_messages | format_number }}
+  - Human Messages: {{ data.statistics.human_messages | format_number }} ({{ (data.statistics.human_messages / data.statistics.total_messages * 100) | round(1) if data.statistics.total_messages > 0 else 0 }}%)
+  - Bot Messages: {{ data.statistics.bot_messages | format_number }} ({{ (data.statistics.bot_messages / data.statistics.total_messages * 100) | round(1) if data.statistics.total_messages > 0 else 0 }}%)
+• Total Unique Users: {{ data.statistics.unique_users | format_number }}
+• Unique Human Users: {{ data.statistics.unique_human_users | format_number }}
+• Average Message Length: {{ data.statistics.avg_message_length | round(1) }} characters
+• First Message: {{ data.statistics.first_message[:16] | replace('T', ' ') if data.statistics.first_message else 'Unknown' }}
+• Last Message: {{ data.statistics.last_message[:16] | replace('T', ' ') if data.statistics.last_message else 'Unknown' }}
 
-{% if participation_summary %}
-**Participation:** {{ participation_summary }}
-{% endif %}
-{% if lost_interest_summary %}
-**Lost Interest:** {{ lost_interest_summary }}
-{% endif %}
-{% if engagement_summary %}
-**Engagement:** {{ engagement_summary }}
-{% endif %}
-{% if trend_summary %}
-**Trend:** {{ trend_summary }}
-{% endif %}
-{% if bot_activity_summary %}
-**Bot Activity:** {{ bot_activity_summary }}
-{% endif %}
-
-## 📈 Detailed Metrics
-
-**Activity:** {{ data.statistics.total_messages | format_number }} total messages ({{ data.statistics.human_messages | format_number }} human{% if data.statistics.bot_messages > 0 %}, {{ data.statistics.bot_messages | format_number }} bot{% endif %})
-{% if participation_summary %}
-**Participation:** {{ participation_summary | lower }}
-{% endif %}
 {% if data.engagement_metrics %}
-**Engagement:** {{ (data.engagement_metrics.reaction_rate * 100) | round(0) }}% reaction rate, {{ data.engagement_metrics.replies_per_post | round(1) }} replies per post
+**📈 Human Engagement Metrics:**
+• Average Replies per Original Post: {{ data.engagement_metrics.human_replies_per_post }}
+• Posts with Reactions: {{ data.engagement_metrics.human_reaction_rate }}% ({{ data.engagement_metrics.human_posts_with_reactions }}/{{ data.engagement_metrics.human_original_posts }})
+• Total Replies: {{ data.engagement_metrics.human_replies }} | Original Posts: {{ data.engagement_metrics.human_original_posts }}
+• Note: Bot messages excluded from engagement calculations
 {% endif %}
-{% if response_time %}
-**Response Time:** Average {{ response_time | round(1) }} hours to first reply
-{% endif %}
+
+**👥 Top Human Contributors:**
+{% for user in data.top_users[:5] %}
+• {{ user.display_name or user.author_name }}: {{ user.message_count }} messages (avg {{ user.avg_message_length | round(0) }} chars)
+{% endfor %}
+
 {% if data.peak_activity and data.peak_activity.peak_hours %}
-**Peak Activity:** {{ data.peak_activity.peak_hours[0].hour if data.peak_activity.peak_hours else 'Unknown' }} (most messages)
-{% endif %}
-{% if recent_activity_summary %}
-**Recent Activity:** {{ recent_activity_summary }}
-{% endif %}
-{% if channel_health %}
-**Health:** {{ (data.statistics.unique_human_users / total_human_members * 100) | round(0) if total_human_members and total_human_members > 0 else 0 }}% participation rate{% if trend_summary %}, {{ trend_summary | lower }}{% endif %}
-{% endif %}
-
-{% if top_users %}
-
-**🏆 Top Contributors:**
-{% for user in top_users[:5] %}
-{{ loop.index }}. {{ user.display_name or user.author_name }} ({{ user.message_count | format_number }} messages, {{ (user.message_count / data.statistics.total_messages * 100) | round(0) if data.statistics.total_messages > 0 else 0 }}%)
+**⏰ Peak Activity Hours:**
+{% for hour in data.peak_activity.peak_hours[:3] %}
+• {{ hour.hour }}: {{ hour.messages }} messages
 {% endfor %}
 {% endif %}
 
-{% if lost_interest_users %}
-**📉 Lost Interest:** {% for user in lost_interest_users %}{{ user.display_name or user.author_name }} ({{ user.days_inactive }} days){% if not loop.last %}, {% endif %}{% endfor %}
-{% endif %}
-
-{% if frequent_terms %}
-
-**🔍 Frequent Terms:**
-{% for term in frequent_terms[:5] %}
-• {{ term.term | replace('*', '') | replace(':', '') | trim }} ({{ term.frequency }} mentions)
+{% if data.daily_activity_data and data.daily_activity_data.activity_by_day %}
+**📅 Activity by Day:**
+{% for day in data.daily_activity_data.activity_by_day %}
+• {{ day.date }}: {{ day.message_count }} messages
 {% endfor %}
 {% endif %}
 
-{% if chart_path %}
-## 📈 Daily Message Activity Chart
-*Chart showing message activity over time for #{{ channel_name }}*
+{% if data.recent_activity %}
+**📈 Recent Activity (Last 7 Days):**
+{% for activity in data.recent_activity[:5] %}
+• {{ activity.date }}: {{ activity.message_count }} messages
+{% endfor %}
+{% endif %}
+
+{% if data.health_metrics %}
+**📈 Channel Health Metrics (Human Activity):**
+• Total Channel Members: {{ data.health_metrics.total_channel_members }}
+• Human Members Who Ever Posted: {{ data.health_metrics.human_members_who_posted }} ({{ data.health_metrics.human_participation_rate }}%)
+• Weekly Active Human Members: {{ data.health_metrics.weekly_active }} ({{ (data.health_metrics.weekly_active / data.health_metrics.total_channel_members * 100) | round(1) if data.health_metrics.total_channel_members > 0 else 0 }}% of total)
+• Recently Inactive Human Members: {{ data.health_metrics.recently_inactive_humans }} ({{ (data.health_metrics.recently_inactive_humans / data.health_metrics.human_members_who_posted * 100) | round(1) if data.health_metrics.human_members_who_posted > 0 else 0 }}% of human posters)
+• Human Lurkers (Never Posted): {{ data.health_metrics.human_lurkers }} ({{ (data.health_metrics.human_lurkers / data.health_metrics.total_channel_members * 100) | round(1) if data.health_metrics.total_channel_members > 0 else 0 }}%)
+• Human Participation Rate: {{ data.health_metrics.human_participation_rate }}% (members who have posted)
+• Activity Ratio: {{ data.health_metrics.weekly_active }} active / {{ data.health_metrics.recently_inactive_humans }} inactive / {{ data.health_metrics.human_lurkers }} lurkers
+{% endif %}
+
+**🧠 Top Topics Discussed:**
+{% if data.top_topics %}
+{% for topic in data.top_topics[:10] %}
+{{ loop.index }}. {{ topic }}
+{% endfor %}
+{% else %}
+1. Message Analysis
+2. Channel Activity
+3. User Engagement
+4. Bot Interactions
+5. Community Discussion
+6. Technical Topics
+7. General Chat
+8. Project Updates
+9. Questions & Answers
+10. Collaboration
 {% endif %}
 
 ---

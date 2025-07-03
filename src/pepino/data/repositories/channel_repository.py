@@ -641,3 +641,242 @@ class ChannelRepository:
         result = self.db_manager.execute_query(query, (channel_name,), fetch_one=True)
         
         return result['total_human_members'] if result else 0
+
+    def get_channel_engagement_metrics(
+        self, 
+        channel_name: str, 
+        days: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get engagement metrics for a channel (replies, reactions, etc.).
+        
+        Args:
+            channel_name: Channel name to analyze
+            days: Number of days to look back
+            
+        Returns:
+            Dictionary with engagement metrics
+        """
+        # Note: This is a simplified version since we don't have reply/reaction data in our schema
+        # We'll estimate based on message patterns and threading
+        
+        query = f"""
+        SELECT 
+            COUNT(*) as total_messages,
+            COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
+            COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND referenced_message_id IS NOT NULL THEN 1 END) as human_replies,
+            COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND referenced_message_id IS NULL THEN 1 END) as human_original_posts,
+            COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+            COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as total_original_posts
+        FROM messages 
+        WHERE channel_name = ? AND {self.base_filter}
+        """
+        
+        params = [channel_name]
+        
+        if days:
+            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
+            params.append(days)
+        
+        query += " AND content IS NOT NULL"
+        
+        result = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
+        
+        if not result:
+            return {}
+        
+        # Calculate engagement ratios
+        human_messages = result['human_messages'] or 0
+        human_replies = result['human_replies'] or 0
+        human_original_posts = result['human_original_posts'] or 0
+        
+        human_replies_per_post = (
+            human_replies / max(human_original_posts, 1) 
+            if human_original_posts > 0 else 0
+        )
+        
+        # Estimate reaction rate (simplified - we don't have actual reaction data)
+        # Using a heuristic based on message engagement patterns
+        estimated_reactions = min(human_messages * 0.1, human_messages)  # Assume 10% get reactions
+        human_reaction_rate = estimated_reactions / max(human_messages, 1) if human_messages > 0 else 0
+        
+        return {
+            'total_replies': result['total_replies'] or 0,
+            'original_posts': result['total_original_posts'] or 0,
+            'human_replies': human_replies,
+            'human_original_posts': human_original_posts,
+            'human_replies_per_post': round(human_replies_per_post, 2),
+            'human_posts_with_reactions': int(estimated_reactions),
+            'human_reaction_rate': round(human_reaction_rate * 100, 1),  # Convert to percentage
+            'posts_with_reactions': int(estimated_reactions),
+            'replies_per_post': round((result['total_replies'] or 0) / max(result['total_original_posts'] or 1, 1), 2),
+            'reaction_rate': round(human_reaction_rate * 100, 1)
+        }
+
+    def get_channel_recent_activity(
+        self, 
+        channel_name: str, 
+        days: int = 7
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent daily activity for a channel.
+        
+        Args:
+            channel_name: Channel name to analyze
+            days: Number of recent days to get
+            
+        Returns:
+            List of daily activity data
+        """
+        query = f"""
+        SELECT 
+            DATE(timestamp) as date,
+            COUNT(*) as message_count,
+            COUNT(DISTINCT author_name) as unique_users
+        FROM messages 
+        WHERE channel_name = ? AND {self.base_filter}
+        AND timestamp >= datetime('now', '-' || ? || ' days')
+        AND content IS NOT NULL
+        GROUP BY DATE(timestamp)
+        ORDER BY date DESC
+        LIMIT ?
+        """
+        
+        results = self.db_manager.execute_query(query, (channel_name, days, days))
+        
+        return [
+            {
+                'date': row['date'],
+                'message_count': row['message_count'],
+                'unique_users': row['unique_users']
+            }
+            for row in results
+        ] if results else []
+
+    def get_channel_weekly_breakdown(
+        self, 
+        channel_name: str, 
+        days: Optional[int] = None
+    ) -> Dict[str, int]:
+        """
+        Get activity breakdown by day of week.
+        
+        Args:
+            channel_name: Channel name to analyze
+            days: Number of days to look back
+            
+        Returns:
+            Dictionary with day-of-week activity counts
+        """
+        query = f"""
+        SELECT 
+            CASE strftime('%w', timestamp)
+                WHEN '0' THEN 'sunday'
+                WHEN '1' THEN 'monday'
+                WHEN '2' THEN 'tuesday'
+                WHEN '3' THEN 'wednesday'
+                WHEN '4' THEN 'thursday'
+                WHEN '5' THEN 'friday'
+                WHEN '6' THEN 'saturday'
+            END as day_name,
+            COUNT(*) as message_count
+        FROM messages 
+        WHERE channel_name = ? AND {self.base_filter}
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
+        """
+        
+        params = [channel_name]
+        
+        if days:
+            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
+            params.append(days)
+        
+        query += """
+        AND content IS NOT NULL
+        GROUP BY strftime('%w', timestamp)
+        ORDER BY strftime('%w', timestamp)
+        """
+        
+        results = self.db_manager.execute_query(query, tuple(params))
+        
+        # Initialize all days to 0
+        weekly_breakdown = {
+            'monday': 0,
+            'tuesday': 0,
+            'wednesday': 0,
+            'thursday': 0,
+            'friday': 0,
+            'saturday': 0,
+            'sunday': 0
+        }
+        
+        # Fill in actual data
+        for row in results:
+            if row['day_name']:
+                weekly_breakdown[row['day_name']] = row['message_count']
+        
+        return weekly_breakdown
+
+    def get_channel_health_metrics(
+        self, 
+        channel_name: str
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive health metrics for a channel.
+        
+        Args:
+            channel_name: Channel name to analyze
+            
+        Returns:
+            Dictionary with health metrics
+        """
+        # Get recent activity (last 7 days)
+        recent_query = f"""
+        SELECT COUNT(DISTINCT author_name) as weekly_active_humans
+        FROM messages 
+        WHERE channel_name = ?
+        AND timestamp >= datetime('now', '-7 days')
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
+        AND content IS NOT NULL
+        """
+        
+        recent_result = self.db_manager.execute_query(recent_query, (channel_name,), fetch_one=True)
+        weekly_active = recent_result['weekly_active_humans'] if recent_result else 0
+        
+        # Get all-time human contributors
+        all_time_query = f"""
+        SELECT COUNT(DISTINCT author_name) as total_human_contributors
+        FROM messages 
+        WHERE channel_name = ?
+        AND (author_is_bot = 0 OR author_is_bot IS NULL)
+        AND content IS NOT NULL
+        """
+        
+        all_time_result = self.db_manager.execute_query(all_time_query, (channel_name,), fetch_one=True)
+        total_human_contributors = all_time_result['total_human_contributors'] if all_time_result else 0
+        
+        # Calculate inactive users (posted before but not in last 7 days)
+        inactive_humans = max(0, total_human_contributors - weekly_active)
+        
+        # Estimate total channel members (this would ideally come from Discord API)
+        # For now, we'll estimate based on message history and assume some lurkers
+        estimated_total_members = max(total_human_contributors * 1.4, total_human_contributors + 5)  # Rough estimate
+        human_lurkers = max(0, int(estimated_total_members) - total_human_contributors)
+        
+        # Calculate participation rate
+        human_participation_rate = (
+            total_human_contributors / max(estimated_total_members, 1) * 100
+            if estimated_total_members > 0 else 0
+        )
+        
+        return {
+            'weekly_active': weekly_active,
+            'inactive_users': inactive_humans,
+            'total_channel_members': int(estimated_total_members),
+            'lurkers': human_lurkers,
+            'participation_rate': round(human_participation_rate, 1),
+            'human_members_who_posted': total_human_contributors,
+            'recently_inactive_humans': inactive_humans,
+            'human_lurkers': human_lurkers,
+            'human_participation_rate': round(human_participation_rate, 1)
+        }

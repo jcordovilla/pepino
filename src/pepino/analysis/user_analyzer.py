@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import UserAnalysisResponse, LocalUserStatistics, ChannelActivity
+from .models import EnhancedUserAnalysisResponse, EnhancedUserStatistics, EnhancedChannelActivity, TimeOfDayActivity, SemanticAnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,65 @@ class UserAnalyzer:
             logger.error(f"User analysis failed for {username}: {e}")
             return None
     
+    def analyze_enhanced(
+        self, 
+        username: str,
+        days: Optional[int] = None,
+        include_semantic: bool = True
+    ) -> Optional[EnhancedUserAnalysisResponse]:
+        """
+        Perform enhanced comprehensive user analysis.
+        
+        Args:
+            username: Name of the user to analyze
+            days: Number of days to look back (None = all time)
+            include_semantic: Whether to include semantic analysis
+            
+        Returns:
+            EnhancedUserAnalysisResponse object with comprehensive results
+        """
+        
+        try:
+            logger.info(f"Starting enhanced user analysis for: {username}")
+            
+            # Get enhanced statistics through repository
+            statistics = self._get_enhanced_user_statistics_via_repository(username, days)
+            if not statistics or statistics.message_count == 0:
+                logger.warning(f"No messages found for user: {username}")
+                return None
+            
+            # Get enhanced channel activity
+            channel_activity = self._get_enhanced_channel_activity_via_repository(username, days)
+            
+            # Get time of day patterns
+            time_patterns = self._get_time_patterns_via_repository(username, days)
+            
+            # Get semantic analysis if requested
+            semantic_analysis = None
+            if include_semantic:
+                semantic_analysis = self._get_semantic_analysis_via_repository(username, days)
+            
+            # Build result
+            from .models import UserInfo
+            
+            analysis = EnhancedUserAnalysisResponse(
+                user_info=UserInfo(
+                    author_id=username,  # Use username as ID for now
+                    display_name=statistics.display_name or username
+                ),
+                statistics=statistics,
+                channel_activity=channel_activity,
+                time_patterns=time_patterns,
+                semantic_analysis=semantic_analysis
+            )
+            
+            logger.info(f"Enhanced user analysis completed for: {username}")
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Enhanced user analysis failed for {username}: {e}")
+            return None
+    
     def _convert_to_user_statistics_model(self, stats: LocalUserStatistics, username: str):
         """Convert our LocalUserStatistics to the model expected by UserAnalysisResponse."""
         from .models import UserStatistics as ModelUserStatistics
@@ -109,7 +169,7 @@ class UserAnalyzer:
             author_name=username,
             message_count=stats.total_messages,
             channels_active=stats.unique_channels,
-            avg_message_length=0.0,  # We don't calculate this yet
+            avg_message_length=stats.avg_message_length,
             first_message_date=stats.first_message_date,
             last_message_date=stats.last_message_date
         )
@@ -138,6 +198,7 @@ class UserAnalyzer:
                 total_messages=stats_data['total_messages'],
                 unique_channels=stats_data['unique_channels'],
                 messages_per_day=round(messages_per_day, 2),
+                avg_message_length=stats_data.get('avg_message_length', 0.0),
                 first_message_date=stats_data['first_message'],
                 last_message_date=stats_data['last_message'],
                 analysis_period_days=days
@@ -418,4 +479,167 @@ class UserAnalyzer:
                 'channels': [],
                 'primary_channel': None,
                 'diversity_score': 0
-            } 
+            }
+
+    def _get_enhanced_user_statistics_via_repository(self, username: str, days: Optional[int]) -> Optional[EnhancedUserStatistics]:
+        """Get enhanced user statistics using data facade pattern."""
+        
+        try:
+            # Use data facade for repository access
+            stats_data = self.data_facade.user_repository.get_user_enhanced_statistics(username, days)
+            
+            if not stats_data or stats_data.get('total_messages', 0) == 0:
+                return None
+            
+            # Get display name from a sample message with better query
+            display_name = None
+            try:
+                sample_query = """
+                SELECT author_display_name 
+                FROM messages 
+                WHERE author_name = ? 
+                AND author_display_name IS NOT NULL 
+                AND author_display_name != ''
+                AND author_display_name != author_name
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """
+                result = self.data_facade.user_repository.db_manager.execute_query(
+                    sample_query, (username,), fetch_one=True
+                )
+                if result and result['author_display_name']:
+                    display_name = result['author_display_name']
+                else:
+                    # Fallback: get any display name for this user
+                    fallback_query = """
+                    SELECT author_display_name 
+                    FROM messages 
+                    WHERE author_name = ? 
+                    AND author_display_name IS NOT NULL 
+                    AND author_display_name != ''
+                    LIMIT 1
+                    """
+                    fallback_result = self.data_facade.user_repository.db_manager.execute_query(
+                        fallback_query, (username,), fetch_one=True
+                    )
+                    if fallback_result and fallback_result['author_display_name']:
+                        display_name = fallback_result['author_display_name']
+            except Exception as e:
+                logger.warning(f"Could not retrieve display name for {username}: {e}")
+            
+            # Use display name if found, otherwise use username
+            final_display_name = display_name if display_name else username
+            
+            return EnhancedUserStatistics(
+                author_id=username,
+                author_name=username,
+                display_name=final_display_name,
+                message_count=stats_data['total_messages'],
+                channels_active=stats_data['unique_channels'],
+                active_days=stats_data['active_days'],
+                avg_message_length=stats_data.get('avg_message_length', 0.0),
+                first_message_date=stats_data['first_message'],
+                last_message_date=stats_data['last_message']
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to get enhanced user statistics via repository: {e}")
+            return None
+
+    def _get_enhanced_channel_activity_via_repository(
+        self, 
+        username: str, 
+        days: Optional[int],
+        limit: int = 10
+    ) -> List[EnhancedChannelActivity]:
+        """Get enhanced user's activity distribution across channels using data facade."""
+        
+        try:
+            # Use data facade for repository access
+            activity_data = self.data_facade.user_repository.get_user_channel_activity_enhanced(username, days, limit)
+            
+            channel_activities = []
+            for data in activity_data:
+                activity = EnhancedChannelActivity(
+                    channel_name=data['channel_name'],
+                    message_count=data['message_count'],
+                    avg_message_length=data.get('avg_message_length', 0.0),
+                    first_message_date=data['first_message'],
+                    last_message_date=data['last_message']
+                )
+                channel_activities.append(activity)
+            
+            return channel_activities
+            
+        except Exception as e:
+            logger.error(f"Failed to get enhanced channel activity via repository: {e}")
+            return []
+
+    def _get_time_patterns_via_repository(self, username: str, days: Optional[int]) -> List[TimeOfDayActivity]:
+        """Get time of day patterns using data facade."""
+        
+        try:
+            # Use data facade for repository access
+            time_data = self.data_facade.user_repository.get_user_time_of_day_patterns(username, days)
+            
+            time_patterns = []
+            for period, count in time_data.items():
+                pattern = TimeOfDayActivity(
+                    period=period,
+                    message_count=count
+                )
+                time_patterns.append(pattern)
+            
+            # Sort by message count (most active first)
+            time_patterns.sort(key=lambda x: x.message_count, reverse=True)
+            
+            return time_patterns
+            
+        except Exception as e:
+            logger.error(f"Failed to get time patterns via repository: {e}")
+            return []
+
+    def _get_semantic_analysis_via_repository(self, username: str, days: Optional[int]) -> Optional[SemanticAnalysisResult]:
+        """Get semantic analysis of user content using NLP analyzer."""
+        
+        try:
+            # Temporarily disable semantic analysis to avoid method conflicts
+            # TODO: Fix method signature conflict between sync and async get_user_content_sample
+            logger.info("Semantic analysis temporarily disabled")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get semantic analysis via repository: {e}")
+            return None
+
+    def _fallback_semantic_analysis(self, content: str) -> SemanticAnalysisResult:
+        """Fallback semantic analysis using simple keyword extraction."""
+        import re
+        from collections import Counter
+        
+        # Simple keyword extraction
+        words = re.findall(r'\b[A-Za-z]{3,}\b', content.lower())
+        word_freq = Counter(words)
+        
+        # Filter common words
+        stop_words = {'the', 'and', 'you', 'that', 'was', 'for', 'are', 'with', 'his', 'they', 'this', 'have', 'from', 'not', 'but', 'can', 'all', 'any', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'use', 'man', 'new', 'now', 'way', 'may', 'say'}
+        
+        # Common tech terms
+        tech_terms = []
+        tech_keywords = {'ai', 'api', 'data', 'model', 'algorithm', 'code', 'system', 'tech', 'development', 'software', 'programming', 'machine', 'learning', 'neural', 'network'}
+        
+        for word, count in word_freq.most_common(100):
+            if word in tech_keywords and count >= 2:
+                tech_terms.append(word.upper())
+        
+        # Get most common meaningful words as concepts
+        concepts = []
+        for word, count in word_freq.most_common(50):
+            if word not in stop_words and len(word) > 3 and count >= 2:
+                concepts.append(word.title())
+        
+        return SemanticAnalysisResult(
+            key_entities=[],  # No entity extraction in fallback
+            technology_terms=tech_terms[:15],
+            key_concepts=concepts[:20]
+        ) 

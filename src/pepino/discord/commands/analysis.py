@@ -145,42 +145,59 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete function for usernames with improved filtering."""
+        """Autocomplete function for usernames with display names for better UX."""
         try:
-            # Get available users directly without thread pool for speed
+            # Get available users with display names directly without thread pool for speed
             from ...analysis.data_facade import get_analysis_data_facade
             from ...config import Settings
 
             settings = Settings()
             with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
-                # Get more users for better autocomplete experience
-                users = facade.user_repository.get_available_users(limit=200)
+                # Get users with display names for better autocomplete experience
+                users_data = facade.user_repository.get_users_for_autocomplete(limit=200)
 
             # Filter out empty/None usernames
-            valid_users = [user for user in users if user and user.strip()]
+            valid_users = [user_data for user_data in users_data if user_data['author_name'] and user_data['author_name'].strip()]
 
-            # Enhanced filtering logic
+            # Enhanced filtering logic with display names
             if current:
                 current_lower = current.lower()
                 
-                # Priority 1: Exact matches (case insensitive)
-                exact_matches = [user for user in valid_users if user.lower() == current_lower]
+                filtered_users = []
                 
-                # Priority 2: Starts with the input
-                starts_with = [user for user in valid_users if user.lower().startswith(current_lower) and user.lower() != current_lower]
+                for user_data in valid_users:
+                    author_name = user_data['author_name']
+                    display_name = user_data['display_name']
+                    
+                    # Check matches in both author_name and display_name
+                    author_match = current_lower in author_name.lower()
+                    display_match = current_lower in display_name.lower()
+                    
+                    if author_match or display_match:
+                        # Prioritize exact matches, then starts with, then contains
+                        priority = 0
+                        if author_name.lower() == current_lower or display_name.lower() == current_lower:
+                            priority = 1  # Exact match
+                        elif author_name.lower().startswith(current_lower) or display_name.lower().startswith(current_lower):
+                            priority = 2  # Starts with
+                        else:
+                            priority = 3  # Contains
+                        
+                        filtered_users.append((priority, user_data))
                 
-                # Priority 3: Contains the input anywhere
-                contains = [user for user in valid_users if current_lower in user.lower() and not user.lower().startswith(current_lower)]
-                
-                # Combine with priority order and limit to Discord's 25 choice limit
-                filtered_users = (exact_matches + starts_with + contains)[:25]
+                # Sort by priority and limit to Discord's 25 choice limit
+                filtered_users.sort(key=lambda x: (x[0], x[1]['display_name'].lower()))
+                filtered_users = [user_data for _, user_data in filtered_users[:25]]
             else:
-                # No input - return first 25 users (alphabetically sorted)
-                filtered_users = sorted(valid_users)[:25]
+                # No input - return first 25 users (sorted by message count, already ordered by the query)
+                filtered_users = valid_users[:25]
 
             return [
-                app_commands.Choice(name=user, value=user)
-                for user in filtered_users
+                app_commands.Choice(
+                    name=f"{user_data['display_name']} ({user_data['message_count']} msgs)",
+                    value=user_data['author_name']
+                )
+                for user_data in filtered_users
             ]
 
         except Exception as e:
@@ -290,106 +307,89 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             else:
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
     
-    @app_commands.command(name="user_analysis", description="Analyze user activity patterns and statistics")
-    @app_commands.describe(username="Username to analyze (leave empty for yourself)")
+    @app_commands.command(name="user_analysis", description="Analyze a specific user's activity")
+    @app_commands.describe(
+        username="Username to analyze",
+        days="Number of days to look back (default: all time)",
+        include_semantic="Include semantic analysis of user content"
+    )
     @app_commands.autocomplete(username=user_autocomplete)
     async def user_analysis(
         self, 
         interaction: discord.Interaction, 
-        username: Optional[str] = None
+        username: str, 
+        days: Optional[int] = None,
+        include_semantic: bool = True
     ):
-        """
-        Analyze user activity using templates.
-        
-        Usage: /user_analysis [username]
-        
-        If no username provided, analyzes the command author.
-        """
+        """Analyze a specific user's activity."""
+        await interaction.response.defer()
         
         try:
-            # Defer the response immediately to avoid timeout
-            await interaction.response.defer()
-
-            # Determine target user
-            if not username:
-                username = interaction.user.display_name
+            # Initialize analyzer
+            analyzer = UserAnalyzer()
             
-            # Execute sync operation in thread pool with performance tracking
-            result, exec_time = await self.execute_tracked_sync_operation(
-                "user_analysis",
-                self._sync_user_analysis,
-                username
-            )
+            # Run enhanced analysis
+            analysis = analyzer.analyze_enhanced(username, days, include_semantic)
             
-            # Send single comprehensive result
-            if result:
-                final_message = f"{result}\n\n✅ Analysis completed in {exec_time:.2f}s"
-                await self._send_long_message_slash(interaction, final_message)
-            else:
-                await interaction.followup.send(f"❌ No data found for user **{username}**")
-
-        except Exception as e:
-            logger.error(f"User analysis failed: {e}")
-            logger.error(traceback.format_exc())
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Analysis failed: {str(e)}")
-            else:
-                await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
-    
-    def _sync_user_analysis(self, username: str) -> str:
-        """Sync user analysis using enhanced template system with analyzer helpers."""
-        
-        from ...analysis.data_facade import get_analysis_data_facade
-        from ...analysis.user_analyzer import UserAnalyzer
-        from ...config import Settings
-        
-        settings = Settings()
-        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
-            # Create template engine with analyzer helpers
-            template_engine = self._create_template_engine(facade)
+            if not analysis:
+                await interaction.followup.send(f"❌ No data found for user '{username}'")
+                return
             
-            user_analyzer = UserAnalyzer(facade)
-            
-            # Get user analysis data
-            analysis_result = user_analyzer.analyze(username=username)
-            
-            if not analysis_result or not analysis_result.statistics:
-                return None
-            
-            # Get recent messages from this user for template context
-            recent_messages = []
-            try:
-                # Use synchronous method that returns data directly
-                messages_data = facade.message_repository.get_user_messages(username, days_back=7, limit=100)
-                if messages_data:
-                    recent_messages = [
-                        {
-                            'id': msg.get('id'),
-                            'content': msg.get('content', ''),
-                            'author': username,
-                            'timestamp': msg.get('timestamp', ''),
-                            'channel': msg.get('channel_name', '')
-                        }
-                        for msg in messages_data
-                    ]
-            except Exception as e:
-                logger.warning(f"Could not fetch user messages for template context: {e}")
-            
-            # Prepare enhanced template data using correct UserAnalysisResponse attributes
+            # Prepare template data
             template_data = {
-                'username': username,
-                'analysis': analysis_result,
-                'statistics': analysis_result.statistics,
-                'user_info': analysis_result.user_info,
-                'concepts': analysis_result.concepts or []
+                'user_info': {
+                    'display_name': analysis.user_info.display_name,
+                    'author_name': analysis.user_info.author_id
+                },
+                'statistics': {
+                    'message_count': analysis.statistics.message_count,
+                    'channels_active': analysis.statistics.channels_active,
+                    'active_days': analysis.statistics.active_days,
+                    'avg_message_length': analysis.statistics.avg_message_length,
+                    'first_message_date': analysis.statistics.first_message_date,
+                    'last_message_date': analysis.statistics.last_message_date
+                },
+                'channel_activity': [
+                    {
+                        'channel_name': activity.channel_name,
+                        'message_count': activity.message_count,
+                        'avg_message_length': activity.avg_message_length
+                    }
+                    for activity in analysis.channel_activity
+                ],
+                'time_patterns': [
+                    {
+                        'period': pattern.period,
+                        'message_count': pattern.message_count
+                    }
+                    for pattern in analysis.time_patterns
+                ],
+                'semantic_analysis': None
             }
             
-            # Render template with message context
-            return template_engine.render_template(
-                'outputs/discord/user_analysis.md.j2',
-                messages=recent_messages,
-                **template_data
+            # Add semantic analysis if available
+            if analysis.semantic_analysis:
+                template_data['semantic_analysis'] = {
+                    'key_entities': analysis.semantic_analysis.key_entities,
+                    'technology_terms': analysis.semantic_analysis.technology_terms,
+                    'key_concepts': analysis.semantic_analysis.key_concepts
+                }
+            
+            # Use template engine
+            from pepino.templates.template_engine import TemplateEngine
+            template_engine = TemplateEngine()
+            
+            content = template_engine.render_template(
+                "outputs/discord/user_analysis.md.j2",
+                template_data
             )
+            
+            # Send response
+            await self.send_analysis_response(interaction, content, "User Analysis")
+            
+        except Exception as e:
+            logger.error(f"User analysis failed: {e}")
+            await interaction.followup.send(f"❌ Error analyzing user: {e}")
     
     @app_commands.command(name="topics_analysis", description="Analyze popular topics and keywords in a channel")
     @app_commands.describe(
@@ -456,6 +456,39 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Create template engine with analyzer helpers
             template_engine = self._create_template_engine(facade)
             
+            # First check if we have enough messages for topic analysis
+            try:
+                messages_data = facade.message_repository.get_channel_messages(channel_name, days_back=days, limit=200)
+                message_count = len(messages_data) if messages_data else 0
+                
+                # Filter to get human messages only
+                human_messages = [msg for msg in messages_data if not msg.get('author_is_bot', False)] if messages_data else []
+                human_message_count = len(human_messages)
+                
+                # Check if we have enough messages for meaningful topic analysis
+                if human_message_count < 10:
+                    # Not enough messages for topic analysis
+                    return f"""**🧠 Topic Analysis: #{channel_name}**
+
+**📊 Analysis Summary:**
+• **Messages Found:** {human_message_count} human messages in last {days} days
+• **Status:** ⚠️ Insufficient data for topic analysis
+
+**💡 Recommendation:**
+Topic analysis requires at least 10-15 messages to identify meaningful patterns. This channel has only {human_message_count} human messages in the last {days} days.
+
+**🔍 Suggestions:**
+• Try increasing the time period (e.g., 30 or 60 days)
+• Check if this is an active discussion channel
+• Consider analyzing a more active channel first
+
+---
+*Analysis generated on {datetime.now().strftime('%Y-%m-%d at %H:%M')}*"""
+                
+            except Exception as e:
+                logger.warning(f"Error checking message count for topic analysis: {e}")
+                return f"❌ Error accessing channel data: {str(e)}"
+            
             topic_analyzer = TopicAnalyzer(facade)
             
             # Get topics analysis data  
@@ -466,16 +499,53 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             
             # Check if analysis was successful
             if not analysis_result or not hasattr(analysis_result, 'success') or not analysis_result.success:
-                return None
+                return f"""**🧠 Topic Analysis: #{channel_name}**
+
+**📊 Analysis Summary:**
+• **Status:** ❌ Topic analysis failed
+• **Error:** Unable to process messages for topic extraction
+
+**💡 Recommendation:**
+There may be an issue with the topic analysis engine. Please try again or contact support.
+
+---
+*Analysis generated on {datetime.now().strftime('%Y-%m-%d at %H:%M')}*"""
                 
+            # Check if we have topics
             if not hasattr(analysis_result, 'topics') or not analysis_result.topics:
-                return None
+                # We have messages but no topics were found - this is the clustering issue
+                return f"""**🧠 Topic Analysis: #{channel_name}**
+
+**📊 Analysis Summary:**
+• **Messages Analyzed:** {analysis_result.message_count} messages in last {days} days
+• **Status:** ⚠️ No distinct topics identified
+
+**🔍 Analysis Details:**
+The topic analysis engine processed {analysis_result.message_count} messages but could not identify distinct discussion topics. This typically happens when:
+
+• **Messages are too diverse** - No clear thematic clusters
+• **Limited conversation depth** - Messages are brief or fragmented  
+• **Mixed discussion topics** - Too many different subjects discussed
+• **Insufficient clustering data** - Need more messages for pattern recognition
+
+**💡 Recommendations:**
+• Try analyzing a longer time period (30-60 days)
+• Look for channels with more focused discussions
+• Consider channels with longer, more detailed conversations
+
+**🎯 Alternative Analysis:**
+You might want to try:
+• `/activity_trends {channel_name}` - See when people are most active
+• `/channel_analysis {channel_name}` - Get overall channel health metrics
+• `/top_users` - Find the most active contributors
+
+---
+*Analysis generated on {datetime.now().strftime('%Y-%m-%d at %H:%M')}*"""
             
             # Get recent messages for template context and NLP analysis
             recent_messages = []
             try:
                 # Use synchronous method that returns data directly
-                messages_data = facade.message_repository.get_channel_messages(channel_name, days_back=days, limit=200)
                 if messages_data:
                     recent_messages = [
                         {

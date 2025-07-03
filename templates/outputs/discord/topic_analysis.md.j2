@@ -9,9 +9,8 @@
 {% if topics and topics | length > 0 -%}
 **🧠 Neural Topics Discovered:**
 {% for topic in topics[:8] -%}
-{% if topic.keywords and topic.keywords | length > 0 -%}
-{{ loop.index }}. **{{ topic.keywords[:3] | join(" + ") }}** ({{ topic.frequency }} messages)
-   {% if topic.keywords | length > 3 %}*Additional terms: {{ topic.keywords[3:6] | join(", ") }}*{% endif %}
+{% if topic.topic -%}
+{{ loop.index }}. **{{ topic.topic }}** ({{ topic.frequency }} messages, {{ (topic.relevance_score * 100) | round(1) }}% relevance)
 {% endif -%}
 {% endfor -%}
 
@@ -20,35 +19,46 @@
 
 {% if _domain_analysis.technical_terms -%}
 **🔧 Technical Discussions:**
-{% for term, count in _domain_analysis.technical_terms.items()[:6] -%}
+{% for term, count in (_domain_analysis.technical_terms.items() | list)[:6] -%}
 • **{{ term.upper() }}**: {{ count }} discussions
 {% endfor -%}
 {% endif -%}
 
 {% if _domain_analysis.business_concepts -%}
 **💼 Business Concepts:**
-{% for concept, count in _domain_analysis.business_concepts.items()[:6] -%}
+{% for concept, count in (_domain_analysis.business_concepts.items() | list)[:6] -%}
 • **{{ concept | title }}**: {{ count }} mentions
+{% endfor -%}
+{% endif -%}
+
+{% if _domain_analysis.key_discussions -%}
+**💬 Key Discussion Themes:**
+{% for theme, count in (_domain_analysis.key_discussions.items() | list)[:5] -%}
+• **{{ theme }}**: {{ count }} mentions
 {% endfor -%}
 {% endif -%}
 
 {% if _domain_analysis.emerging_topics -%}
 **🚀 Emerging Topics:**
-{% for topic in _domain_analysis.emerging_topics[:5] -%}
-• **{{ topic.pattern }}** ({{ topic.frequency }} discussions)
-{% endfor -%}
-{% endif -%}
-
-{% if _domain_analysis.temporal_trends -%}
-**📈 Temporal Trends:**
-{% for trend in _domain_analysis.temporal_trends[:4] -%}
-• **{{ trend.topic }}**: {{ trend.change_direction }} ({{ trend.frequency }} mentions)
+{% for concept, frequency, ratio in _domain_analysis.emerging_topics[:5] -%}
+• **{{ concept | title }}** ({{ frequency }} recent mentions, {{ ratio | round(1) }}x trend)
 {% endfor -%}
 {% endif -%}
 {% endif -%}
 
 {% else -%}
 ❌ No significant topics found in the analyzed messages.
+
+**💡 Possible reasons:**
+• Messages may be too brief or fragmented
+• Conversations lack thematic clustering
+• Mixed topics prevent clear pattern identification
+• Insufficient data for meaningful analysis
+
+**🔍 Suggestions:**
+• Try analyzing a longer time period
+• Look for channels with more focused discussions
+• Consider channels with longer, detailed conversations
 {% endif %}
 
 ---

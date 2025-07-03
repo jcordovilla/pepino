@@ -1,31 +1,48 @@
-## 📊 User Analysis: {{ user_info.display_name }}
+**User Analysis: {{ user_info.display_name }}**
 
-**📈 Activity Statistics:**
+**📊 General Statistics:**
 • Total Messages: {{ statistics.message_count | format_number }}
 • Active Channels: {{ statistics.channels_active }}
-• Average Message Length: {{ statistics.avg_message_length | format_number }} characters
+• Average Message Length: {{ "%.1f" | format(statistics.avg_message_length) }} characters
+• Active Days: {{ statistics.active_days }}
 • First Message: {{ statistics.first_message_date | format_timestamp }}
 • Last Message: {{ statistics.last_message_date | format_timestamp }}
 
-{% if concepts and concepts | length > 0 -%}
-**🎯 Main Topics/Concepts:**
-{{ concepts[:8] | map('discord_code') | join(', ') }}
-
-{% endif -%}
-**📅 Activity Timeline:**
-• Member since: {{ statistics.first_message_date | format_timestamp }}
-• Most recent activity: {{ statistics.last_message_date | format_timestamp }}
-
-{% if activity_patterns -%}
-**⏰ Activity Patterns:**
-{% for pattern in activity_patterns -%}
-• {{ pattern.description }}: {{ pattern.value }}
+{% if channel_activity and channel_activity | length > 0 -%}
+**📍 Channel Activity:**
+{% for activity in channel_activity[:5] -%}
+• #{{ activity.channel_name }}: {{ activity.message_count }} messages (avg {{ "%.0f" | format(activity.avg_message_length) }} chars)
 {% endfor %}
 
 {% endif -%}
-{% if recommendations -%}
-**💡 Insights:**
-{% for rec in recommendations -%}
-• {{ rec }}
-{% endfor -%}
-{% endif %} 
+{% if time_patterns and time_patterns | length > 0 -%}
+**🕐 Activity by Time of Day:**
+{% for pattern in time_patterns -%}
+• {{ pattern.period }}: {{ pattern.message_count }} messages
+{% endfor %}
+
+{% endif -%}
+{% if semantic_analysis -%}
+**🧠 Semantic Analysis Results:**
+{% if semantic_analysis.key_entities and semantic_analysis.key_entities | length > 0 -%}
+**🏢 Key Entities Mentioned:**
+{% for entity in semantic_analysis.key_entities -%}
+• {{ entity }}
+{% endfor %}
+
+{% endif -%}
+{% if semantic_analysis.technology_terms and semantic_analysis.technology_terms | length > 0 -%}
+**💻 Technology Terms:**
+{% for term in semantic_analysis.technology_terms -%}
+• {{ term }}
+{% endfor %}
+
+{% endif -%}
+{% if semantic_analysis.key_concepts and semantic_analysis.key_concepts | length > 0 -%}
+**🔍 Key Concepts & Topics:**
+{% for concept in semantic_analysis.key_concepts -%}
+• {{ concept }}
+{% endfor %}
+
+{% endif -%}
+{% endif -%} 
