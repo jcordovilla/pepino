@@ -51,7 +51,9 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     def _get_database_manager(self):
         """Get database manager instance."""
         from pepino.data.database.manager import DatabaseManager
-        return DatabaseManager("discord_messages.db")
+        from pepino.config import Settings
+        settings = Settings()
+        return DatabaseManager(settings.db_path)
     
     def _get_settings(self):
         """Get settings instance.""" 

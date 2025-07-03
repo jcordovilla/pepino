@@ -22,7 +22,7 @@ except ImportError:
     ChannelRepository = None
     UserRepository = None
 
-from pepino.config import Settings, settings
+from ..config import Settings, settings
 from .models.channel import Channel
 from .models.message import Message
 from .models.user import User

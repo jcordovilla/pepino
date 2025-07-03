@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from pepino.config import settings
+from ...config import settings
 from ..database.manager import DatabaseManager
 
 

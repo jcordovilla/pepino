@@ -10,7 +10,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def init_database(db_path: str = "discord_messages.db") -> None:
+def init_database(db_path: str = "data/discord_messages.db") -> None:
     """Initialize the SQLite database with the complete schema."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()

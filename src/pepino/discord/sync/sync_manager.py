@@ -61,15 +61,14 @@ class SyncManager:
             sync_repo = SyncRepository(db_manager)
 
             try:
-                await db_manager.initialize()
-                last_sync = await sync_repo.get_last_sync_log()
+                last_sync = sync_repo.get_last_sync_log()
                 if last_sync and last_sync.get("completed_at"):
                     return datetime.fromisoformat(
                         last_sync["completed_at"].replace("Z", "+00:00")
                     )
                 return None
             finally:
-                await db_manager.close()
+                db_manager.close_connections()
         except Exception as e:
             logger.warning(f"Could not get last sync time: {e}")
             return None
@@ -103,9 +102,20 @@ class SyncManager:
 
         # Create and run client
         client = DiscordClient(data_store=data_store, intents=self.intents)
-        await client.start(self.discord_token)
-
-        return client.new_data, client.get_sync_log()
+        try:
+            await client.start(self.discord_token)
+            return client.new_data, client.get_sync_log()
+        finally:
+            # Ensure client is properly closed
+            try:
+                if not client.is_closed():
+                    await client.close()
+            except Exception as e:
+                logger.warning(f"Error closing Discord client: {e}")
+            finally:
+                # Force cleanup of any remaining resources
+                import gc
+                gc.collect()
 
     async def run_incremental_sync(self, force: bool = False) -> IncrementalSyncResult:
         """Run an incremental sync operation"""
@@ -166,7 +176,13 @@ class SyncManager:
             logger.info("👥 Saving channel members to database...")
             await _save_channel_members_to_db_async(messages_data, self.db_path)
 
-            await _save_sync_log_to_db_async(sync_log, self.db_path)
+            # Save sync log synchronously
+            db_manager = DatabaseManager(self.db_path)
+            sync_repo = SyncRepository(db_manager)
+            try:
+                sync_repo.save_sync_log(sync_log)
+            finally:
+                db_manager.close_connections()
 
             logger.info("\n📂 Data updated in database.")
             logger.info(f"📝 Total messages synced: {sync_log.total_messages_synced}")
@@ -184,7 +200,7 @@ class SyncManager:
             try:
                 await message_repo.clear_all_messages()
             finally:
-                await db_manager.close()
+                db_manager.close_connections()
 
         except Exception as e:
             logger.error(f"❌ Error clearing database: {e}")

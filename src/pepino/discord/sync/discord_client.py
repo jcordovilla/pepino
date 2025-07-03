@@ -233,6 +233,23 @@ class DiscordClient(discord.Client):
             logger.error(f"Error syncing members for #{channel.name}: {e}")
             return []
 
+    async def close(self):
+        """Override close to ensure proper cleanup of aiohttp resources"""
+        try:
+            # Close the Discord client first
+            await super().close()
+            
+            # Ensure aiohttp session is closed
+            if hasattr(self, '_session') and self._session:
+                await self._session.close()
+                
+        except Exception as e:
+            logger.warning(f"Error during client cleanup: {e}")
+        finally:
+            # Force cleanup of any remaining resources
+            import gc
+            gc.collect()
+
     def get_sync_log(self) -> "SyncLogEntry":
         """Get the sync log entry"""
         return self.sync_logger.get_log_entry()

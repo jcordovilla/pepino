@@ -55,7 +55,7 @@ TEMP_DIR = tempfile.mkdtemp()
 class MessageAnalyzer:
     """Base class for message analysis with database operations"""
 
-    def __init__(self, db_path: str = "discord_messages.db"):
+    def __init__(self, db_path: str = "data/discord_messages.db"):
         """Initialize the analyzer with database connection"""
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
@@ -1041,7 +1041,7 @@ class DiscordBotAnalyzer(MessageAnalyzer):
 
     def __init__(self):
         """Initialize the analyzer with database connection"""
-        self.db_path = "discord_messages.db"  # Default database path
+        self.db_path = "data/discord_messages.db"  # Default database path
         self.pool = None
         self.base_filter = """
             channel_name NOT LIKE '%test%'

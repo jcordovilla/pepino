@@ -27,9 +27,10 @@ async def _load_existing_data_async(db_path: str = settings.db_path) -> Dict[str
     message_repo = MessageRepository(db_manager)
 
     try:
-        return await message_repo.load_existing_data()
+        # Use the sync version of load_existing_data
+        return message_repo.load_existing_data_sync()
     finally:
-        await db_manager.close()
+        db_manager.close_connections()
 
 
 async def _save_messages_to_db_async(
@@ -43,9 +44,10 @@ async def _save_messages_to_db_async(
     message_repo = MessageRepository(db_manager)
 
     try:
-        await message_repo.bulk_insert_messages(messages_data)
+        # Use the sync version of bulk_insert_messages
+        message_repo.bulk_insert_messages_sync(messages_data)
     finally:
-        await db_manager.close()
+        db_manager.close_connections()
 
 
 async def _save_channel_members_to_db_async(
@@ -59,9 +61,10 @@ async def _save_channel_members_to_db_async(
     channel_repo = ChannelRepository(db_manager)
 
     try:
-        await channel_repo.save_channel_members(messages_data)
+        # Use the sync version of save_channel_members
+        channel_repo.save_channel_members_sync(messages_data)
     finally:
-        await db_manager.close()
+        db_manager.close_connections()
 
 
 async def _save_sync_log_to_db_async(
@@ -74,7 +77,7 @@ async def _save_sync_log_to_db_async(
     try:
         await sync_repo.save_sync_log(sync_log_entry)
     finally:
-        await db_manager.close()
+        db_manager.close_connections()
 
 
 # Legacy synchronous functions for backwards compatibility

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         default="sqlite:///data/discord_messages.db", description="Database URL"
     )
     db_path: str = Field(
-        default="discord_messages.db", description="SQLite database path"
+        default="data/discord_messages.db", description="SQLite database path"
     )
 
     # Logging Configuration

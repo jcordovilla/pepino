@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from pepino.config import settings
+from ...config import settings
 from ..database.manager import DatabaseManager
 from ..models.channel import Channel
 from pepino.logging_config import get_logger
@@ -428,6 +428,67 @@ class ChannelRepository:
             }
             for row in rows
         ]
+
+    def save_channel_members_sync(self, messages_data: Dict[str, Any]) -> None:
+        """Save channel members data to database (sync version)"""
+        if not messages_data:
+            return
+
+        # Clear existing channel members data to avoid stale data
+        self.db_manager.execute_query("DELETE FROM channel_members", fetch_all=False)
+        logger.info("Cleared existing channel members data")
+
+        # Extract all channel members from the data
+        all_members = []
+        for guild_name, channels in messages_data.items():
+            if "_channel_members" in channels:
+                for channel_name, members in channels["_channel_members"].items():
+                    all_members.extend(members)
+
+        if not all_members:
+            logger.info("No channel members to save")
+            return
+
+        logger.info(f"Saving {len(all_members)} channel member records to database...")
+
+        # Process members in batches
+        batch_size = 100
+        for i in range(0, len(all_members), batch_size):
+            batch = all_members[i : i + batch_size]
+
+            try:
+                query = """
+                    INSERT OR REPLACE INTO channel_members (
+                        channel_id, channel_name, guild_id, guild_name,
+                        user_id, user_name, user_display_name, user_joined_at,
+                        user_roles, is_bot, member_permissions, synced_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+
+                values = [
+                    (
+                        member.get("channel_id", ""),
+                        member.get("channel_name", ""),
+                        member.get("guild_id", ""),
+                        member.get("guild_name", ""),
+                        member.get("user_id", ""),
+                        member.get("user_name", ""),
+                        member.get("user_display_name", ""),
+                        member.get("user_joined_at"),
+                        member.get("user_roles", "[]"),
+                        member.get("is_bot", False),
+                        member.get("member_permissions", "{}"),
+                        member.get("synced_at", datetime.now(timezone.utc).isoformat()),
+                    )
+                    for member in batch
+                ]
+
+                self.db_manager.execute_many(query, values)
+                logger.info(f"✅ Saved batch of {len(batch)} channel member records")
+
+            except Exception as e:
+                logger.error(f"Error saving channel members batch: {str(e)}")
+                raise
 
     async def save_channel_members(self, messages_data: Dict[str, Any]) -> None:
         """Save channel members data to database"""

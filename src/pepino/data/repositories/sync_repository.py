@@ -19,7 +19,7 @@ class SyncRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
-    async def save_sync_log(self, sync_log_entry: SyncLogEntry) -> None:
+    def save_sync_log(self, sync_log_entry: SyncLogEntry) -> None:
         """Save sync log entry to database"""
         query = """
             INSERT INTO sync_logs (
@@ -46,9 +46,9 @@ class SyncRepository:
             sync_log_entry.total_messages_synced,
         )
 
-        await self.db_manager.execute_query(query, values)
+        self.db_manager.execute_query(query, values, fetch_all=False)
 
-    async def get_last_sync_log(self) -> Optional[Dict[str, Any]]:
+    def get_last_sync_log(self) -> Optional[Dict[str, Any]]:
         """Get the most recent sync log entry"""
         query = """
             SELECT timestamp, guilds_synced, channels_skipped, errors, total_messages_synced
@@ -58,7 +58,7 @@ class SyncRepository:
         """
 
         try:
-            result = await self.db_manager.execute_single(query)
+            result = self.db_manager.execute_query(query, fetch_one=True)
             if result:
                 return {
                     "completed_at": result[0],  # timestamp

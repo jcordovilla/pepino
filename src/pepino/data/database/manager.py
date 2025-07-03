@@ -39,7 +39,7 @@ class DatabaseManager:
     - Connection health monitoring
     """
     
-    def __init__(self, db_path: Union[str, Path] = "discord_messages.db"):
+    def __init__(self, db_path: Union[str, Path] = "data/discord_messages.db"):
         self.db_path = Path(db_path)
         self._local = threading.local()
         self._lock = threading.RLock()
@@ -88,37 +88,52 @@ class DatabaseManager:
         """Initialize database schema if needed."""
         
         try:
-            logger.info("Initializing database schema...")
+            # Check if the messages table already exists and has data
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'")
+            messages_table_exists = cursor.fetchone() is not None
             
-            # Create tables
-            for table_name, create_query in SCHEMA_QUERIES.items():
-                try:
-                    conn.execute(create_query)
-                    logger.debug(f"Created/verified table: {table_name}")
-                except sqlite3.OperationalError as e:
-                    if "already exists" not in str(e):
-                        logger.error(f"Failed to create table {table_name}: {e}")
-                        raise
+            if messages_table_exists:
+                # Check if table has data
+                cursor = conn.execute("SELECT COUNT(*) FROM messages")
+                message_count = cursor.fetchone()[0]
+                
+                if message_count > 0:
+                    logger.info(f"Database already initialized with {message_count} messages - skipping schema initialization")
+                    return
+                    
+                logger.info("Messages table exists but is empty - checking schema completeness")
+            else:
+                logger.info("Messages table does not exist - initializing database schema")
             
-            # Create indexes for performance
-            indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_name)",
-                "CREATE INDEX IF NOT EXISTS idx_messages_author ON messages(author_name)",
-                "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)",
-                "CREATE INDEX IF NOT EXISTS idx_messages_channel_timestamp ON messages(channel_name, timestamp)",
-                "CREATE INDEX IF NOT EXISTS idx_users_name ON users(username)",
-                "CREATE INDEX IF NOT EXISTS idx_channels_name ON channels(name)"
-            ]
+            # Check if we have all required tables
+            from .schema import validate_schema
+            if validate_schema(str(self.db_path)):
+                logger.info("Database schema is valid - no initialization needed")
+                return
             
-            for index_query in indexes:
-                try:
-                    conn.execute(index_query)
-                except sqlite3.OperationalError as e:
-                    if "already exists" not in str(e):
-                        logger.warning(f"Failed to create index: {e}")
+            logger.info("Initializing missing database schema components...")
+            
+            # Only create missing tables without overwriting existing data
+            from .schema import SCHEMA_QUERIES
+            
+            # Create tables that don't exist
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = {row[0] for row in cursor.fetchall()}
+            
+            required_tables = {
+                'messages': SCHEMA_QUERIES.get('messages', ''),
+                'sync_logs': SCHEMA_QUERIES.get('sync_logs', ''),
+                'users': SCHEMA_QUERIES.get('users', ''),
+                'channels': SCHEMA_QUERIES.get('channels', '')
+            }
+            
+            for table_name, create_sql in required_tables.items():
+                if table_name not in existing_tables and create_sql:
+                    logger.info(f"Creating missing table: {table_name}")
+                    conn.execute(create_sql)
             
             conn.commit()
-            logger.info("Database schema initialized successfully")
+            logger.info("Database schema initialization completed")
             
         except Exception as e:
             logger.error(f"Failed to initialize schema: {e}")

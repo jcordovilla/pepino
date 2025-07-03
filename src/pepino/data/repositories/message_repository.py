@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from pepino.config import settings
+from ...config import settings
 from ..database.manager import DatabaseManager
 from ..models.message import Message
 from pepino.logging_config import get_logger
@@ -558,6 +558,156 @@ class MessageRepository:
             "replies_per_post": total_replies / original_posts if original_posts > 0 else 0,
             "reaction_rate": (posts_with_reactions / total_messages * 100) if total_messages > 0 else 0,
         }
+
+    def load_existing_data_sync(self) -> Dict[str, Any]:
+        """Load existing message data from database grouped by guild and channel (sync version)"""
+        query = """
+            SELECT guild_name, channel_name, id, timestamp 
+            FROM messages 
+            ORDER BY guild_name, channel_name, timestamp
+        """
+
+        rows = self.db_manager.execute_query(query)
+
+        data = {}
+        for row in rows:
+            # rows is a list of dicts, not tuples
+            guild_name = row["guild_name"]
+            channel_name = row["channel_name"]
+            msg_id = row["id"]
+            timestamp = row["timestamp"]
+
+            if guild_name not in data:
+                data[guild_name] = {}
+            if channel_name not in data[guild_name]:
+                data[guild_name][channel_name] = []
+            data[guild_name][channel_name].append(
+                {"id": msg_id, "timestamp": timestamp}
+            )
+
+        return data
+
+    def bulk_insert_messages_sync(self, messages_data: Dict[str, Any]) -> None:
+        """Save messages to database with proper error handling and batching (sync version)"""
+        if not messages_data:
+            return
+
+        # Flatten the nested structure to get all messages
+        all_messages = []
+        for guild_name, channels in messages_data.items():
+            for channel_name, messages in channels.items():
+                if channel_name != "_channel_members":  # Skip special key
+                    all_messages.extend(messages)
+
+        if not all_messages:
+            logger.info("No messages to save")
+            return
+
+        logger.info(f"Saving {len(all_messages)} messages to database...")
+
+        # Process messages in batches
+        batch_size = 100
+        for i in range(0, len(all_messages), batch_size):
+            batch = all_messages[i : i + batch_size]
+            message_data = []
+
+            for msg in batch:
+                try:
+                    if not isinstance(msg, dict):
+                        logger.warning(f"Skipping invalid message format: {type(msg)}")
+                        continue
+
+                    # Extract basic message data
+                    message_data.append(
+                        {
+                            "message_id": str(msg.get("id", "")),
+                            "channel_id": str(msg.get("channel", {}).get("id", "")),
+                            "channel_name": msg.get("channel", {}).get("name", ""),
+                            "channel_type": str(msg.get("channel", {}).get("type", "")),
+                            "guild_id": str(msg.get("guild", {}).get("id", "")),
+                            "guild_name": msg.get("guild", {}).get("name", ""),
+                            "author_id": str(msg.get("author", {}).get("id", "")),
+                            "author_name": msg.get("author", {}).get("name", ""),
+                            "author_display_name": msg.get("author", {}).get(
+                                "display_name", ""
+                            ),
+                            "content": msg.get("content", ""),
+                            "timestamp": msg.get("timestamp", ""),
+                            "edited_timestamp": msg.get("edited_timestamp"),
+                            "jump_url": msg.get("jump_url", ""),
+                            "author_is_bot": msg.get("author", {}).get("is_bot", False),
+                            "has_attachments": bool(msg.get("attachments", [])),
+                            "has_embeds": bool(msg.get("embeds", [])),
+                            "has_reactions": bool(msg.get("reactions", [])),
+                            "has_stickers": bool(msg.get("stickers", [])),
+                            "reference_message_id": str(
+                                msg.get("referenced_message_id", "")
+                            )
+                            if msg.get("referenced_message_id")
+                            else None,
+                        }
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error processing message {msg.get('id', 'unknown')}: {str(e)}"
+                    )
+                    continue
+
+            if message_data:
+                try:
+                    # Use bulk insert for better performance with correct schema
+                    query = """
+                        INSERT OR REPLACE INTO messages (
+                            id, content, timestamp, edited_timestamp, jump_url,
+                            author_id, author_name, author_display_name, author_is_bot,
+                            channel_id, channel_name, channel_type,
+                            guild_id, guild_name,
+                            mentions, mention_everyone, mention_roles,
+                            referenced_message_id, attachments, embeds, reactions,
+                            emoji_stats, pinned, flags, nonce, type, is_system,
+                            mentions_everyone, has_reactions
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """
+
+                    values = [
+                        (
+                            msg.get("message_id", ""),
+                            msg.get("content", ""),
+                            msg.get("timestamp", ""),
+                            msg.get("edited_timestamp"),
+                            msg.get("jump_url", ""),
+                            msg.get("author_id", ""),
+                            msg.get("author_name", ""),
+                            msg.get("author_display_name", ""),
+                            msg.get("author_is_bot", False),
+                            msg.get("channel_id", ""),
+                            msg.get("channel_name", ""),
+                            msg.get("channel_type", ""),
+                            msg.get("guild_id", ""),
+                            msg.get("guild_name", ""),
+                            json.dumps([]),  # mentions - placeholder
+                            False,  # mention_everyone - placeholder
+                            json.dumps([]),  # mention_roles - placeholder
+                            msg.get("reference_message_id"),
+                            json.dumps(msg.get("attachments", [])),
+                            json.dumps(msg.get("embeds", [])),
+                            json.dumps(msg.get("reactions", [])),
+                            json.dumps({}),  # emoji_stats - placeholder
+                            False,  # pinned - placeholder
+                            None,  # flags - placeholder
+                            None,  # nonce - placeholder
+                            "",  # type - placeholder
+                            False,  # is_system - placeholder
+                            False,  # mentions_everyone - placeholder
+                            msg.get("has_reactions", False),
+                        )
+                        for msg in message_data
+                    ]
+
+                    self.db_manager.execute_many(query, values)
+                    logger.info(f"✅ Saved batch of {len(message_data)} messages")
+                except Exception as e:
+                    logger.error(f"Error saving batch: {str(e)}")
 
     async def load_existing_data(self) -> Dict[str, Any]:
         """Load existing message data from database grouped by guild and channel"""

@@ -348,7 +348,7 @@ def validate_db_path(ctx, param, value):
 @click.group()
 @click.option(
     "--db-path",
-    default="discord_messages.db",
+    default="data/discord_messages.db",
     callback=validate_db_path,
     help="Database path",
 )
@@ -1523,7 +1523,7 @@ def _list_stats(
 
             # Prepare stats data
             stats_data = {
-                "database_path": ctx_obj.get("db_path", "discord_messages.db"),
+                "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
                 "total_channels": len(channels),
                 "total_users": user_count,
                 "total_messages": message_count,
