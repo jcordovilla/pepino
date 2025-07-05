@@ -286,6 +286,124 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         with get_analysis_data_facade() as facade:
             return facade.user_repository.get_available_users()
     
+    def _sync_topics_analysis(self, channel_name: str, days: Optional[int]) -> str:
+        """Sync topics analysis using enhanced template system."""
+        from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.topic_analyzer import TopicAnalyzer
+        from ...config import Settings
+        
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
+            # Initialize analyzer with facade
+            analyzer = TopicAnalyzer(facade)
+            
+            # Run topics analysis with optional days filtering
+            analysis_params = {}
+            if days is not None:
+                analysis_params['days_back'] = days
+            
+            analysis = analyzer.analyze(channel_name=channel_name, **analysis_params)
+            
+            if not analysis or not analysis.topics:
+                return None
+            
+            # Prepare template data
+            template_data = {
+                'channel_name': channel_name,
+                'days_back': days,
+                'analysis': analysis,
+                'topics': analysis.topics,
+                'message_count': analysis.message_count,
+                'time_period': f"last {days} days" if days is not None else "all time"
+            }
+            
+            # Render template
+            return template_engine.render_template(
+                "outputs/discord/topic_analysis.md.j2",
+                **template_data
+            )
+    
+    def _sync_activity_trends(self, channel_name: str, days: Optional[int]) -> str:
+        """Sync activity trends analysis using enhanced template system."""
+        from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.temporal_analyzer import TemporalAnalyzer
+        from ...config import Settings
+        
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
+            # Initialize analyzer with facade
+            analyzer = TemporalAnalyzer(facade)
+            
+            # Run temporal analysis with optional days filtering
+            analysis_params = {'granularity': 'day'}
+            if days is not None:
+                analysis_params['days_back'] = days
+            
+            analysis = analyzer.analyze(channel_name=channel_name, **analysis_params)
+            
+            if not analysis or not analysis.temporal_data:
+                return None
+            
+            # Prepare template data
+            template_data = {
+                'channel_name': channel_name,
+                'days_back': days,
+                'analysis': analysis,
+                'temporal_data': analysis.temporal_data,
+                'patterns': analysis.patterns,
+                'time_period': f"last {days} days" if days is not None else "all time"
+            }
+            
+            # Render template
+            return template_engine.render_template(
+                "outputs/discord/activity_trends.md.j2",
+                **template_data
+            )
+    
+    def _sync_top_users(self, limit: int, days: Optional[int]) -> str:
+        """Sync top users analysis using enhanced template system."""
+        from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.user_analyzer import UserAnalyzer
+        from ...config import Settings
+        
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
+            # Initialize analyzer with facade
+            analyzer = UserAnalyzer(facade)
+            
+            # Run top users analysis with optional days filtering
+            analysis_params = {'limit': limit}
+            if days is not None:
+                analysis_params['days'] = days
+            
+            analysis = analyzer.get_top_users(**analysis_params)
+            
+            if not analysis:
+                return None
+            
+            # Prepare template data
+            template_data = {
+                'limit': limit,
+                'days_back': days,
+                'top_users': analysis,
+                'time_period': f"last {days} days" if days is not None else "all time"
+            }
+            
+            # Render template
+            return template_engine.render_template(
+                "outputs/discord/top_users.md.j2",
+                **template_data
+            )
+    
     def _sync_analyze_single_channel(self, channel_name: str, **analysis_params) -> str:
         """Sync single channel analysis with temporal filtering."""
         
@@ -1176,7 +1294,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     @app_commands.describe(
         analysis_type="Type of analysis to perform",
         channel_name="Channel name to analyze (leave empty for current channel or all channels summary)",
-        days="Number of days to look back (default varies by analysis type)",
+        days="Number of days to look back (optional, default: all time)",
         end_date="End date for analysis (format: YYYY-MM-DD, default: today)"
     )
     @app_commands.autocomplete(channel_name=channel_autocomplete)
@@ -1192,14 +1310,12 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         Comprehensive channel analysis with multiple analysis types.
         
         Analysis Types:
-        - overview: Channel overview with statistics and charts (default: 7 days)
-        - topics: Topic and keyword analysis (default: 7 days)
-        - activity: Temporal activity trends and patterns (default: 30 days)
+        - overview: Channel overview with statistics and charts (default: all time)
+        - topics: Topic and keyword analysis (default: all time)
+        - activity: Temporal activity trends and patterns (default: all time)
         """
         try:
-            # Set default days based on analysis type
-            if days is None:
-                days = 7 if analysis_type in ["overview", "topics"] else 30
+            # days remains None for all time analysis unless explicitly specified
             
             # Determine target channel for topics and activity analysis
             if analysis_type in ["topics", "activity"] and not channel_name:
@@ -1229,7 +1345,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             else:
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
 
-    async def _handle_channel_overview(self, interaction: discord.Interaction, channel_name: Optional[str], days: int, end_date: Optional[str]):
+    async def _handle_channel_overview(self, interaction: discord.Interaction, channel_name: Optional[str], days: Optional[int], end_date: Optional[str]):
         """Handle channel overview analysis (equivalent to analyze_channels)"""
         # Parse and validate end_date
         end_datetime = None
@@ -1242,20 +1358,29 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         else:
             end_datetime = datetime.now()
         
-        # Calculate start_date from days and end_date
-        start_datetime = end_datetime - timedelta(days=days)
-        
-        # Validate days
-        if days <= 0:
-            await interaction.followup.send(f"❌ Days must be a positive number. You provided: {days}")
-            return
-        
         # Prepare analysis parameters
-        analysis_params = {
-            'start_date': start_datetime.strftime('%Y-%m-%d'),
-            'end_date': end_datetime.strftime('%Y-%m-%d'),
-            'days_back': days
-        }
+        analysis_params = {}
+        
+        if days is not None:
+            # Validate days
+            if days <= 0:
+                await interaction.followup.send(f"❌ Days must be a positive number. You provided: {days}")
+                return
+            
+            # Calculate start_date from days and end_date
+            start_datetime = end_datetime - timedelta(days=days)
+            analysis_params.update({
+                'start_date': start_datetime.strftime('%Y-%m-%d'),
+                'end_date': end_datetime.strftime('%Y-%m-%d'),
+                'days_back': days
+            })
+        else:
+            # All time analysis - no date restrictions
+            analysis_params.update({
+                'start_date': None,
+                'end_date': None,
+                'days_back': None
+            })
         
         # Execute analysis based on channel_name
         if channel_name:
@@ -1300,10 +1425,11 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Text-only result (no chart generated)
             await self._send_long_message_slash(interaction, result)
 
-    async def _handle_channel_topics(self, interaction: discord.Interaction, channel_name: str, days: int):
+    async def _handle_channel_topics(self, interaction: discord.Interaction, channel_name: str, days: Optional[int]):
         """Handle channel topics analysis (equivalent to topics_analysis)"""
         # Send initial response
-        await interaction.followup.send(f"🔍 Analyzing topics in **{channel_name}** (last {days} days)... This may take a moment.")
+        time_desc = f"last {days} days" if days is not None else "all time"
+        await interaction.followup.send(f"🔍 Analyzing topics in **{channel_name}** ({time_desc})... This may take a moment.")
         
         # Execute sync operation in thread pool with performance tracking
         result, exec_time = await self.execute_tracked_sync_operation(
@@ -1319,10 +1445,11 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         else:
             await interaction.followup.send(f"❌ No topic data found for channel **{channel_name}**")
 
-    async def _handle_channel_activity(self, interaction: discord.Interaction, channel_name: str, days: int):
+    async def _handle_channel_activity(self, interaction: discord.Interaction, channel_name: str, days: Optional[int]):
         """Handle channel activity trends analysis (equivalent to activity_trends)"""
         # Send initial response
-        await interaction.followup.send(f"🔍 Analyzing activity trends in **{channel_name}** (last {days} days)... This may take a moment.")
+        time_desc = f"last {days} days" if days is not None else "all time"
+        await interaction.followup.send(f"🔍 Analyzing activity trends in **{channel_name}** ({time_desc})... This may take a moment.")
         
         # Execute sync operation in thread pool with performance tracking
         result, exec_time = await self.execute_tracked_sync_operation(
@@ -1377,20 +1504,20 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     @app_commands.describe(
         analysis_type="Type of server analysis to perform",
         limit="Number of results to show (default: 10)",
-        days="Number of days to look back (default: 30)"
+        days="Number of days to look back (optional, default: all time)"
     )
     async def pepino_server_analytics(
         self, 
         interaction: discord.Interaction, 
         analysis_type: Literal["top_users", "overview"] = "top_users",
         limit: int = 10,
-        days: int = 30
+        days: Optional[int] = None
     ):
         """
         Server-wide analysis including top users and overall statistics.
         
         Analysis Types:
-        - top_users: Show most active users across all channels
+        - top_users: Show most active users across all channels (default: all time)
         - overview: Server-wide statistics and trends (coming soon)
         """
         try:
@@ -1412,7 +1539,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             else:
                 await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
 
-    async def _handle_server_top_users(self, interaction: discord.Interaction, limit: int, days: int):
+    async def _handle_server_top_users(self, interaction: discord.Interaction, limit: int, days: Optional[int]):
         """Handle server top users analysis (equivalent to top_users)"""
         # Execute sync operation in thread pool with performance tracking
         result, exec_time = await self.execute_tracked_sync_operation(

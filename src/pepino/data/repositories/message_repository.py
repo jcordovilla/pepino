@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from ...config import settings
+from ...config import Settings
 from ..database.manager import DatabaseManager
 from ..models.message import Message
 from pepino.logging_config import get_logger
@@ -21,7 +21,7 @@ class MessageRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
         # Use unified settings for base filter
-        self.base_filter = settings.base_filter.strip()
+        self.base_filter = Settings().base_filter.strip()
 
     async def get_messages_by_channel(
         self,
@@ -216,12 +216,10 @@ class MessageRepository:
         ]
 
     def get_messages_for_topic_analysis(
-        self, channel_name: Optional[str] = None, days_back: int = 30, limit: int = 1000
+        self, channel_name: Optional[str] = None, days_back: Optional[int] = None, limit: int = 1000
     ) -> List[str]:
         """Get message content for topic analysis."""
         from datetime import datetime, timedelta
-
-        threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
 
         if channel_name:
             query = f"""
@@ -230,11 +228,8 @@ class MessageRepository:
                 WHERE channel_name = ? AND {self.base_filter}
                 AND content IS NOT NULL
                 AND LENGTH(content) > 10
-                AND timestamp >= ?
-                ORDER BY timestamp DESC
-                LIMIT ?
             """
-            params = (channel_name, threshold_date, limit)
+            params = [channel_name]
         else:
             query = f"""
                 SELECT content
@@ -242,26 +237,35 @@ class MessageRepository:
                 WHERE {self.base_filter}
                 AND content IS NOT NULL
                 AND LENGTH(content) > 10
-                AND timestamp >= ?
-                ORDER BY timestamp DESC
-                LIMIT ?
             """
-            params = (threshold_date, limit)
+            params = []
 
-        results = self.db_manager.execute_query(query, params)
+        if days_back is not None:
+            threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+            query += " AND timestamp >= ?"
+            params.append(threshold_date)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        results = self.db_manager.execute_query(query, tuple(params))
         return [row["content"] for row in results if row["content"]]
 
     def get_temporal_analysis_data(
         self,
         channel_name: Optional[str] = None,
         user_name: Optional[str] = None,
-        days_back: int = 30,
+        days_back: Optional[int] = None,
         granularity: str = "day",
     ) -> List[Dict[str, Any]]:
         """Get temporal data for analysis with complete time series."""
         from datetime import datetime, timedelta
 
-        threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+        # Handle None days_back (all time)
+        if days_back is not None:
+            threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+        else:
+            threshold_date = None
 
         # Build query based on granularity
         if granularity == "hour":
@@ -280,45 +284,71 @@ class MessageRepository:
 
         if use_date_series:
             # Generate complete date series for daily granularity
-            query = f"""
-                WITH RECURSIVE date_series AS (
-                    SELECT DATE(?) as period
-                    UNION ALL
-                    SELECT DATE(period, '+1 day')
-                    FROM date_series
-                    WHERE period < DATE('now', '-1 day')
-                ),
-                message_counts AS (
+            if threshold_date is not None:
+                query = f"""
+                    WITH RECURSIVE date_series AS (
+                        SELECT DATE(?) as period
+                        UNION ALL
+                        SELECT DATE(period, '+1 day')
+                        FROM date_series
+                        WHERE period < DATE('now', '-1 day')
+                    ),
+                    message_counts AS (
+                        SELECT 
+                            {date_format} as period,
+                            COUNT(*) as message_count,
+                            COUNT(DISTINCT author_id) as unique_users,
+                            AVG(LENGTH(content)) as avg_message_length
+                        FROM messages
+                        WHERE {self.base_filter} AND timestamp >= ? AND content IS NOT NULL
+                        {f"AND channel_name = ?" if channel_name else ""}
+                        {f"AND (author_name LIKE ? OR author_display_name LIKE ?)" if user_name else ""}
+                        GROUP BY {group_by}
+                    )
+                    SELECT 
+                        ds.period,
+                        COALESCE(mc.message_count, 0) as message_count,
+                        COALESCE(mc.unique_users, 0) as unique_users,
+                        COALESCE(mc.avg_message_length, 0.0) as avg_message_length
+                    FROM date_series ds
+                    LEFT JOIN message_counts mc ON ds.period = mc.period
+                    ORDER BY ds.period
+                """
+                
+                params = [threshold_date, threshold_date]
+                if channel_name:
+                    params.append(channel_name)
+                if user_name:
+                    params.extend([f"%{user_name}%", f"%{user_name}%"])
+            else:
+                # All time query without date series
+                query = f"""
                     SELECT 
                         {date_format} as period,
                         COUNT(*) as message_count,
                         COUNT(DISTINCT author_id) as unique_users,
                         AVG(LENGTH(content)) as avg_message_length
                     FROM messages
-                    WHERE {self.base_filter} AND timestamp >= ? AND content IS NOT NULL
+                    WHERE {self.base_filter} AND content IS NOT NULL
                     {f"AND channel_name = ?" if channel_name else ""}
                     {f"AND (author_name LIKE ? OR author_display_name LIKE ?)" if user_name else ""}
                     GROUP BY {group_by}
-                )
-                SELECT 
-                    ds.period,
-                    COALESCE(mc.message_count, 0) as message_count,
-                    COALESCE(mc.unique_users, 0) as unique_users,
-                    COALESCE(mc.avg_message_length, 0.0) as avg_message_length
-                FROM date_series ds
-                LEFT JOIN message_counts mc ON ds.period = mc.period
-                ORDER BY ds.period
-            """
-            
-            params = [threshold_date, threshold_date]
-            if channel_name:
-                params.append(channel_name)
-            if user_name:
-                params.extend([f"%{user_name}%", f"%{user_name}%"])
+                    ORDER BY period
+                """
+                
+                params = []
+                if channel_name:
+                    params.append(channel_name)
+                if user_name:
+                    params.extend([f"%{user_name}%", f"%{user_name}%"])
         else:
             # For hourly/weekly, use the original approach
-            conditions = [self.base_filter, "timestamp >= ?", "content IS NOT NULL"]
-            params = [threshold_date]
+            conditions = [self.base_filter, "content IS NOT NULL"]
+            params = []
+
+            if threshold_date is not None:
+                conditions.append("timestamp >= ?")
+                params.append(threshold_date)
 
             if channel_name:
                 conditions.append("channel_name = ?")
@@ -342,7 +372,7 @@ class MessageRepository:
                 ORDER BY period
             """
 
-        results = self.db_manager.execute_query(query, params)
+        results = self.db_manager.execute_query(query, tuple(params))
 
         return [
             {
@@ -925,25 +955,28 @@ class MessageRepository:
         result = self.db_manager.execute_query(query, fetch_one=True)
         return result[0] if result else 0
 
-    def get_user_messages(self, user_name: str, days_back: int = 30, limit: int = 1000) -> List[Dict[str, Any]]:
+    def get_user_messages(self, user_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get messages from a specific user."""
         from datetime import datetime, timedelta
-        
-        threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
         
         query = f"""
             SELECT id as message_id, content, author_name, channel_name, timestamp
             FROM messages 
             WHERE (author_name LIKE ? OR author_display_name LIKE ?)
             AND content IS NOT NULL AND content != ''
-            AND timestamp >= ?
             AND {self.base_filter}
-            ORDER BY timestamp DESC
-            LIMIT ?
         """
         
-        params = (f"%{user_name}%", f"%{user_name}%", threshold_date, limit)
-        rows = self.db_manager.execute_query(query, params)
+        params = [f"%{user_name}%", f"%{user_name}%"]
+        
+        if days_back is not None:
+            threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+            query += " AND timestamp >= ?"
+            params.append(threshold_date)
+        
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        rows = self.db_manager.execute_query(query, tuple(params))
         
         return [
             {
@@ -956,25 +989,28 @@ class MessageRepository:
             for row in rows
         ]
 
-    def get_channel_messages(self, channel_name: str, days_back: int = 30, limit: int = 1000) -> List[Dict[str, Any]]:
+    def get_channel_messages(self, channel_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get messages from a specific channel."""
         from datetime import datetime, timedelta
-        
-        threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
         
         query = f"""
             SELECT id as message_id, content, author_name, channel_name, timestamp
             FROM messages 
             WHERE channel_name = ?
             AND content IS NOT NULL AND content != ''
-            AND timestamp >= ?
             AND {self.base_filter}
-            ORDER BY timestamp DESC
-            LIMIT ?
         """
         
-        params = (channel_name, threshold_date, limit)
-        rows = self.db_manager.execute_query(query, params)
+        params = [channel_name]
+        
+        if days_back is not None:
+            threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+            query += " AND timestamp >= ?"
+            params.append(threshold_date)
+        
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        rows = self.db_manager.execute_query(query, tuple(params))
         
         return [
             {
@@ -987,24 +1023,27 @@ class MessageRepository:
             for row in rows
         ]
 
-    def get_recent_messages(self, limit: int = 1000, days_back: int = 30) -> List[Dict[str, Any]]:
+    def get_recent_messages(self, limit: int = 1000, days_back: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get recent messages."""
         from datetime import datetime, timedelta
-        
-        threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
         
         query = f"""
             SELECT id as message_id, content, author_name, channel_name, timestamp
             FROM messages 
             WHERE content IS NOT NULL AND content != ''
-            AND timestamp >= ?
             AND {self.base_filter}
-            ORDER BY timestamp DESC
-            LIMIT ?
         """
         
-        params = (threshold_date, limit)
-        rows = self.db_manager.execute_query(query, params)
+        params = []
+        
+        if days_back is not None:
+            threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+            query += " AND timestamp >= ?"
+            params.append(threshold_date)
+        
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        rows = self.db_manager.execute_query(query, tuple(params))
         
         return [
             {

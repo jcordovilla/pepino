@@ -264,25 +264,30 @@ async def analyze_channel_async(
 
 
 def analyze_topics(
-    channel: Optional[str], n_topics: int, days_back: int, db_path: Optional[str] = None
+    channel: Optional[str], n_topics: int, days_back: Optional[int], db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """Analyze topics by orchestrating analyzer calls."""
     from ..analysis.topic_analyzer import TopicAnalyzer
     from ..analysis.data_facade import get_analysis_data_facade
 
     try:
-        with get_analysis_data_facade(db_path) as facade:
-            topic_analyzer = TopicAnalyzer(facade)
+        with get_database_manager(db_path) as db_manager:
+            from ..config import Settings
+            settings = Settings()
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            
+            with data_facade as facade:
+                topic_analyzer = TopicAnalyzer(facade)
 
-            result = topic_analyzer.analyze(
-                channel_name=channel, top_n=n_topics, days_back=days_back
-            )
+                result = topic_analyzer.analyze(
+                    channel_name=channel, top_n=n_topics, days_back=days_back
+                )
 
-            # Convert Pydantic model to dict for output
-            result_dict = (
-                result.model_dump() if hasattr(result, "model_dump") else result
-            )
-            return {"topic_analysis": result_dict}
+                # Convert Pydantic model to dict for output
+                result_dict = (
+                    result.model_dump() if hasattr(result, "model_dump") else result
+                )
+                return {"topic_analysis": result_dict}
     except RuntimeError:
         # Re-raise database configuration errors as-is
         raise
@@ -292,7 +297,7 @@ def analyze_topics(
 
 # Keep async version for backwards compatibility
 async def analyze_topics_async(
-    channel: Optional[str], n_topics: int, days_back: int, db_path: Optional[str] = None
+    channel: Optional[str], n_topics: int, days_back: Optional[int], db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """Async wrapper for analyze_topics."""
     return analyze_topics(channel, n_topics, days_back, db_path)
@@ -300,7 +305,7 @@ async def analyze_topics_async(
 
 def analyze_temporal(
     channel: Optional[str],
-    days_back: int,
+    days_back: Optional[int],
     granularity: str,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -309,18 +314,23 @@ def analyze_temporal(
     from ..analysis.data_facade import get_analysis_data_facade
 
     try:
-        with get_analysis_data_facade(db_path) as facade:
-            temporal_analyzer = TemporalAnalyzer(facade)
+        with get_database_manager(db_path) as db_manager:
+            from ..config import Settings
+            settings = Settings()
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            
+            with data_facade as facade:
+                temporal_analyzer = TemporalAnalyzer(facade)
 
-            result = temporal_analyzer.analyze(
-                channel_name=channel, days_back=days_back, granularity=granularity
-            )
+                result = temporal_analyzer.analyze(
+                    channel_name=channel, days_back=days_back, granularity=granularity
+                )
 
-            # Convert Pydantic model to dict for output
-            result_dict = (
-                result.model_dump() if hasattr(result, "model_dump") else result
-            )
-            return {"temporal_analysis": result_dict}
+                # Convert Pydantic model to dict for output
+                result_dict = (
+                    result.model_dump() if hasattr(result, "model_dump") else result
+                )
+                return {"temporal_analysis": result_dict}
     except RuntimeError:
         # Re-raise database configuration errors as-is
         raise
@@ -331,7 +341,7 @@ def analyze_temporal(
 # Keep async version for backwards compatibility
 async def analyze_temporal_async(
     channel: Optional[str],
-    days_back: int,
+    days_back: Optional[int],
     granularity: str,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:

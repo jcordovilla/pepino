@@ -19,7 +19,7 @@
 {% else %}
 • No topics found
 {% endif %}
-• Time Range: {{ days_back }} days back
+• Time Range: {% if days_back %}{{ days_back }} days back{% else %}All time{% endif %}
 
 {% if topics %}
 🧠 Neural Topic Discovery (BERTopic):

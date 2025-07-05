@@ -527,7 +527,7 @@ class TopicAnalyzer:
     def analyze(
         self,
         channel_name: Optional[str] = None,
-        days_back: int = 30,
+        days_back: Optional[int] = None,
         top_n: int = 20,
         min_word_length: int = 4
     ) -> "TopicAnalysisResponse":

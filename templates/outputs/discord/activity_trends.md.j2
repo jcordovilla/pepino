@@ -1,4 +1,4 @@
-## 📈 Activity Trends (Last 30 Days)
+## 📈 Activity Trends{% if time_period %} ({{ time_period }}){% else %} (All Time){% endif %}
 
 **📊 Overall Activity:**
 • Total Messages: {{ patterns.total_messages | format_number }}

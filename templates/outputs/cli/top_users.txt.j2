@@ -25,7 +25,9 @@ No users found with the specified criteria.
 Summary:
 • Total users analyzed: {{ total_users | format_number }}
 • Showing top {{ top_users | length }} contributors
-{%- if days %}
-• Time period: Last {{ days }} days
+{%- if days_back %}
+• Time period: Last {{ days_back }} days
+{%- else %}
+• Time period: All time
 {%- endif %}
 {%- endif %} 

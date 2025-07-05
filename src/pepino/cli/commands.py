@@ -140,7 +140,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
         ctx_obj: Dict[str, Any],
         channel: Optional[str],
         n_topics: int,
-        days_back: int,
+        days_back: Optional[int],
         output: Optional[str],
         output_format: str,
     ):
@@ -247,7 +247,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
         self,
         ctx_obj: Dict[str, Any],
         channel: Optional[str],
-        days_back: int,
+        days_back: Optional[int],
         granularity: str,
         output: Optional[str],
         output_format: str,
@@ -423,7 +423,7 @@ def analyze_channels(
     help="Number of top topics to show (default: 20)",
 )
 @click.option(
-    "--days", "-d", "days_back", default=30, help="Days to look back (default: 30)"
+    "--days", "-d", "days_back", type=int, default=None, help="Days to look back (optional, default: all time)"
 )
 @click.option("--output", "-o", help="Output file (JSON or CSV)")
 @click.option(
@@ -438,7 +438,7 @@ def analyze_topics(
     ctx,
     channel: Optional[str],
     n_topics: int,
-    days_back: int,
+    days_back: Optional[int],
     output: Optional[str],
     output_format: str,
 ):
@@ -449,7 +449,7 @@ def analyze_topics(
 @analyze.command(name="temporal")
 @click.option("--channel", "-c", help="Specific channel to analyze (optional)")
 @click.option(
-    "--days", "-d", "days_back", default=30, help="Days to look back (default: 30)"
+    "--days", "-d", "days_back", type=int, default=None, help="Days to look back (optional, default: all time)"
 )
 @click.option(
     "--granularity",
@@ -470,7 +470,7 @@ def analyze_topics(
 def analyze_temporal(
     ctx,
     channel: Optional[str],
-    days_back: int,
+    days_back: Optional[int],
     granularity: str,
     output: Optional[str],
     output_format: str,

@@ -137,8 +137,8 @@ class TopicsAnalysisParams(AnalysisOutputParams):
     n_topics: int = Field(
         default=10, ge=1, le=50, description="Number of topics to extract"
     )
-    days_back: int = Field(
-        default=30, ge=1, le=365, description="Days to look back for analysis"
+    days_back: Optional[int] = Field(
+        default=None, ge=1, le=365, description="Days to look back for analysis (optional, default: all time)"
     )
 
     @field_validator("channel")
@@ -167,8 +167,8 @@ class TemporalAnalysisParams(AnalysisOutputParams):
         max_length=100,
         description="Optional channel name to filter analysis",
     )
-    days_back: int = Field(
-        default=30, ge=1, le=365, description="Days to analyze for trends"
+    days_back: Optional[int] = Field(
+        default=None, ge=1, le=365, description="Days to analyze for trends (optional, default: all time)"
     )
     granularity: Literal["day", "week"] = Field(
         default="day", description="Time granularity for analysis"

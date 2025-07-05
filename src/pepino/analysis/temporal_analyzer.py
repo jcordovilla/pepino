@@ -58,7 +58,7 @@ class TemporalAnalyzer:
             temporal_data = self.data_facade.message_repository.get_temporal_analysis_data(
                 channel_name=kwargs.get("channel_name"),
                 user_name=kwargs.get("user_name"),
-                days_back=kwargs.get("days_back", 30),
+                days_back=kwargs.get("days_back"),
                 granularity=kwargs.get("granularity", "day"),
             )
 
