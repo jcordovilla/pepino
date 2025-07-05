@@ -58,7 +58,7 @@
 **🧠 Top Topics Discussed:**
 {% if data.top_topics %}
 {% for topic in data.top_topics[:10] %}
-{{ loop.index }}. {{ topic }}
+{{ loop.index }}. {{ topic.term if topic.term else topic }} ({{ topic.frequency if topic.frequency else 'N/A' }} mentions)
 {% endfor %}
 {% else %}
 1. Message Analysis

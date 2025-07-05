@@ -968,10 +968,26 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Bar chart for daily messages
             bars = ax.bar(dates, message_counts, alpha=0.7, color='#5865F2', label='Daily Messages')
             
-            # Average line
-            avg_messages = np.mean(message_counts)
-            ax.axhline(y=avg_messages, color='#ED4245', linestyle='--', linewidth=2, 
-                      label=f'Average ({avg_messages:.1f} messages)')
+            # 1-week moving average line
+            if len(message_counts) >= 7:
+                # Calculate 1-week moving average
+                window_size = 7
+                moving_avg = []
+                for i in range(len(message_counts)):
+                    if i < window_size - 1:
+                        # For the first few points, use available data
+                        moving_avg.append(np.mean(message_counts[:i+1]))
+                    else:
+                        # Use 7-day window
+                        moving_avg.append(np.mean(message_counts[i-window_size+1:i+1]))
+                
+                ax.plot(dates, moving_avg, color='#ED4245', linestyle='--', linewidth=2, 
+                       label='1-Week Moving Average')
+            else:
+                # Fallback to simple average for short periods
+                avg_messages = np.mean(message_counts)
+                ax.axhline(y=avg_messages, color='#ED4245', linestyle='--', linewidth=2, 
+                          label=f'Average ({avg_messages:.1f} messages)')
             
             # Formatting
             ax.set_xlabel('Date')
