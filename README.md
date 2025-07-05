@@ -29,7 +29,7 @@ A powerful Discord analytics system that extracts deep insights from server acti
 make dev-setup
 
 # Copy and edit environment
-cp .env.example .env
+cp env.example .env
 # Add your DISCORD_TOKEN
 
 # Start the bot

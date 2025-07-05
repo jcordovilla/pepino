@@ -1052,174 +1052,6 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             logger.error(f"Channels summary chart generation failed: {e}")
             return None
     
-    @app_commands.command(name="performance_metrics", description="Show performance metrics for analysis commands")
-    async def performance_metrics(self, interaction: discord.Interaction):
-        """Show performance metrics for analysis commands."""
-        
-        try:
-            metrics = self.get_command_metrics()
-            
-            if not metrics:
-                await interaction.response.send_message("📊 No performance metrics available yet")
-                return
-            
-            embed = discord.Embed(
-                title="⚡ Analysis Commands Performance Metrics",
-                color=discord.Color.gold()
-            )
-            
-            for command, stats in metrics.items():
-                embed.add_field(
-                    name=command,
-                    value=f"Executions: {stats['executions']}\n"
-                          f"Avg Time: {stats['avg_time']:.2f}s\n"
-                          f"Recent: {stats['recent_time']:.2f}s",
-                    inline=True
-                )
-            
-            # Add thread pool status
-            status = self.get_thread_pool_status()
-            embed.add_field(
-                name="Thread Pool Status",
-                value=f"Workers: {status['max_workers']}\n"
-                      f"Active Ops: {status['active_operations']}\n"
-                      f"Pool Active: {status['thread_pool_active']}",
-                inline=True
-            )
-            
-            await interaction.response.send_message(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Performance metrics failed: {e}")
-            await interaction.response.send_message(f"❌ Failed to get metrics: {str(e)}")
-    
-    @app_commands.command(name="sync_commands", description="Manually sync slash commands with Discord")
-    async def sync_commands(self, interaction: discord.Interaction):
-        """Manually sync slash commands"""
-        try:
-            await interaction.response.send_message("🔄 Syncing slash commands...")
-            
-            synced = await self.bot.tree.sync()
-            await interaction.followup.send(f"✅ Synced {len(synced)} command(s)")
-            
-            logger.info(f"Manually synced {len(synced)} command(s) via slash command")
-            
-        except Exception as e:
-            logger.error(f"Failed to manually sync: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Failed to sync: {e}")
-            else:
-                await interaction.followup.send(f"❌ Failed to sync: {e}")
-
-    @app_commands.command(name="force_sync", description="Force sync slash commands (clears and reloads)")
-    async def force_sync_commands(self, interaction: discord.Interaction):
-        """Force sync slash commands (admin only)"""
-        try:
-            await interaction.response.send_message("🔄 Force syncing slash commands...")
-            
-            # Clear existing commands first - specify guild or global
-            if interaction.guild:
-                # Clear guild-specific commands
-                self.bot.tree.clear_commands(guild=interaction.guild)
-                logger.info(f"Cleared guild commands for {interaction.guild.name}")
-            else:
-                # Clear global commands  
-                self.bot.tree.clear_commands(guild=None)
-                logger.info("Cleared global commands")
-
-            # Reload commands
-            try:
-                await self.bot.reload_extension("pepino.discord.commands.analysis")
-                logger.info("Successfully reloaded pepino.discord.commands.analysis")
-            except Exception as reload_error:
-                logger.error(f"Failed to reload extension: {reload_error}")
-                await interaction.followup.send(f"❌ Failed to reload extension: {reload_error}")
-                return
-
-            # Debug: Check what commands are registered before sync
-            if interaction.guild:
-                commands_before = self.bot.tree.get_commands(guild=interaction.guild)
-                logger.info(f"Commands before sync (guild): {[cmd.name for cmd in commands_before]}")
-            else:
-                commands_before = self.bot.tree.get_commands()
-                logger.info(f"Commands before sync (global): {[cmd.name for cmd in commands_before]}")
-
-            # Sync again
-            if interaction.guild:
-                synced = await self.bot.tree.sync(guild=interaction.guild)
-                sync_scope = f"guild {interaction.guild.name}"
-            else:
-                synced = await self.bot.tree.sync()
-                sync_scope = "globally"
-                
-            await interaction.followup.send(f"✅ Force synced {len(synced)} command(s) {sync_scope}")
-
-            logger.info(f"Force synced {len(synced)} command(s) {sync_scope} via slash command")
-            for command in synced:
-                logger.info(f"Force synced: {command.name}")
-
-        except Exception as e:
-            logger.error(f"Failed to force sync: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Failed to force sync: {e}")
-            else:
-                await interaction.followup.send(f"❌ Failed to force sync: {e}")
-
-    @app_commands.command(name="test_data", description="Test if database data is available for analysis")
-    async def test_data_availability(self, interaction: discord.Interaction):
-        """Test if autocomplete data is available"""
-        try:
-            await interaction.response.send_message("🔍 Testing data availability...")
-            
-            from ...analysis.data_facade import get_analysis_data_facade
-            
-            with get_analysis_data_facade() as facade:
-                channels = facade.channel_repository.get_available_channels()
-                users = facade.user_repository.get_available_users()
-
-                embed = discord.Embed(
-                    title="📊 Database Data Availability Test",
-                    color=discord.Color.blue()
-                )
-                
-                embed.add_field(
-                    name="Channels",
-                    value=f"Found {len(channels)} channels",
-                    inline=True
-                )
-                
-                embed.add_field(
-                    name="Users",
-                    value=f"Found {len(users)} users",
-                    inline=True
-                )
-                
-                # Show first few examples
-                if channels:
-                    sample_channels = channels[:5]
-                    embed.add_field(
-                        name="Sample Channels",
-                        value="\n".join([f"• {ch}" for ch in sample_channels]),
-                        inline=False
-                    )
-
-                if users:
-                    sample_users = [u for u in users[:5] if u]  # Filter out empty names
-                    embed.add_field(
-                        name="Sample Users",
-                        value="\n".join([f"• {u}" for u in sample_users]),
-                        inline=False
-                    )
-
-                await interaction.followup.send(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Test data availability failed: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Test failed: {e}")
-            else:
-                await interaction.followup.send(f"❌ Test failed: {e}")
-    
     async def _send_long_message(self, ctx: commands.Context, content: str):
         """Send long message, splitting if necessary."""
         
@@ -1289,6 +1121,78 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await interaction.followup.send(f"**Continued ({i+1}/{len(chunks)}):**\n{chunk}")
 
     # ===== CONSOLIDATED PEPINO COMMANDS =====
+    
+    @app_commands.command(name="pepino_help", description="Show available Pepino commands and their descriptions")
+    async def pepino_help(self, interaction: discord.Interaction):
+        """Show help information for all available Pepino commands."""
+        try:
+            embed = discord.Embed(
+                title="🤖 Pepino Analytics Bot - Available Commands",
+                description="Here are all the available Pepino commands for Discord analytics:",
+                color=discord.Color.blue()
+            )
+            
+            # Channel Analytics
+            embed.add_field(
+                name="📊 `/pepino_channel_analytics`",
+                value="**Comprehensive channel analysis**\n"
+                      "• `overview` - Channel summary and statistics\n"
+                      "• `topics` - Topic analysis and themes\n"
+                      "• `activity` - Activity patterns and trends\n"
+                      "Options: channel_name, days, end_date",
+                inline=False
+            )
+            
+            # User Analytics
+            embed.add_field(
+                name="👤 `/pepino_user_analytics`",
+                value="**Analyze user activity and behavior**\n"
+                      "• Activity patterns and statistics\n"
+                      "• Content analysis and themes\n"
+                      "• Engagement metrics\n"
+                      "Options: username, days, include_semantic",
+                inline=False
+            )
+            
+            # Server Analytics
+            embed.add_field(
+                name="🏠 `/pepino_server_analytics`",
+                value="**Server-wide analysis and statistics**\n"
+                      "• `top_users` - Most active users\n"
+                      "• `overview` - Server summary stats\n"
+                      "Options: analysis_type, limit, days",
+                inline=False
+            )
+            
+            # Lists
+            embed.add_field(
+                name="📋 `/pepino_lists`",
+                value="**List available data for analysis**\n"
+                      "• `channels` - Available channels\n"
+                      "• `users` - Available users\n"
+                      "Options: list_type, limit",
+                inline=False
+            )
+            
+            # Help
+            embed.add_field(
+                name="❓ `/pepino_help`",
+                value="**Show this help message**\n"
+                      "• Display all available commands\n"
+                      "• Command descriptions and options",
+                inline=False
+            )
+            
+            # Footer with additional info
+            embed.set_footer(
+                text="💡 Tip: Use autocomplete for channel and user names. Most commands support optional time filtering with 'days' parameter."
+            )
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Help command failed: {e}")
+            await interaction.response.send_message(f"❌ Error displaying help: {str(e)}")
     
     @app_commands.command(name="pepino_channel_analytics", description="Comprehensive channel analysis with multiple analysis types")
     @app_commands.describe(

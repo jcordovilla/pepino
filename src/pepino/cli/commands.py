@@ -364,6 +364,117 @@ def cli(ctx, db_path: str, verbose: bool):
     setup_cli_logging(verbose=verbose)
 
 
+@cli.command(name="help")
+@click.pass_context
+def help_command(ctx):
+    """Show comprehensive help for all available commands."""
+    help_text = """
+🤖 Pepino Analytics CLI - Available Commands
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📊 ANALYSIS COMMANDS (pepino analyze <command>)
+───────────────────────────────────────────────────────────────────────────────
+  users           Analyze user activity and behavior patterns
+                  Options: --user, --limit, --output, --format
+                  
+  channels        Analyze channel activity and statistics  
+                  Options: --channel, --limit, --output, --format
+                  
+  topics          Analyze topics and themes in messages
+                  Options: --channel, --topics, --days, --output, --format
+                  
+  temporal        Analyze temporal patterns and activity trends
+                  Options: --channel, --days, --granularity, --output, --format
+                  
+  conversations   Analyze conversation patterns and threads
+                  Options: --channel, --output, --format
+                  
+  similar         Find messages similar to a query text
+                  Options: --query, --limit, --threshold, --output, --format
+                  
+  embeddings      Generate embeddings for semantic analysis
+                  Options: --batch-size, --output, --format
+                  
+  sentiment       Analyze sentiment of messages
+                  Options: --channel, --limit, --output, --format
+                  
+  duplicates      Detect duplicate or near-duplicate messages
+                  Options: --channel, --threshold, --output, --format
+
+🔄 SYNC COMMANDS (pepino sync <command>) [ADMIN ONLY]
+───────────────────────────────────────────────────────────────────────────────
+  run             Sync Discord data (smart: only updates if stale)
+                  Options: --force, --full, --clear, --timeout
+                  
+  status          Check sync status and data freshness
+
+📋 LIST COMMANDS (pepino list <command>)
+───────────────────────────────────────────────────────────────────────────────
+  channels        List available channels for analysis
+                  Options: --limit, --output, --format
+                  
+  users           List available users for analysis
+                  Options: --limit, --output, --format
+                  
+  stats           Show database statistics and overview
+                  Options: --output, --format
+
+⚡ PERFORMANCE COMMANDS (pepino performance <command>) [ADMIN ONLY]
+───────────────────────────────────────────────────────────────────────────────
+  metrics         Show performance metrics for analysis operations
+                  Options: --output, --format
+                  
+  benchmark       Benchmark analysis operations for optimization
+                  Options: --operations, --iterations, --output, --format
+                  
+  profile         Profile specific analysis operations
+                  Options: --operation, --args, --output
+
+🧪 TEST COMMANDS (pepino test <command>) [ADMIN ONLY]
+───────────────────────────────────────────────────────────────────────────────
+  data            Test database data integrity and availability
+                  Options: --output, --format
+                  
+  analysis        Test analysis operations functionality
+                  Options: --operation, --sample-size, --output, --format
+                  
+  templates       Test template rendering system
+                  Options: --template, --output, --format
+                  
+  dependencies    Test system dependencies and requirements
+                  Options: --output, --format
+
+🚀 BOT COMMANDS
+───────────────────────────────────────────────────────────────────────────────
+  start           Start the Discord bot
+                  Options: --token, --prefix, --debug
+                  
+  export-data     Export data to files
+                  Options: --table, --output, --format
+
+═══════════════════════════════════════════════════════════════════════════════
+
+💡 USAGE EXAMPLES:
+  pepino analyze users --limit 20 --format json
+  pepino analyze topics --channel general --days 30
+  pepino sync run --force
+  pepino list channels --limit 10
+  pepino performance metrics
+  pepino test data
+
+📝 NOTES:
+  • Most commands support --output and --format options for custom output
+  • Available formats: text, json, csv
+  • Use --help with any command for detailed options
+  • Admin commands (sync, performance, test) require appropriate permissions
+  • Time filtering: use --days for recent data, omit for all-time analysis
+
+═══════════════════════════════════════════════════════════════════════════════
+"""
+    click.echo(help_text)
+
+
 @cli.group(name="analyze")
 @click.pass_context
 def analyze(ctx):
