@@ -4,7 +4,7 @@ Discord Analysis Commands:
 
 import logging
 import traceback
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime, timedelta
 from collections import Counter
 import os
@@ -204,8 +204,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             logger.error(f"User autocomplete failed: {e}")
             return []  # Return empty list instead of error choice
     
-    @app_commands.command(
-        name="analyze_channels", 
+    @app_commands.command(name="analyze_channels", 
         description="Analyze channels with optional temporal and channel filters"
     )
     @app_commands.describe(
@@ -1759,6 +1758,346 @@ You might want to try:
                 await interaction.followup.send(chunk)
             else:
                 await interaction.followup.send(f"**Continued ({i+1}/{len(chunks)}):**\n{chunk}")
+
+    # ===== CONSOLIDATED PEPINO COMMANDS =====
+    
+    @app_commands.command(name="pepino_channel_analytics", description="Comprehensive channel analysis with multiple analysis types")
+    @app_commands.describe(
+        analysis_type="Type of analysis to perform",
+        channel_name="Channel name to analyze (leave empty for current channel or all channels summary)",
+        days="Number of days to look back (default varies by analysis type)",
+        end_date="End date for analysis (format: YYYY-MM-DD, default: today)"
+    )
+    @app_commands.autocomplete(channel_name=channel_autocomplete)
+    async def pepino_channel_analytics(
+        self,
+        interaction: discord.Interaction,
+        analysis_type: Literal["overview", "topics", "activity"] = "overview",
+        channel_name: Optional[str] = None,
+        days: Optional[int] = None,
+        end_date: Optional[str] = None
+    ):
+        """
+        Comprehensive channel analysis with multiple analysis types.
+        
+        Analysis Types:
+        - overview: Channel overview with statistics and charts (default: 7 days)
+        - topics: Topic and keyword analysis (default: 7 days)
+        - activity: Temporal activity trends and patterns (default: 30 days)
+        """
+        try:
+            # Set default days based on analysis type
+            if days is None:
+                days = 7 if analysis_type in ["overview", "topics"] else 30
+            
+            # Determine target channel for topics and activity analysis
+            if analysis_type in ["topics", "activity"] and not channel_name:
+                if isinstance(interaction.channel, discord.DMChannel):
+                    await interaction.response.send_message(f"❌ Please specify a channel name when using {analysis_type} analysis in DMs.")
+                    return
+                channel_name = interaction.channel.name
+            
+            logger.info(f"Pepino channel analytics command called: type={analysis_type}, channel={channel_name}, days={days}, end_date={end_date}")
+            
+            # Defer the response immediately to avoid timeout
+            await interaction.response.defer()
+            
+            # Route to appropriate analysis method based on type
+            if analysis_type == "overview":
+                await self._handle_channel_overview(interaction, channel_name, days, end_date)
+            elif analysis_type == "topics":
+                await self._handle_channel_topics(interaction, channel_name, days)
+            elif analysis_type == "activity":
+                await self._handle_channel_activity(interaction, channel_name, days)
+            
+        except Exception as e:
+            logger.error(f"Pepino channel analytics failed: {e}")
+            logger.error(traceback.format_exc())
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Analysis failed: {str(e)}")
+            else:
+                await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
+
+    async def _handle_channel_overview(self, interaction: discord.Interaction, channel_name: Optional[str], days: int, end_date: Optional[str]):
+        """Handle channel overview analysis (equivalent to analyze_channels)"""
+        # Parse and validate end_date
+        end_datetime = None
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+            except ValueError:
+                await interaction.followup.send("❌ Invalid date format. Please use YYYY-MM-DD format. Example: 2024-12-25")
+                return
+        else:
+            end_datetime = datetime.now()
+        
+        # Calculate start_date from days and end_date
+        start_datetime = end_datetime - timedelta(days=days)
+        
+        # Validate days
+        if days <= 0:
+            await interaction.followup.send(f"❌ Days must be a positive number. You provided: {days}")
+            return
+        
+        # Prepare analysis parameters
+        analysis_params = {
+            'start_date': start_datetime.strftime('%Y-%m-%d'),
+            'end_date': end_datetime.strftime('%Y-%m-%d'),
+            'days_back': days
+        }
+        
+        # Execute analysis based on channel_name
+        if channel_name:
+            # Single channel analysis
+            logger.info(f"Performing single channel analysis for: {channel_name}")
+            result, exec_time = await self.execute_tracked_sync_operation(
+                "analyze_single_channel",
+                self._sync_analyze_single_channel,
+                channel_name, **analysis_params
+            )
+        else:
+            # All channels summary analysis with chart
+            logger.info("Performing all channels summary analysis with chart")
+            analysis_params['include_chart'] = True
+            analysis_params['chart_type'] = 'daily_messages'
+            result, exec_time = await self.execute_tracked_sync_operation(
+                "analyze_all_channels_summary",
+                self._sync_analyze_all_channels_summary,
+                **analysis_params
+            )
+        
+        # Handle the result
+        if isinstance(result, tuple):
+            # Both single channel and cross-channel analysis can return (text, chart_path)
+            text_result, chart_path = result
+            
+            if chart_path and os.path.exists(chart_path):
+                # Send text and chart together as one message
+                await interaction.followup.send(
+                    text_result,
+                    file=discord.File(chart_path, filename="daily_activity_chart.png")
+                )
+                # Clean up the temporary file
+                try:
+                    os.remove(chart_path)
+                except Exception as e:
+                    logger.warning(f"Could not remove temporary chart file {chart_path}: {e}")
+            else:
+                # Send just the text if no chart
+                await self._send_long_message_slash(interaction, text_result)
+        else:
+            # Text-only result (no chart generated)
+            await self._send_long_message_slash(interaction, result)
+
+    async def _handle_channel_topics(self, interaction: discord.Interaction, channel_name: str, days: int):
+        """Handle channel topics analysis (equivalent to topics_analysis)"""
+        # Send initial response
+        await interaction.followup.send(f"🔍 Analyzing topics in **{channel_name}** (last {days} days)... This may take a moment.")
+        
+        # Execute sync operation in thread pool with performance tracking
+        result, exec_time = await self.execute_tracked_sync_operation(
+            "topics_analysis",
+            self._sync_topics_analysis,
+            channel_name, days
+        )
+        
+        # Send result
+        if result:
+            await self._send_long_message_slash(interaction, result)
+            await interaction.followup.send(f"✅ Topics analysis completed in {exec_time:.2f}s")
+        else:
+            await interaction.followup.send(f"❌ No topic data found for channel **{channel_name}**")
+
+    async def _handle_channel_activity(self, interaction: discord.Interaction, channel_name: str, days: int):
+        """Handle channel activity trends analysis (equivalent to activity_trends)"""
+        # Send initial response
+        await interaction.followup.send(f"🔍 Analyzing activity trends in **{channel_name}** (last {days} days)... This may take a moment.")
+        
+        # Execute sync operation in thread pool with performance tracking
+        result, exec_time = await self.execute_tracked_sync_operation(
+            "activity_trends",
+            self._sync_activity_trends,
+            channel_name, days
+        )
+        
+        # Send result
+        if result:
+            await self._send_long_message_slash(interaction, result)
+            await interaction.followup.send(f"✅ Activity trends analysis completed in {exec_time:.2f}s")
+        else:
+            await interaction.followup.send(f"❌ No activity data found for channel **{channel_name}**")
+
+    @app_commands.command(name="pepino_user_analytics", description="Analyze a specific user's activity and behavior patterns")
+    @app_commands.describe(
+        username="Username to analyze",
+        days="Number of days to look back (default: all time)",
+        include_semantic="Include semantic analysis of user content"
+    )
+    @app_commands.autocomplete(username=user_autocomplete)
+    async def pepino_user_analytics(
+        self, 
+        interaction: discord.Interaction, 
+        username: str, 
+        days: Optional[int] = None,
+        include_semantic: bool = True
+    ):
+        """Analyze a specific user's activity and behavior patterns."""
+        await interaction.response.defer()
+        
+        try:
+            # Execute sync operation in thread pool with performance tracking
+            result, exec_time = await self.execute_tracked_sync_operation(
+                "user_analysis",
+                self._sync_user_analysis,
+                username, days, include_semantic
+            )
+            
+            # Send result
+            if result:
+                await self._send_long_message_slash(interaction, result)
+            else:
+                await interaction.followup.send(f"❌ No data found for user '{username}'")
+            
+        except Exception as e:
+            logger.error(f"Pepino user analytics failed: {e}")
+            await interaction.followup.send(f"❌ Error analyzing user: {e}")
+
+    @app_commands.command(name="pepino_server_analytics", description="Server-wide analysis including top users and overall statistics")
+    @app_commands.describe(
+        analysis_type="Type of server analysis to perform",
+        limit="Number of results to show (default: 10)",
+        days="Number of days to look back (default: 30)"
+    )
+    async def pepino_server_analytics(
+        self, 
+        interaction: discord.Interaction, 
+        analysis_type: Literal["top_users", "overview"] = "top_users",
+        limit: int = 10,
+        days: int = 30
+    ):
+        """
+        Server-wide analysis including top users and overall statistics.
+        
+        Analysis Types:
+        - top_users: Show most active users across all channels
+        - overview: Server-wide statistics and trends (coming soon)
+        """
+        try:
+            # Defer the response immediately to avoid timeout
+            await interaction.response.defer()
+            
+            logger.info(f"Pepino server analytics command called: type={analysis_type}, limit={limit}, days={days}")
+            
+            if analysis_type == "top_users":
+                await self._handle_server_top_users(interaction, limit, days)
+            elif analysis_type == "overview":
+                await interaction.followup.send("🚧 Server overview analysis is coming soon! Use `top_users` for now.")
+            
+        except Exception as e:
+            logger.error(f"Pepino server analytics failed: {e}")
+            logger.error(traceback.format_exc())
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Analysis failed: {str(e)}")
+            else:
+                await interaction.followup.send(f"❌ Analysis failed: {str(e)}")
+
+    async def _handle_server_top_users(self, interaction: discord.Interaction, limit: int, days: int):
+        """Handle server top users analysis (equivalent to top_users)"""
+        # Execute sync operation in thread pool with performance tracking
+        result, exec_time = await self.execute_tracked_sync_operation(
+            "top_users",
+            self._sync_top_users,
+            limit, days
+        )
+        
+        # Send single comprehensive result
+        if result:
+            final_message = f"{result}\n\n✅ Analysis completed in {exec_time:.2f}s"
+            await self._send_long_message_slash(interaction, final_message)
+        else:
+            await interaction.followup.send(f"❌ No user data found")
+
+    @app_commands.command(name="pepino_lists", description="List available channels and users for analysis")
+    @app_commands.describe(
+        list_type="Type of list to show",
+        limit="Number of results to show (optional)"
+    )
+    async def pepino_lists(
+        self, 
+        interaction: discord.Interaction, 
+        list_type: Literal["channels", "users"],
+        limit: Optional[int] = None
+    ):
+        """List available channels and users for analysis."""
+        try:
+            # Defer the response immediately to avoid timeout
+            await interaction.response.defer()
+            
+            logger.info(f"Pepino lists command called: type={list_type}, limit={limit}")
+            
+            if list_type == "channels":
+                await self._handle_list_channels(interaction, limit)
+            elif list_type == "users":
+                await self._handle_list_users(interaction, limit)
+                
+        except Exception as e:
+            logger.error(f"Pepino lists failed: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Failed to fetch {list_type}: {str(e)}")
+            else:
+                await interaction.followup.send(f"❌ Failed to fetch {list_type}: {str(e)}")
+
+    async def _handle_list_channels(self, interaction: discord.Interaction, limit: Optional[int]):
+        """Handle list channels (equivalent to list_channels)"""
+        # Execute sync operation in thread pool
+        channels, exec_time = await self.execute_tracked_sync_operation(
+            "list_channels",
+            self._sync_get_available_channels
+        )
+        
+        if channels:
+            # Apply limit if specified
+            display_limit = limit if limit and limit > 0 else 30
+            channel_list = "\n".join([f"• **{channel}**" for channel in channels[:display_limit]])
+            
+            if len(channels) > display_limit:
+                channel_list += f"\n... and {len(channels) - display_limit} more channels"
+            
+            embed = discord.Embed(
+                title="📺 Available Channels for Analysis",
+                description=channel_list,
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text=f"Total: {len(channels)} channels • Retrieved in {exec_time:.2f}s")
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send("❌ No channels found in database")
+
+    async def _handle_list_users(self, interaction: discord.Interaction, limit: Optional[int]):
+        """Handle list users (equivalent to list_users)"""
+        # Execute sync operation in thread pool
+        users, exec_time = await self.execute_tracked_sync_operation(
+            "list_users",
+            self._sync_get_available_users
+        )
+        
+        if users:
+            # Apply limit if specified
+            display_limit = limit if limit and limit > 0 else 20
+            user_list = "\n".join([f"• **{user}**" for user in users[:display_limit]])
+            
+            if len(users) > display_limit:
+                user_list += f"\n... and {len(users) - display_limit} more users"
+            
+            embed = discord.Embed(
+                title="👥 Available Users for Analysis",
+                description=user_list,
+                color=discord.Color.green()
+            )
+            embed.set_footer(text=f"Total: {len(users)} users • Retrieved in {exec_time:.2f}s")
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send("❌ No users found in database")
 
 
 async def setup(bot):
