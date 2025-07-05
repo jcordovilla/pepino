@@ -673,16 +673,22 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Prepare template data
             template_data = {
                 'data': {
-                    'channel_name': channel_name,
+                    'channel_info': {
+                        'channel_name': channel_name
+                    },
                     'date_range': {
                         'start': analysis_result.statistics.first_message or 'Unknown',
                         'end': analysis_result.statistics.last_message or 'Unknown'
                     },
                     'statistics': analysis_result.statistics,
+                    'top_users': analysis_result.top_users or [],
                     'user_stats': analysis_result.top_users or [],
                     'peak_activity': analysis_result.peak_activity,
                     'engagement_metrics': analysis_result.engagement_metrics,
                     'health_metrics': analysis_result.health_metrics,
+                    'daily_activity_data': analysis_result.daily_activity_data,
+                    'recent_activity': analysis_result.recent_activity or [],
+                    'top_topics': frequent_terms,  # Use extracted terms as topics
                     'content_analysis': {
                         'common_words': frequent_terms  # Now populated by topic analysis
                     },
