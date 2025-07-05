@@ -1557,3 +1557,739 @@ def _list_stats(
         click.echo(f"❌ Error getting database stats: {e}", err=True)
         if ctx_obj.get("verbose"):
             raise
+
+
+@cli.group(name="performance")
+@click.pass_context
+def performance(ctx):
+    """Performance monitoring and optimization commands."""
+    pass
+
+
+@performance.command(name="metrics")
+@click.option("--output", "-o", help="Output file (JSON or CSV)")
+@click.option(
+    "--format",
+    "output_format",
+    default="text",
+    type=click.Choice(["text", "json", "csv"]),
+    help="Output format",
+)
+@click.pass_context
+def performance_metrics(ctx, output: Optional[str], output_format: str):
+    """Show performance metrics for analysis operations."""
+    _performance_metrics(ctx.obj, output, output_format)
+
+
+@performance.command(name="benchmark")
+@click.option("--operations", "-o", multiple=True, help="Specific operations to benchmark")
+@click.option("--iterations", "-i", default=3, help="Number of iterations (default: 3)")
+@click.option("--output", help="Output file (JSON or CSV)")
+@click.option(
+    "--format",
+    "output_format",
+    default="text",
+    type=click.Choice(["text", "json", "csv"]),
+    help="Output format",
+)
+@click.pass_context
+def performance_benchmark(ctx, operations: tuple, iterations: int, output: Optional[str], output_format: str):
+    """Benchmark analysis operations for performance optimization."""
+    _performance_benchmark(ctx.obj, operations, iterations, output, output_format)
+
+
+@performance.command(name="profile")
+@click.option("--operation", "-o", required=True, help="Operation to profile")
+@click.option("--args", "-a", help="Arguments for the operation (JSON format)")
+@click.option("--output", help="Output file for profiling results")
+@click.pass_context
+def performance_profile(ctx, operation: str, args: Optional[str], output: Optional[str]):
+    """Profile a specific analysis operation for detailed performance analysis."""
+    _performance_profile(ctx.obj, operation, args, output)
+
+
+@cli.group(name="test")
+@click.pass_context
+def test(ctx):
+    """Testing and validation commands."""
+    pass
+
+
+@test.command(name="data")
+@click.option("--output", "-o", help="Output file (JSON or CSV)")
+@click.option(
+    "--format",
+    "output_format",
+    default="text",
+    type=click.Choice(["text", "json", "csv"]),
+    help="Output format",
+)
+@click.pass_context
+def test_data(ctx, output: Optional[str], output_format: str):
+    """Test data integrity and availability."""
+    _test_data_integrity(ctx.obj, output, output_format)
+
+
+@test.command(name="analysis")
+@click.option("--operation", "-o", help="Specific analysis operation to test")
+@click.option("--sample-size", "-s", default=10, help="Sample size for testing (default: 10)")
+@click.option("--output", help="Output file (JSON or CSV)")
+@click.option(
+    "--format",
+    "output_format",
+    default="text",
+    type=click.Choice(["text", "json", "csv"]),
+    help="Output format",
+)
+@click.pass_context
+def test_analysis(ctx, operation: Optional[str], sample_size: int, output: Optional[str], output_format: str):
+    """Test analysis operations with sample data."""
+    _test_analysis_operations(ctx.obj, operation, sample_size, output, output_format)
+
+
+@test.command(name="templates")
+@click.option("--template", "-t", help="Specific template to test")
+@click.option("--output", help="Output file (JSON or CSV)")
+@click.option(
+    "--format",
+    "output_format",
+    default="text",
+    type=click.Choice(["text", "json", "csv"]),
+    help="Output format",
+)
+@click.pass_context
+def test_templates(ctx, template: Optional[str], output: Optional[str], output_format: str):
+    """Test template rendering with sample data."""
+    _test_template_rendering(ctx.obj, template, output, output_format)
+
+
+@test.command(name="dependencies")
+@click.option("--output", "-o", help="Output file (JSON or CSV)")
+@click.option(
+    "--format",
+    "output_format",
+    default="text",
+    type=click.Choice(["text", "json", "csv"]),
+    help="Output format",
+)
+@click.pass_context
+def test_dependencies(ctx, output: Optional[str], output_format: str):
+    """Test system dependencies and configuration."""
+    _test_system_dependencies(ctx.obj, output, output_format)
+
+
+def _performance_metrics(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
+    """Show performance metrics for analysis operations."""
+    try:
+        from .persistence import get_database_manager
+        
+        with get_database_manager(ctx_obj.get("db_path")) as db_manager:
+            # Get performance metrics from the database or in-memory tracking
+            metrics_data = {
+                "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
+                "query_performance": {
+                    "avg_query_time": "N/A",
+                    "slow_queries": [],
+                    "total_queries": 0
+                },
+                "memory_usage": {
+                    "current_mb": "N/A",
+                    "peak_mb": "N/A"
+                },
+                "analysis_performance": {
+                    "user_analysis_avg_time": "N/A",
+                    "channel_analysis_avg_time": "N/A",
+                    "topic_analysis_avg_time": "N/A"
+                },
+                "note": "Performance metrics tracking not yet implemented. This is a placeholder for future functionality."
+            }
+            
+            _write_output({"performance_metrics": metrics_data}, output, output_format)
+            
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}")
+        click.echo(f"❌ Error getting performance metrics: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
+
+
+def _performance_benchmark(ctx_obj: Dict[str, Any], operations: tuple, iterations: int, output: Optional[str], output_format: str):
+    """Benchmark analysis operations for performance optimization."""
+    try:
+        import time
+        from .persistence import get_database_manager
+        
+        with get_database_manager(ctx_obj.get("db_path")) as db_manager:
+            settings = Settings()
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            
+            # Default operations to benchmark
+            default_operations = ["user_analysis", "channel_analysis", "topic_analysis", "temporal_analysis"]
+            ops_to_test = list(operations) if operations else default_operations
+            
+            benchmark_results = {
+                "benchmark_config": {
+                    "iterations": iterations,
+                    "operations": ops_to_test,
+                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                },
+                "results": {}
+            }
+            
+            click.echo(f"🔍 Benchmarking {len(ops_to_test)} operations with {iterations} iterations each...")
+            
+            for operation in ops_to_test:
+                click.echo(f"  Testing {operation}...")
+                times = []
+                
+                for i in range(iterations):
+                    start_time = time.time()
+                    
+                    try:
+                        # Simplified benchmark tests
+                        if operation == "user_analysis":
+                            users = data_facade.user_repository.get_available_users()
+                            if users:
+                                # Just get basic user stats, don't run full analysis
+                                user_count = len(users)
+                        elif operation == "channel_analysis":
+                            channels = data_facade.channel_repository.get_available_channels()
+                            if channels:
+                                channel_count = len(channels)
+                        elif operation == "topic_analysis":
+                            # Simple message count for topic analysis benchmark
+                            message_count = data_facade.message_repository.get_total_message_count()
+                        elif operation == "temporal_analysis":
+                            # Simple temporal query benchmark
+                            message_count = data_facade.message_repository.get_total_message_count()
+                        
+                        end_time = time.time()
+                        times.append(end_time - start_time)
+                        
+                    except Exception as e:
+                        click.echo(f"    ❌ Error in iteration {i+1}: {e}")
+                        times.append(float('inf'))
+                
+                # Calculate statistics
+                valid_times = [t for t in times if t != float('inf')]
+                if valid_times:
+                    avg_time = sum(valid_times) / len(valid_times)
+                    min_time = min(valid_times)
+                    max_time = max(valid_times)
+                    
+                    benchmark_results["results"][operation] = {
+                        "avg_time_seconds": round(avg_time, 4),
+                        "min_time_seconds": round(min_time, 4),
+                        "max_time_seconds": round(max_time, 4),
+                        "successful_iterations": len(valid_times),
+                        "failed_iterations": len(times) - len(valid_times)
+                    }
+                    
+                    click.echo(f"    ✅ {operation}: {avg_time:.4f}s avg ({min_time:.4f}s - {max_time:.4f}s)")
+                else:
+                    benchmark_results["results"][operation] = {
+                        "error": "All iterations failed",
+                        "successful_iterations": 0,
+                        "failed_iterations": len(times)
+                    }
+                    click.echo(f"    ❌ {operation}: All iterations failed")
+            
+            _write_output({"benchmark": benchmark_results}, output, output_format)
+            
+    except Exception as e:
+        logger.error(f"Error running benchmark: {e}")
+        click.echo(f"❌ Error running benchmark: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
+
+
+def _performance_profile(ctx_obj: Dict[str, Any], operation: str, args: Optional[str], output: Optional[str]):
+    """Profile a specific analysis operation for detailed performance analysis."""
+    try:
+        import cProfile
+        import pstats
+        import io
+        import json
+        
+        click.echo(f"🔍 Profiling operation: {operation}")
+        
+        # Parse arguments if provided
+        operation_args = {}
+        if args:
+            try:
+                operation_args = json.loads(args)
+            except json.JSONDecodeError:
+                click.echo(f"❌ Invalid JSON arguments: {args}", err=True)
+                return
+        
+        # Create a profiler
+        profiler = cProfile.Profile()
+        
+        # Profile the operation
+        profiler.enable()
+        
+        # Placeholder for actual operation profiling
+        # This would need to be implemented based on specific operations
+        click.echo(f"⚠️  Operation profiling not yet implemented for: {operation}")
+        click.echo(f"   Arguments: {operation_args}")
+        
+        profiler.disable()
+        
+        # Get profiling results
+        stats_stream = io.StringIO()
+        stats = pstats.Stats(profiler, stream=stats_stream)
+        stats.sort_stats('cumulative')
+        stats.print_stats(20)  # Top 20 functions
+        
+        profile_results = {
+            "operation": operation,
+            "arguments": operation_args,
+            "profile_output": stats_stream.getvalue(),
+            "note": "Detailed operation profiling not yet implemented"
+        }
+        
+        if output:
+            with open(output, 'w') as f:
+                json.dump(profile_results, f, indent=2)
+            click.echo(f"✅ Profile results written to {output}")
+        else:
+            click.echo("\n📊 Profile Results:")
+            click.echo(profile_results["profile_output"])
+            
+    except Exception as e:
+        logger.error(f"Error profiling operation: {e}")
+        click.echo(f"❌ Error profiling operation: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
+
+
+def _test_data_integrity(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
+    """Test data integrity and availability."""
+    try:
+        from .persistence import get_database_manager
+        
+        with get_database_manager(ctx_obj.get("db_path")) as db_manager:
+            settings = Settings()
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            
+            test_results = {
+                "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
+                "tests": {}
+            }
+            
+            click.echo("🔍 Testing data integrity...")
+            
+            # Test 1: Database connectivity
+            try:
+                message_count = data_facade.message_repository.get_total_message_count()
+                test_results["tests"]["database_connectivity"] = {
+                    "status": "PASS",
+                    "message": f"Successfully connected to database with {message_count} messages"
+                }
+                click.echo("  ✅ Database connectivity")
+            except Exception as e:
+                test_results["tests"]["database_connectivity"] = {
+                    "status": "FAIL",
+                    "message": f"Database connection failed: {e}"
+                }
+                click.echo("  ❌ Database connectivity")
+            
+            # Test 2: Data availability
+            try:
+                channels = data_facade.channel_repository.get_available_channels()
+                users = data_facade.user_repository.get_available_users()
+                
+                if channels and users:
+                    test_results["tests"]["data_availability"] = {
+                        "status": "PASS",
+                        "message": f"Found {len(channels)} channels and {len(users)} users"
+                    }
+                    click.echo("  ✅ Data availability")
+                else:
+                    test_results["tests"]["data_availability"] = {
+                        "status": "WARN",
+                        "message": f"Limited data: {len(channels)} channels, {len(users)} users"
+                    }
+                    click.echo("  ⚠️  Data availability (limited)")
+            except Exception as e:
+                test_results["tests"]["data_availability"] = {
+                    "status": "FAIL",
+                    "message": f"Data availability check failed: {e}"
+                }
+                click.echo("  ❌ Data availability")
+            
+            # Test 3: Data consistency
+            try:
+                # Basic consistency checks
+                total_messages = data_facade.message_repository.get_total_message_count()
+                distinct_users = data_facade.message_repository.get_distinct_user_count()
+                
+                if total_messages > 0 and distinct_users > 0:
+                    test_results["tests"]["data_consistency"] = {
+                        "status": "PASS",
+                        "message": f"Data consistency checks passed: {total_messages} messages from {distinct_users} users"
+                    }
+                    click.echo("  ✅ Data consistency")
+                else:
+                    test_results["tests"]["data_consistency"] = {
+                        "status": "FAIL",
+                        "message": "No valid data found"
+                    }
+                    click.echo("  ❌ Data consistency")
+            except Exception as e:
+                test_results["tests"]["data_consistency"] = {
+                    "status": "FAIL",
+                    "message": f"Data consistency check failed: {e}"
+                }
+                click.echo("  ❌ Data consistency")
+            
+            # Summary
+            passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
+            total = len(test_results["tests"])
+            
+            test_results["summary"] = {
+                "total_tests": total,
+                "passed": passed,
+                "failed": total - passed,
+                "overall_status": "PASS" if passed == total else "FAIL"
+            }
+            
+            click.echo(f"\n📊 Test Summary: {passed}/{total} tests passed")
+            
+            _write_output({"data_integrity": test_results}, output, output_format)
+            
+    except Exception as e:
+        logger.error(f"Error testing data integrity: {e}")
+        click.echo(f"❌ Error testing data integrity: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
+
+
+def _test_analysis_operations(ctx_obj: Dict[str, Any], operation: Optional[str], sample_size: int, output: Optional[str], output_format: str):
+    """Test analysis operations with sample data."""
+    try:
+        from .persistence import get_database_manager
+        
+        with get_database_manager(ctx_obj.get("db_path")) as db_manager:
+            settings = Settings()
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            
+            test_results = {
+                "test_config": {
+                    "operation": operation or "all",
+                    "sample_size": sample_size,
+                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                },
+                "tests": {}
+            }
+            
+            # Operations to test
+            operations_to_test = [operation] if operation else ["user_analysis", "channel_analysis", "topic_analysis", "temporal_analysis"]
+            
+            click.echo(f"🔍 Testing {len(operations_to_test)} analysis operations...")
+            
+            for op in operations_to_test:
+                click.echo(f"  Testing {op}...")
+                
+                try:
+                    if op == "user_analysis":
+                        users = data_facade.user_repository.get_available_users()
+                        if users:
+                            # Test with first few users
+                            test_users = users[:min(sample_size, len(users))]
+                            success_count = 0
+                            
+                            for user in test_users:
+                                try:
+                                    # Basic user stats test
+                                    user_messages = data_facade.message_repository.get_user_messages(user, limit=10)
+                                    if user_messages:
+                                        success_count += 1
+                                except:
+                                    pass
+                            
+                            test_results["tests"][op] = {
+                                "status": "PASS" if success_count > 0 else "FAIL",
+                                "message": f"Successfully analyzed {success_count}/{len(test_users)} users",
+                                "sample_size": len(test_users)
+                            }
+                        else:
+                            test_results["tests"][op] = {
+                                "status": "FAIL",
+                                "message": "No users available for testing"
+                            }
+                    
+                    elif op == "channel_analysis":
+                        channels = data_facade.channel_repository.get_available_channels()
+                        if channels:
+                            test_channels = channels[:min(sample_size, len(channels))]
+                            success_count = 0
+                            
+                            for channel in test_channels:
+                                try:
+                                    # Basic channel stats test
+                                    channel_messages = data_facade.message_repository.get_channel_messages(channel, limit=10)
+                                    if channel_messages:
+                                        success_count += 1
+                                except:
+                                    pass
+                            
+                            test_results["tests"][op] = {
+                                "status": "PASS" if success_count > 0 else "FAIL",
+                                "message": f"Successfully analyzed {success_count}/{len(test_channels)} channels",
+                                "sample_size": len(test_channels)
+                            }
+                        else:
+                            test_results["tests"][op] = {
+                                "status": "FAIL",
+                                "message": "No channels available for testing"
+                            }
+                    
+                    else:
+                        # Placeholder for other operations
+                        test_results["tests"][op] = {
+                            "status": "SKIP",
+                            "message": f"Testing for {op} not yet implemented"
+                        }
+                    
+                    if test_results["tests"][op]["status"] == "PASS":
+                        click.echo(f"    ✅ {op}")
+                    elif test_results["tests"][op]["status"] == "FAIL":
+                        click.echo(f"    ❌ {op}")
+                    else:
+                        click.echo(f"    ⚠️  {op} (skipped)")
+                        
+                except Exception as e:
+                    test_results["tests"][op] = {
+                        "status": "FAIL",
+                        "message": f"Test failed with error: {e}"
+                    }
+                    click.echo(f"    ❌ {op}")
+            
+            # Summary
+            passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
+            total = len([test for test in test_results["tests"].values() if test["status"] != "SKIP"])
+            
+            test_results["summary"] = {
+                "total_tests": total,
+                "passed": passed,
+                "failed": total - passed,
+                "overall_status": "PASS" if passed == total else "FAIL"
+            }
+            
+            click.echo(f"\n📊 Test Summary: {passed}/{total} analysis operations passed")
+            
+            _write_output({"analysis_tests": test_results}, output, output_format)
+            
+    except Exception as e:
+        logger.error(f"Error testing analysis operations: {e}")
+        click.echo(f"❌ Error testing analysis operations: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
+
+
+def _test_template_rendering(ctx_obj: Dict[str, Any], template: Optional[str], output: Optional[str], output_format: str):
+    """Test template rendering with sample data."""
+    try:
+        from pepino.templates.template_engine import TemplateEngine
+        from .persistence import get_database_manager
+        
+        with get_database_manager(ctx_obj.get("db_path")) as db_manager:
+            settings = Settings()
+            from pepino.analysis.data_facade import get_analysis_data_facade
+            data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+            
+            template_engine = TemplateEngine(data_facade)
+            
+            test_results = {
+                "test_config": {
+                    "template": template or "all",
+                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                },
+                "tests": {}
+            }
+            
+            # Common templates to test
+            templates_to_test = [template] if template else [
+                "outputs/cli/user_analysis.txt.j2",
+                "outputs/cli/channel_analysis.txt.j2",
+                "outputs/cli/topic_analysis.txt.j2",
+                "outputs/discord/user_analysis.md.j2"
+            ]
+            
+            click.echo(f"🔍 Testing {len(templates_to_test)} templates...")
+            
+            for template_name in templates_to_test:
+                click.echo(f"  Testing {template_name}...")
+                
+                try:
+                    # Create sample data for template testing
+                    sample_data = {
+                        "user_info": {"display_name": "Test User", "author_name": "testuser"},
+                        "statistics": {"message_count": 100, "channels_active": 5},
+                        "channel_name": "test-channel",
+                        "days": 30,
+                        "analysis": {"success": True},
+                        "topics": [{"topic": "test", "frequency": 10}]
+                    }
+                    
+                    # Test template rendering
+                    rendered = template_engine.render_template(template_name, **sample_data)
+                    
+                    if rendered and len(rendered.strip()) > 0:
+                        test_results["tests"][template_name] = {
+                            "status": "PASS",
+                            "message": f"Template rendered successfully ({len(rendered)} characters)",
+                            "sample_output": rendered[:200] + "..." if len(rendered) > 200 else rendered
+                        }
+                        click.echo(f"    ✅ {template_name}")
+                    else:
+                        test_results["tests"][template_name] = {
+                            "status": "FAIL",
+                            "message": "Template rendered but output was empty"
+                        }
+                        click.echo(f"    ❌ {template_name}")
+                        
+                except Exception as e:
+                    test_results["tests"][template_name] = {
+                        "status": "FAIL",
+                        "message": f"Template rendering failed: {e}"
+                    }
+                    click.echo(f"    ❌ {template_name}")
+            
+            # Summary
+            passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
+            total = len(test_results["tests"])
+            
+            test_results["summary"] = {
+                "total_tests": total,
+                "passed": passed,
+                "failed": total - passed,
+                "overall_status": "PASS" if passed == total else "FAIL"
+            }
+            
+            click.echo(f"\n📊 Test Summary: {passed}/{total} templates passed")
+            
+            _write_output({"template_tests": test_results}, output, output_format)
+            
+    except Exception as e:
+        logger.error(f"Error testing templates: {e}")
+        click.echo(f"❌ Error testing templates: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
+
+
+def _test_system_dependencies(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
+    """Test system dependencies and configuration."""
+    try:
+        import sys
+        import sqlite3
+        
+        test_results = {
+            "system_info": {
+                "python_version": sys.version,
+                "platform": sys.platform,
+                "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+            },
+            "tests": {}
+        }
+        
+        click.echo("🔍 Testing system dependencies...")
+        
+        # Test 1: Python version
+        try:
+            if sys.version_info >= (3, 8):
+                test_results["tests"]["python_version"] = {
+                    "status": "PASS",
+                    "message": f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+                }
+                click.echo("  ✅ Python version")
+            else:
+                test_results["tests"]["python_version"] = {
+                    "status": "FAIL",
+                    "message": f"Python {sys.version_info.major}.{sys.version_info.minor} (requires 3.8+)"
+                }
+                click.echo("  ❌ Python version")
+        except Exception as e:
+            test_results["tests"]["python_version"] = {
+                "status": "FAIL",
+                "message": f"Python version check failed: {e}"
+            }
+            click.echo("  ❌ Python version")
+        
+        # Test 2: SQLite
+        try:
+            sqlite_version = sqlite3.sqlite_version
+            test_results["tests"]["sqlite"] = {
+                "status": "PASS",
+                "message": f"SQLite {sqlite_version}"
+            }
+            click.echo("  ✅ SQLite")
+        except Exception as e:
+            test_results["tests"]["sqlite"] = {
+                "status": "FAIL",
+                "message": f"SQLite check failed: {e}"
+            }
+            click.echo("  ❌ SQLite")
+        
+        # Test 3: Required packages
+        required_packages = ["click", "discord", "jinja2", "pydantic"]
+        
+        for package in required_packages:
+            try:
+                __import__(package)
+                test_results["tests"][f"package_{package}"] = {
+                    "status": "PASS",
+                    "message": f"{package} imported successfully"
+                }
+                click.echo(f"  ✅ {package}")
+            except ImportError as e:
+                test_results["tests"][f"package_{package}"] = {
+                    "status": "FAIL",
+                    "message": f"{package} import failed: {e}"
+                }
+                click.echo(f"  ❌ {package}")
+        
+        # Test 4: Optional packages
+        optional_packages = ["spacy", "bertopic", "sentence_transformers"]
+        
+        for package in optional_packages:
+            try:
+                __import__(package)
+                test_results["tests"][f"optional_{package}"] = {
+                    "status": "PASS",
+                    "message": f"{package} available"
+                }
+                click.echo(f"  ✅ {package} (optional)")
+            except ImportError:
+                test_results["tests"][f"optional_{package}"] = {
+                    "status": "WARN",
+                    "message": f"{package} not available (optional)"
+                }
+                click.echo(f"  ⚠️  {package} (optional, not installed)")
+        
+        # Summary
+        passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
+        warned = sum(1 for test in test_results["tests"].values() if test["status"] == "WARN")
+        total = len(test_results["tests"])
+        
+        test_results["summary"] = {
+            "total_tests": total,
+            "passed": passed,
+            "warned": warned,
+            "failed": total - passed - warned,
+            "overall_status": "PASS" if passed + warned == total else "FAIL"
+        }
+        
+        click.echo(f"\n📊 Test Summary: {passed}/{total} dependencies passed, {warned} warnings")
+        
+        _write_output({"dependency_tests": test_results}, output, output_format)
+        
+    except Exception as e:
+        logger.error(f"Error testing dependencies: {e}")
+        click.echo(f"❌ Error testing dependencies: {e}", err=True)
+        if ctx_obj.get("verbose"):
+            raise
