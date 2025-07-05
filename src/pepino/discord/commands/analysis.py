@@ -1318,11 +1318,24 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             text_result, chart_path = result
             
             if chart_path and os.path.exists(chart_path):
-                # Send text and chart together as one message
-                await interaction.followup.send(
-                    text_result,
-                    file=discord.File(chart_path, filename="daily_activity_chart.png")
-                )
+                # When sending with file attachment, we need to handle long messages carefully
+                # Discord doesn't allow splitting messages with attachments
+                max_length_with_file = 1900  # Leave some buffer for Discord's limits
+                
+                if len(text_result) <= max_length_with_file:
+                    # Send text and chart together as one message
+                    await interaction.followup.send(
+                        text_result,
+                        file=discord.File(chart_path, filename="daily_activity_chart.png")
+                    )
+                else:
+                    # Send chart first, then text separately (can be split)
+                    await interaction.followup.send(
+                        "📊 **Analysis Chart**",
+                        file=discord.File(chart_path, filename="daily_activity_chart.png")
+                    )
+                    await self._send_long_message_slash(interaction, text_result)
+                
                 # Clean up the temporary file
                 try:
                     os.remove(chart_path)
