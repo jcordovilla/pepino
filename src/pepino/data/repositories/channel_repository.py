@@ -51,21 +51,40 @@ class ChannelRepository:
         Returns:
             Dictionary with channel message statistics
         """
+        # Build subquery conditions for date filtering
+        date_condition = ""
+        if days:
+            date_condition = " AND timestamp >= datetime('now', '-' || ? || ' days')"
+        
+        # For accurate bot statistics, we need to count all messages first, then apply filters for human analysis
         query = f"""
         SELECT 
-            COUNT(*) as total_messages,
-            COUNT(DISTINCT author_name) as unique_users,
+            COUNT(*) as total_messages_filtered,
+            COUNT(DISTINCT author_name) as unique_users_filtered,
             MIN(timestamp) as first_message,
             MAX(timestamp) as last_message,
             AVG(LENGTH(content)) as avg_message_length,
-            COUNT(CASE WHEN author_is_bot = 1 THEN 1 END) as bot_messages,
             COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
-            COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users
+            COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users,
+            -- Get accurate bot counts without base filter interference
+            (SELECT COUNT(*) FROM messages WHERE channel_name = ? AND author_is_bot = 1 AND content IS NOT NULL{date_condition}) as bot_messages,
+            (SELECT COUNT(*) FROM messages WHERE channel_name = ? AND content IS NOT NULL{date_condition}) as total_messages_actual,
+            (SELECT COUNT(DISTINCT author_name) FROM messages WHERE channel_name = ? AND content IS NOT NULL{date_condition}) as unique_users_actual
         FROM messages 
         WHERE channel_name = ? AND {self.base_filter}
         """
         
-        params = [channel_name]
+        # Build parameters for the main query and subqueries
+        params = []
+        
+        # Parameters for subqueries (bot_messages, total_messages_actual, unique_users_actual)
+        if days:
+            params.extend([channel_name, days, channel_name, days, channel_name, days])  # 3 subqueries with days
+        else:
+            params.extend([channel_name, channel_name, channel_name])  # 3 subqueries without days
+        
+        # Parameter for main query
+        params.append(channel_name)
         
         if days:
             query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
@@ -79,13 +98,13 @@ class ChannelRepository:
             return {}
         
         return {
-            'total_messages': result['total_messages'] or 0,
-            'unique_users': result['unique_users'] or 0,
+            'total_messages': result['total_messages_actual'] or 0,  # Use actual total (including all bots)
+            'unique_users': result['unique_users_actual'] or 0,  # Use actual unique users (including all bots)
             'first_message': result['first_message'],
             'last_message': result['last_message'],
             'avg_message_length': result['avg_message_length'] or 0.0,
-            'bot_messages': result['bot_messages'] or 0,
-            'human_messages': result['human_messages'] or 0,
+            'bot_messages': result['bot_messages'] or 0,  # Accurate bot count without base filter
+            'human_messages': result['human_messages'] or 0,  # Human count with base filter applied
             'unique_human_users': result['unique_human_users'] or 0
         }
 
