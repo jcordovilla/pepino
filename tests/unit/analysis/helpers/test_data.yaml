@@ -1,0 +1,229 @@
+# Test data for analysis utilities
+# This file contains test cases and expected results for parameterized tests
+
+text_processing:
+  clean_text_cases:
+    - input: "Hello, world! This is a test message."
+      expected: ["hello world this is a test message"]
+      unexpected: []
+    - input: "Check this out: https://example.com and http://test.org"
+      expected: ["check this out"]
+      unexpected: ["https://example.com", "http://test.org"]
+    - input: "Hey <@123456789> and <@!987654321>, how are you?"
+      expected: ["hey", "how are you"]
+      unexpected: ["<@123456789>", "<@!987654321>"]
+    - input: "Check out <#123456789> for more info"
+      expected: ["check out", "for more info"]
+      unexpected: ["<#123456789>"]
+    - input: "I love <:heart:123456789> and <a:wave:987654321>"
+      expected: ["i love"]
+      unexpected: ["<:heart:123456789>", "<a:wave:987654321>"]
+    - input: "Here's some code: ```python\nprint('hello')\n``` and inline `code`"
+      expected: ["heres some code"]
+      unexpected: ["```python", "print('hello')", "```", "`code`"]
+    - input: "Hello! @#$%^&*()_+-=[]{}|;':\",./<>?"
+      expected: ["hello"]
+      unexpected: ["@", "#", "$", "%", "^", "&", "*", "(", ")", "+", "=", "[", "]", "{", "}", "|", ";", ":", '"', ",", ".", "/", "<", ">", "?", "$"]
+    - input: ""
+      expected: [""]
+      unexpected: []
+    - input: null
+      expected: [""]
+      unexpected: []
+
+  extract_concepts_cases:
+    - input: "Machine learning and artificial intelligence are fascinating topics. Deep learning is a subset of machine learning."
+      max_concepts: 10
+      expected_min_concepts: 1
+      forbidden: []
+    - input: "The and or but in on at to for of with by is are was were"
+      max_concepts: 10
+      expected_min_concepts: 0
+      forbidden: ["the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were"]
+    - input: "A I am he she it we they me him her us them"
+      max_concepts: 10
+      expected_min_concepts: 0
+      forbidden: []
+    - input: "Python machine learning algorithms for data science and artificial intelligence applications"
+      max_concepts: 10
+      expected_min_concepts: 1
+      forbidden: []
+
+  extract_phrases_cases:
+    - input: "Machine learning algorithms are used in artificial intelligence applications."
+      min_length: 2
+      max_length: 3
+      expected_min_phrases: 1
+    - input: "Machine learning and artificial intelligence are fascinating topics for data science applications."
+      min_length: 2
+      max_length: 3
+      expected_min_phrases: 1
+    - input: |
+        Machine learning algorithms are becoming increasingly important in modern software development.
+        Deep learning models require significant computational resources and large datasets.
+        Natural language processing techniques help computers understand human language.
+      min_length: 2
+      max_length: 4
+      expected_min_phrases: 1
+
+  remove_discord_noise_cases:
+    - input: "The server has a buddy group system. The session recording is available. The future looks bright."
+      forbidden: ["buddy group", "session recording", "future"]
+      required: ["looks bright"]
+    - input: "The meeting will be in 30 minutes. We'll discuss this for 2 hours. The project takes 3 weeks."
+      forbidden: ["30 minutes", "2 hours", "3 weeks", "meeting"]
+      required: ["discuss", "project"]
+    - input: ""
+      forbidden: []
+      required: []
+    - input: null
+      forbidden: []
+      required: []
+
+statistics:
+  descriptive_stats_cases:
+    - data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      expected:
+        count: 10
+        mean: 5.5
+        median: 5.5
+        min: 1
+        max: 10
+    - data: [42]
+      expected:
+        count: 1
+        mean: 42
+        median: 42
+        std: 0.0
+        min: 42
+        max: 42
+    - data: []
+      expected: {}
+
+  correlation_cases:
+    - x: [1, 2, 3, 4, 5]
+      y: [2, 4, 6, 8, 10]
+      expected:
+        pearson_correlation: 1.0
+        spearman_correlation: 1.0
+        sample_size: 5
+    - x: [1, 2, 3, 4, 5]
+      y: [10, 8, 6, 4, 2]
+      expected:
+        pearson_correlation: -1.0
+        spearman_correlation: -1.0
+    - x: [1, 2, 3, 4, 5]
+      y: [1, 1, 1, 1, 1]
+      expected:
+        pearson_correlation: null  # NaN
+        spearman_correlation: null  # NaN
+    - x: [1]
+      y: [2]
+      expected: {}
+
+  frequency_cases:
+    - data: ["a", "b", "a", "c", "b", "a"]
+      expected:
+        frequencies:
+          a: 3
+          b: 2
+          c: 1
+        total_count: 6
+        unique_count: 3
+        relative_frequencies:
+          a: 0.5
+    - data: [1, 2, 1, 3, 2, 1, 4]
+      expected:
+        frequencies:
+          1: 3
+          2: 2
+          3: 1
+          4: 1
+        total_count: 7
+        unique_count: 4
+    - data: []
+      expected: {}
+
+  outlier_cases:
+    - data: [1, 2, 3, 4, 5, 100000, 6, 7, 8, 9, 10, -50000]
+      method: "iqr"
+      expected_outliers: [100000, -50000]
+    - data: [1, 2, 3, 100000, 4, 5, -50000]
+      method: "zscore"
+      expected_outliers: [100000, -50000]
+    - data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      method: "iqr"
+      expected_outliers: []
+    - data: []
+      method: "iqr"
+      expected_outliers: []
+
+  hypothesis_testing_cases:
+    - group1: [1, 2, 3, 4, 5]
+      group2: [6, 7, 8, 9, 10]
+      test_type: "t_test"
+      expected:
+        significant: true
+        p_value: "< 0.05"
+    - group1: [1, 2, 3, 4, 5]
+      group2: [1, 2, 3, 4, 5]
+      test_type: "t_test"
+      expected:
+        significant: false
+        p_value: "> 0.05"
+    - group1: [1, 2, 3, 4, 5]
+      group2: [6, 7, 8, 9, 10]
+      test_type: "mann_whitney"
+      expected:
+        significant: true
+        p_value: "< 0.05"
+
+time_series:
+  time_series_data:
+    - dates: ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]
+      values: [10, 15, 12, 18, 14]
+      expected_length: 5
+      expected_freq: "1D"
+    - dates: []
+      values: []
+      expected_length: 0
+      expected_freq: "1D"
+
+  trend_cases:
+    - trend_type: "increasing"
+      values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      expected_trend: "increasing"
+      expected_slope: "> 0"
+    - trend_type: "decreasing"
+      values: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+      expected_trend: "decreasing"
+      expected_slope: "< 0"
+    - trend_type: "stable"
+      values: [5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+      expected_trend: "stable"
+      expected_slope: "≈ 0"
+
+  anomaly_cases:
+    - data: [1, 2, 3, 4, 5, 100000, 6, 7, 8, 9, 10, -50000]
+      method: "iqr"
+      expected_anomalies: [100000, -50000]
+    - data: [1, 2, 3, 100000, 4, 5, -50000]
+      method: "zscore"
+      expected_anomalies: [100000, -50000]
+    - data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      method: "iqr"
+      expected_anomalies: []
+    - data: []
+      method: "iqr"
+      expected_anomalies: []
+
+  forecasting_cases:
+    - periods: 5
+      expected_length: 5
+      expected_forecast: true
+    - periods: 0
+      expected_length: 0
+      expected_forecast: false
+    - periods: -1
+      expected_length: 0
+      expected_forecast: false 
