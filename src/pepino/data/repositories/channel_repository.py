@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from ...config import settings
 from ..database.manager import DatabaseManager
 from ..models.channel import Channel
-from pepino.logging_config import get_logger
+from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 

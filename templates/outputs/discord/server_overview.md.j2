@@ -1,0 +1,53 @@
+## 🏠 Server Overview Analysis{% if time_period %} ({{ time_period }}){% else %} (All Time){% endif %}
+
+**📊 Server Statistics:**
+• Total Messages: {{ server_stats.total_messages | format_number }}
+• Total Users: {{ server_stats.total_users | format_number }}
+• Total Channels: {{ server_stats.total_channels | format_number }}
+• Messages per User: {{ server_stats.messages_per_user | format_number }}
+• Messages per Channel: {{ server_stats.messages_per_channel | format_number }}
+
+**📈 Server Health:**
+• Activity Score: {{ server_stats.activity_score }}/100
+• Engagement Level: {{ server_stats.engagement_level | title }}
+• Activity Trend: {{ server_stats.activity_trend | title }}{% if server_stats.trend_percentage != 0 %} ({{ server_stats.trend_percentage | round(1) }}%){% endif %}
+
+{% if date_range and date_range.start and date_range.end -%}
+**📅 Activity Period:**
+• First Message: {{ date_range.start[:16] | replace('T', ' ') }}
+• Last Message: {{ date_range.end[:16] | replace('T', ' ') }}
+
+{% endif -%}
+{% if most_active_channel -%}
+**🏆 Most Active Channel:**
+• #{{ most_active_channel.channel_name or most_active_channel.name }}: {{ most_active_channel.message_count | format_number }} messages
+
+{% endif -%}
+{% if most_active_user -%}
+**👑 Most Active User:**
+• {{ most_active_user.display_name or most_active_user.author_name }}: {{ most_active_user.message_count | format_number }} messages
+
+{% endif -%}
+{% if top_channels and top_channels | length > 0 -%}
+**📺 Top Channels:**
+{% for channel in top_channels -%}
+{{ loop.index }}. #{{ channel.channel_name or channel.name }} - {{ channel.message_count | format_number }} messages
+{% endfor -%}
+
+{% endif -%}
+{% if top_users and top_users | length > 0 -%}
+**👥 Top Users:**
+{% for user in top_users -%}
+{{ loop.index }}. {{ user.display_name or user.author_name }} - {{ user.message_count | format_number }} messages
+{% endfor -%}
+
+{% endif -%}
+{% if temporal_data and temporal_data.patterns -%}
+**⏰ Activity Patterns:**
+• Peak Activity: {{ temporal_data.patterns.most_active_period }} ({{ temporal_data.patterns.max_messages_in_period }} messages)
+• Average per Period: {{ temporal_data.patterns.avg_messages_per_period | round(1) }} messages
+• Activity Trend: {{ temporal_data.patterns.message_trend | title }} ({{ temporal_data.patterns.trend_percentage | round(1) }}%)
+
+{% endif -%}
+---
+*Server analysis powered by Pepino Analytics* 

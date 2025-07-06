@@ -403,6 +403,148 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 "outputs/discord/top_users.md.j2",
                 **template_data
             )
+
+    def _sync_server_overview(self, days: Optional[int]) -> str:
+        """Sync server overview analysis with comprehensive server-wide statistics."""
+        from ...analysis.data_facade import get_analysis_data_facade
+        from ...analysis.user_analyzer import UserAnalyzer
+        from ...analysis.channel_analyzer import ChannelAnalyzer
+        from ...analysis.temporal_analyzer import TemporalAnalyzer
+        from ...config import Settings
+        from datetime import datetime, timezone
+        
+        settings = Settings()
+        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+            # Create template engine with analyzer helpers
+            template_engine = self._create_template_engine(facade)
+            
+            # Initialize analyzers
+            user_analyzer = UserAnalyzer(facade)
+            channel_analyzer = ChannelAnalyzer(facade)
+            temporal_analyzer = TemporalAnalyzer(facade)
+            
+            # Get server-wide statistics
+            try:
+                # Get database statistics using existing methods
+                total_messages = facade.message_repository.get_total_message_count()
+                total_users = facade.message_repository.get_distinct_user_count()
+                total_channels = facade.channel_repository.get_distinct_channel_count()
+                
+                # Get top channels
+                top_channels = facade.channel_repository.get_top_channels_by_message_count(limit=10, days=days)
+                
+                # Get top users
+                top_users = user_analyzer.get_top_users(limit=10, days=days)
+                
+                # Get temporal activity patterns using existing method
+                temporal_analysis = temporal_analyzer.analyze(
+                    channel_name=None,  # Server-wide
+                    days_back=days
+                )
+                
+                # Get activity trends
+                activity_trend = "stable"
+                trend_percentage = 0
+                if hasattr(temporal_analysis, 'patterns') and temporal_analysis.patterns:
+                    activity_trend = temporal_analysis.patterns.message_trend
+                    trend_percentage = temporal_analysis.patterns.trend_percentage
+                
+                # Get most active channel and user
+                most_active_channel = top_channels[0] if top_channels else None
+                most_active_user = top_users[0] if top_users else None
+                
+                # Calculate engagement metrics
+                engagement_level = "moderate"
+                if total_messages > 0 and total_users > 0:
+                    messages_per_user = total_messages / total_users
+                    if messages_per_user > 50:
+                        engagement_level = "high"
+                    elif messages_per_user > 20:
+                        engagement_level = "moderate"
+                    else:
+                        engagement_level = "low"
+                
+                # Get date range from first and last messages
+                date_range = {'start': None, 'end': None}
+                try:
+                    # Get first and last message timestamps
+                    first_message_query = f"SELECT MIN(timestamp) as first_message FROM messages WHERE {settings.base_filter}"
+                    last_message_query = f"SELECT MAX(timestamp) as last_message FROM messages WHERE {settings.base_filter}"
+                    
+                    first_result = facade.message_repository.db_manager.execute_query(first_message_query, fetch_one=True)
+                    last_result = facade.message_repository.db_manager.execute_query(last_message_query, fetch_one=True)
+                    
+                    if first_result and first_result['first_message']:
+                        date_range['start'] = first_result['first_message']
+                    if last_result and last_result['last_message']:
+                        date_range['end'] = last_result['last_message']
+                except Exception as e:
+                    logger.warning(f"Could not get date range: {e}")
+                
+                # Calculate server activity score (0-100)
+                activity_score = 0
+                if total_messages > 1000:
+                    activity_score += 30
+                elif total_messages > 100:
+                    activity_score += 20
+                elif total_messages > 10:
+                    activity_score += 10
+                
+                if total_users > 50:
+                    activity_score += 30
+                elif total_users > 20:
+                    activity_score += 20
+                elif total_users > 5:
+                    activity_score += 10
+                
+                if total_channels > 10:
+                    activity_score += 20
+                elif total_channels > 5:
+                    activity_score += 15
+                elif total_channels > 1:
+                    activity_score += 10
+                
+                # Add trend bonus/penalty
+                if activity_trend == "increasing":
+                    activity_score += 10
+                elif activity_trend == "decreasing":
+                    activity_score -= 10
+                
+                activity_score = min(100, max(0, activity_score))
+                
+                # Prepare template data
+                template_data = {
+                    'days_back': days,
+                    'time_period': f"last {days} days" if days is not None else "all time",
+                    'server_stats': {
+                        'total_messages': total_messages,
+                        'total_users': total_users,
+                        'total_channels': total_channels,
+                        'messages_per_user': round(total_messages / total_users, 1) if total_users > 0 else 0,
+                        'messages_per_channel': round(total_messages / total_channels, 1) if total_channels > 0 else 0,
+                        'activity_score': activity_score,
+                        'engagement_level': engagement_level,
+                        'activity_trend': activity_trend,
+                        'trend_percentage': trend_percentage
+                    },
+                    'date_range': date_range,
+                    'top_channels': top_channels[:5],  # Top 5 channels
+                    'top_users': top_users[:5],  # Top 5 users
+                    'most_active_channel': most_active_channel,
+                    'most_active_user': most_active_user,
+                    'temporal_data': temporal_analysis if hasattr(temporal_analysis, 'patterns') else None,
+                    'capabilities_used': ['server_analysis', 'database_stats', 'temporal_analysis', 'engagement_analysis']
+                }
+                
+                # Render template
+                return template_engine.render_template(
+                    "outputs/discord/server_overview.md.j2",
+                    **template_data
+                )
+                
+            except Exception as e:
+                logger.error(f"Server overview analysis failed: {e}")
+                return None
     
     def _sync_analyze_single_channel(self, channel_name: str, **analysis_params) -> str:
         """Sync single channel analysis with temporal filtering."""
@@ -1468,7 +1610,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             if analysis_type == "top_users":
                 await self._handle_server_top_users(interaction, limit, days)
             elif analysis_type == "overview":
-                await interaction.followup.send("🚧 Server overview analysis is coming soon! Use `top_users` for now.")
+                await self._handle_server_overview(interaction, days)
             
         except Exception as e:
             logger.error(f"Pepino server analytics failed: {e}")
@@ -1493,6 +1635,22 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             await self._send_long_message_slash(interaction, final_message)
         else:
             await interaction.followup.send(f"❌ No user data found")
+
+    async def _handle_server_overview(self, interaction: discord.Interaction, days: Optional[int]):
+        """Handle server overview analysis (equivalent to server_overview)"""
+        # Execute sync operation in thread pool with performance tracking
+        result, exec_time = await self.execute_tracked_sync_operation(
+            "server_overview",
+            self._sync_server_overview,
+            days
+        )
+        
+        # Send single comprehensive result
+        if result:
+            final_message = f"{result}\n\n✅ Analysis completed in {exec_time:.2f}s"
+            await self._send_long_message_slash(interaction, final_message)
+        else:
+            await interaction.followup.send(f"❌ No server data found")
 
     @app_commands.command(name="pepino_lists", description="List available channels and users for analysis")
     @app_commands.describe(
