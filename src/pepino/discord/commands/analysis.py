@@ -326,46 +326,6 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 **template_data
             )
     
-    def _sync_activity_trends(self, channel_name: str, days: Optional[int]) -> str:
-        """Sync activity trends analysis using enhanced template system."""
-        from ...analysis.data_facade import get_analysis_data_facade
-        from ...analysis.temporal_analyzer import TemporalAnalyzer
-        from ...config import Settings
-        
-        settings = Settings()
-        with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
-            # Create template engine with analyzer helpers
-            template_engine = self._create_template_engine(facade)
-            
-            # Initialize analyzer with facade
-            analyzer = TemporalAnalyzer(facade)
-            
-            # Run temporal analysis with optional days filtering
-            analysis_params = {'granularity': 'day'}
-            if days is not None:
-                analysis_params['days_back'] = days
-            
-            analysis = analyzer.analyze(channel_name=channel_name, **analysis_params)
-            
-            if not analysis or not analysis.temporal_data:
-                return None
-            
-            # Prepare template data
-            template_data = {
-                'channel_name': channel_name,
-                'days_back': days,
-                'analysis': analysis,
-                'temporal_data': analysis.temporal_data,
-                'patterns': analysis.patterns,
-                'time_period': f"last {days} days" if days is not None else "all time"
-            }
-            
-            # Render template
-            return template_engine.render_template(
-                "outputs/discord/activity_trends.md.j2",
-                **template_data
-            )
-    
     def _sync_top_users(self, limit: int, days: Optional[int]) -> str:
         """Sync top users analysis using enhanced template system."""
         from ...analysis.data_facade import get_analysis_data_facade
@@ -1491,7 +1451,6 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 value="**Comprehensive channel analysis**\n"
                       "• `overview` - Channel summary and statistics\n"
                       "• `topics` - Topic analysis and themes\n"
-                      "• `activity` - Activity patterns and trends\n"
                       "Options: channel_name, days, end_date",
                 inline=False
             )
@@ -1558,7 +1517,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     async def pepino_channel_analytics(
         self,
         interaction: discord.Interaction,
-        analysis_type: Literal["overview", "topics", "activity"] = "overview",
+        analysis_type: Literal["overview", "topics"] = "overview",
         channel_name: Optional[str] = None,
         days: Optional[int] = None,
         end_date: Optional[str] = None
@@ -1569,13 +1528,12 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         Analysis Types:
         - overview: Channel overview with statistics and charts (default: all time)
         - topics: Topic and keyword analysis (default: all time)
-        - activity: Temporal activity trends and patterns (default: all time)
         """
         try:
             # days remains None for all time analysis unless explicitly specified
             
             # Determine target channel for topics and activity analysis
-            if analysis_type in ["topics", "activity"] and not channel_name:
+            if analysis_type in ["topics"] and not channel_name:
                 if isinstance(interaction.channel, discord.DMChannel):
                     await interaction.response.send_message(f"❌ Please specify a channel name when using {analysis_type} analysis in DMs.")
                     return
@@ -1591,8 +1549,6 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 await self._handle_channel_overview(interaction, channel_name, days, end_date)
             elif analysis_type == "topics":
                 await self._handle_channel_topics(interaction, channel_name, days)
-            elif analysis_type == "activity":
-                await self._handle_channel_activity(interaction, channel_name, days)
             
         except Exception as e:
             logger.error(f"Pepino channel analytics failed: {e}")
@@ -1714,26 +1670,6 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             await interaction.followup.send(f"✅ Topics analysis completed in {exec_time:.2f}s")
         else:
             await interaction.followup.send(f"❌ No topic data found for channel **{channel_name}**")
-
-    async def _handle_channel_activity(self, interaction: discord.Interaction, channel_name: str, days: Optional[int]):
-        """Handle channel activity trends analysis (equivalent to activity_trends)"""
-        # Send initial response
-        time_desc = f"last {days} days" if days is not None else "all time"
-        await interaction.followup.send(f"🔍 Analyzing activity trends in **{channel_name}** ({time_desc})... This may take a moment.")
-        
-        # Execute sync operation in thread pool with performance tracking
-        result, exec_time = await self.execute_tracked_sync_operation(
-            "activity_trends",
-            self._sync_activity_trends,
-            channel_name, days
-        )
-        
-        # Send result
-        if result:
-            await self._send_long_message_slash(interaction, result)
-            await interaction.followup.send(f"✅ Activity trends analysis completed in {exec_time:.2f}s")
-        else:
-            await interaction.followup.send(f"❌ No activity data found for channel **{channel_name}**")
 
     @app_commands.command(name="pepino_user_analytics", description="Analyze a specific user's activity and behavior patterns")
     @app_commands.describe(
