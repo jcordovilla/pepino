@@ -98,6 +98,7 @@ class TemporalAnalyzer:
                 "most_active_period": None,
                 "message_trend": "stable",
                 "trend_percentage": 0.0,
+                "trend_timeframe": "over analysis period",
                 "peak_user_count": 0,
                 "total_periods": 0,
             }
@@ -122,6 +123,26 @@ class TemporalAnalyzer:
 
         # Calculate trend (comparing first half vs second half)
         mid_point = len(message_counts) // 2
+        total_periods = len(temporal_data)
+        
+        # Determine precise timeframe context based on period count
+        if total_periods <= 7:
+            trend_timeframe = f"over {total_periods} days"
+        elif total_periods <= 30:
+            weeks = round(total_periods / 7, 1)
+            if weeks == int(weeks):
+                trend_timeframe = f"over {int(weeks)} weeks"
+            else:
+                trend_timeframe = f"over {weeks} weeks"
+        elif total_periods <= 90:
+            months = round(total_periods / 30, 1)
+            if months == int(months):
+                trend_timeframe = f"over {int(months)} months"
+            else:
+                trend_timeframe = f"over {months} months"
+        else:
+            trend_timeframe = f"over {total_periods} days"
+        
         if mid_point > 0:
             first_half_avg = sum(message_counts[:mid_point]) / mid_point
             second_half_avg = sum(message_counts[mid_point:]) / (
@@ -150,6 +171,7 @@ class TemporalAnalyzer:
             "most_active_period": most_active_period,
             "message_trend": message_trend,
             "trend_percentage": round(trend_percentage, 1),
+            "trend_timeframe": trend_timeframe,
             "peak_user_count": max(user_counts) if user_counts else 0,
-            "total_periods": len(temporal_data),
+            "total_periods": total_periods,
         }

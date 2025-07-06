@@ -14,7 +14,7 @@
 • Average per Period: {{ "%.1f"|format(patterns.avg_messages_per_period) }} messages
 • Most Active Period: {{ patterns.most_active_period }} ({{ patterns.max_messages_in_period | format_number }} messages)
 • Least Active Period: {{ patterns.min_messages_in_period | format_number }} messages
-• Activity Trend: {{ patterns.message_trend | title }} ({{ "%.1f"|format(patterns.trend_percentage) }}%)
+• Activity Trend: {{ patterns.message_trend | title }} ({{ "%.1f"|format(patterns.trend_percentage) }}% {{ patterns.trend_timeframe }})
 • Peak User Count: {{ patterns.peak_user_count | format_number }}
 {%- endif %}
 

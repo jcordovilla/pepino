@@ -323,6 +323,7 @@ class TemporalPatterns(BaseModel):
     most_active_period: Optional[str] = None
     message_trend: Literal["increasing", "decreasing", "stable"]
     trend_percentage: float
+    trend_timeframe: str = "over analysis period"
     peak_user_count: int
     total_periods: int
 

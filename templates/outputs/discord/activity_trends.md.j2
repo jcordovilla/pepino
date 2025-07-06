@@ -4,7 +4,7 @@
 • Total Messages: {{ patterns.total_messages | format_number }}
 • Average per Day: {{ patterns.avg_messages_per_period | format_number }}
 • Peak Day: {{ patterns.max_messages_in_period }} messages
-• Trend: {{ patterns.message_trend | format_trend(patterns.trend_percentage) }}
+• Trend: {{ patterns.message_trend | format_trend(patterns.trend_percentage, patterns.trend_timeframe) }}
 
 {% if chart_base64 %}
 ## 📈 Daily Message Activity

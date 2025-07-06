@@ -2,17 +2,26 @@
 
 **📊 Analysis Summary:**
 • Messages Analyzed: {{ message_count | format_number }}
-• Analysis Method: {% if "bertopic_modeling" in capabilities_used %}Hybrid BERTopic + spaCy{% else %}Standard Analysis{% endif %}
+• Analysis Method: {% if "bertopic_modeling" in capabilities_used %}Advanced BERTopic + spaCy{% else %}Discord-Optimized Analysis{% endif %}
 • Time Period: {% if days_back %}{{ days_back }} days{% else %}All time{% endif %}
 {% if "bertopic_modeling" in capabilities_used %}• Neural Model: all-mpnet-base-v2 (Transformer){% endif %}
 
 {% if topics and topics | length > 0 -%}
+{% if "bertopic_modeling" in capabilities_used -%}
 **🧠 Neural Topics Discovered:**
 {% for topic in topics[:8] -%}
 {% if topic.topic -%}
 {{ loop.index }}. **{{ topic.topic }}** ({{ topic.frequency }} messages, {{ (topic.relevance_score * 100) | round(1) }}% relevance)
 {% endif -%}
 {% endfor -%}
+{% else -%}
+**💬 Discussion Themes Identified:**
+{% for topic in topics[:8] -%}
+{% if topic.topic -%}
+{{ loop.index }}. **{{ topic.topic }}** ({{ topic.frequency }} mentions, {{ (topic.relevance_score * 100) | round(1) }}% of messages)
+{% endif -%}
+{% endfor -%}
+{% endif -%}
 
 {% if _domain_analysis -%}
 **🔬 Domain Analysis:**
@@ -49,11 +58,19 @@
 {% else -%}
 ❌ No significant topics found in the analyzed messages.
 
+{% if "bertopic_modeling" not in capabilities_used -%}
+**💡 Analysis Notes:**
+• Messages appear to be mostly casual conversation
+• Used Discord-optimized analysis for short/informal content
+• Consider channels with more technical or detailed discussions for deeper topic analysis
+
+{% else -%}
 **💡 Possible reasons:**
 • Messages may be too brief or fragmented
 • Conversations lack thematic clustering
 • Mixed topics prevent clear pattern identification
 • Insufficient data for meaningful analysis
+{% endif -%}
 
 **🔍 Suggestions:**
 • Try analyzing a longer time period
@@ -62,4 +79,8 @@
 {% endif %}
 
 ---
-*Enhanced by neural topic modeling + domain-specific analysis* 
+{% if "bertopic_modeling" in capabilities_used -%}
+*Enhanced by neural topic modeling + domain-specific analysis*
+{% else -%}
+*Optimized for Discord conversations + pattern recognition*
+{% endif %} 

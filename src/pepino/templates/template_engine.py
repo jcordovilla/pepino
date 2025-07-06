@@ -480,10 +480,13 @@ class TemplateEngine:
             return []
         return items[:n]
     
-    def _format_trend(self, trend: str, percentage: float) -> str:
+    def _format_trend(self, trend: str, percentage: float, timeframe: str = None) -> str:
         """Format trend with emoji for Discord."""
         emoji = "📈" if trend == "increasing" else "📉" if trend == "decreasing" else "➡️"
-        return f"{emoji} {trend.title()} ({percentage:+.1f}%)"
+        if timeframe:
+            return f"{emoji} {trend.title()} ({percentage:+.1f}% {timeframe})"
+        else:
+            return f"{emoji} {trend.title()} ({percentage:+.1f}%)"
     
     def _create_activity_chart(self, dates: List[str], counts: List[int], 
                                title: str = "Activity Over Time") -> str:

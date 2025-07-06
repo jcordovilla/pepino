@@ -14,7 +14,7 @@
 **📈 Server Health:**
 • Activity Score: {{ server_stats.activity_score }}/100
 • Engagement Level: {{ server_stats.engagement_level | title }}
-• Activity Trend: {{ server_stats.activity_trend | title }}{% if server_stats.trend_percentage != 0 %} ({{ server_stats.trend_percentage | round(1) }}%){% endif %}
+• Activity Trend: {{ server_stats.activity_trend | title }}{% if server_stats.trend_percentage != 0 %} ({{ server_stats.trend_percentage | round(1) }}% {{ server_stats.trend_timeframe }}){% endif %}
 
 {% if engagement_metrics %}
 **📈 Server Engagement Metrics (Human Activity):**
@@ -58,7 +58,7 @@
 **⏰ Activity Patterns:**
 • Peak Activity: {{ temporal_data.patterns.most_active_period }} ({{ temporal_data.patterns.max_messages_in_period }} messages)
 • Average per Period: {{ temporal_data.patterns.avg_messages_per_period | round(1) }} messages
-• Activity Trend: {{ temporal_data.patterns.message_trend | title }} ({{ temporal_data.patterns.trend_percentage | round(1) }}%)
+• Activity Trend: {{ temporal_data.patterns.message_trend | title }} ({{ temporal_data.patterns.trend_percentage | round(1) }}% {{ temporal_data.patterns.trend_timeframe }})
 
 {% endif -%}
 {% if daily_activity_data and daily_activity_data.activity_by_day -%}

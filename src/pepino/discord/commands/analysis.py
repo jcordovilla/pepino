@@ -429,9 +429,11 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 # Get activity trends
                 activity_trend = "stable"
                 trend_percentage = 0
+                trend_timeframe = "over analysis period"
                 if hasattr(temporal_analysis, 'patterns') and temporal_analysis.patterns:
                     activity_trend = temporal_analysis.patterns.message_trend
                     trend_percentage = temporal_analysis.patterns.trend_percentage
+                    trend_timeframe = temporal_analysis.patterns.trend_timeframe
                 
                 # Get most active channel and user
                 most_active_channel = top_channels[0] if top_channels else None
@@ -511,6 +513,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                         'engagement_level': engagement_level,
                         'activity_trend': activity_trend,
                         'trend_percentage': trend_percentage,
+                        'trend_timeframe': trend_timeframe,
                         # Add RAW human vs bot statistics (unfiltered for accurate counts)
                         'human_messages': raw_human_bot_stats.get('human_messages', 0),
                         'bot_messages': raw_human_bot_stats.get('bot_messages', 0),
@@ -2013,20 +2016,71 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     channel_list += f"\n... and {len(channels) - limit} more channels"
                     
                 footer_text = f"Showing {len(display_channels)} of {len(channels)} channels • Retrieved in {exec_time:.2f}s"
+                
+                embed = discord.Embed(
+                    title="📺 Available Channels for Analysis",
+                    description=channel_list,
+                    color=discord.Color.blue()
+                )
+                embed.set_footer(text=footer_text)
+                await interaction.followup.send(embed=embed)
             else:
-                # Show all channels when no limit specified
-                channel_list = "\n".join([f"• **{channel}**" for channel in channels])
+                # Show all channels when no limit specified, but handle Discord's 4096 character limit
+                await self._send_paginated_channel_list(interaction, channels, exec_time)
+        else:
+            await interaction.followup.send("❌ No channels found in database")
+    
+    async def _send_paginated_channel_list(self, interaction: discord.Interaction, channels: List[str], exec_time: float):
+        """Send channel list with pagination to handle Discord's 4096 character limit."""
+        # Calculate how many channels can fit in one embed (with some buffer)
+        max_chars_per_embed = 3800  # Leave buffer for title, footer, etc.
+        
+        # Test formatting to see how many channels fit
+        channels_per_page = []
+        current_page_channels = []
+        current_length = 0
+        
+        for channel in channels:
+            channel_line = f"• **{channel}**\n"
+            if current_length + len(channel_line) > max_chars_per_embed and current_page_channels:
+                # Start a new page
+                channels_per_page.append(current_page_channels)
+                current_page_channels = [channel]
+                current_length = len(channel_line)
+            else:
+                current_page_channels.append(channel)
+                current_length += len(channel_line)
+        
+        # Add the last page if it has channels
+        if current_page_channels:
+            channels_per_page.append(current_page_channels)
+        
+        # Send the pages
+        total_pages = len(channels_per_page)
+        
+        for page_num, page_channels in enumerate(channels_per_page, 1):
+            channel_list = "\n".join([f"• **{channel}**" for channel in page_channels])
+            
+            if total_pages == 1:
+                # Single page
+                title = "📺 Available Channels for Analysis"
                 footer_text = f"Total: {len(channels)} channels • Retrieved in {exec_time:.2f}s"
+            else:
+                # Multiple pages
+                title = f"📺 Available Channels for Analysis (Page {page_num}/{total_pages})"
+                footer_text = f"Showing {len(page_channels)} channels on this page • Total: {len(channels)} channels • Retrieved in {exec_time:.2f}s"
             
             embed = discord.Embed(
-                title="📺 Available Channels for Analysis",
+                title=title,
                 description=channel_list,
                 color=discord.Color.blue()
             )
             embed.set_footer(text=footer_text)
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send("❌ No channels found in database")
+            
+            if page_num == 1:
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed)
 
     async def _handle_list_users(self, interaction: discord.Interaction, limit: Optional[int]):
         """Handle list users (equivalent to list_users)"""
@@ -2046,20 +2100,71 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     user_list += f"\n... and {len(users) - limit} more users"
                     
                 footer_text = f"Showing {len(display_users)} of {len(users)} users • Retrieved in {exec_time:.2f}s"
+                
+                embed = discord.Embed(
+                    title="👥 Available Users for Analysis",
+                    description=user_list,
+                    color=discord.Color.green()
+                )
+                embed.set_footer(text=footer_text)
+                await interaction.followup.send(embed=embed)
             else:
-                # Show all users when no limit specified
-                user_list = "\n".join([f"• **{user}**" for user in users])
+                # Show all users when no limit specified, but handle Discord's 4096 character limit
+                await self._send_paginated_user_list(interaction, users, exec_time)
+        else:
+            await interaction.followup.send("❌ No users found in database")
+    
+    async def _send_paginated_user_list(self, interaction: discord.Interaction, users: List[str], exec_time: float):
+        """Send user list with pagination to handle Discord's 4096 character limit."""
+        # Calculate how many users can fit in one embed (with some buffer)
+        max_chars_per_embed = 3800  # Leave buffer for title, footer, etc.
+        
+        # Test formatting to see how many users fit
+        users_per_page = []
+        current_page_users = []
+        current_length = 0
+        
+        for user in users:
+            user_line = f"• **{user}**\n"
+            if current_length + len(user_line) > max_chars_per_embed and current_page_users:
+                # Start a new page
+                users_per_page.append(current_page_users)
+                current_page_users = [user]
+                current_length = len(user_line)
+            else:
+                current_page_users.append(user)
+                current_length += len(user_line)
+        
+        # Add the last page if it has users
+        if current_page_users:
+            users_per_page.append(current_page_users)
+        
+        # Send the pages
+        total_pages = len(users_per_page)
+        
+        for page_num, page_users in enumerate(users_per_page, 1):
+            user_list = "\n".join([f"• **{user}**" for user in page_users])
+            
+            if total_pages == 1:
+                # Single page
+                title = "👥 Available Users for Analysis"
                 footer_text = f"Total: {len(users)} users • Retrieved in {exec_time:.2f}s"
+            else:
+                # Multiple pages
+                title = f"👥 Available Users for Analysis (Page {page_num}/{total_pages})"
+                footer_text = f"Showing {len(page_users)} users on this page • Total: {len(users)} users • Retrieved in {exec_time:.2f}s"
             
             embed = discord.Embed(
-                title="👥 Available Users for Analysis",
+                title=title,
                 description=user_list,
                 color=discord.Color.green()
             )
             embed.set_footer(text=footer_text)
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.followup.send("❌ No users found in database")
+            
+            if page_num == 1:
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed)
 
     def _generate_server_overview_chart(self, temporal_data, analysis_params):
         """Generate server overview activity chart similar to channel analytics."""

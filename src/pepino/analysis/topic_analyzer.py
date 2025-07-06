@@ -504,13 +504,120 @@ class TopicAnalyzer:
             logger.info("Running spaCy-based domain analysis...")
             domain_analysis = self._extract_domain_patterns(messages_with_timestamps)
         
-        # Run BERTopic analysis
-        bertopic_results = []
+        # Assess message quality for topic modeling
+        quality_assessment = self._assess_message_quality(messages)
+        logger.info(f"Message quality assessment: {quality_assessment}")
+        
+        # Decide on analysis approach based on message quality
+        if quality_assessment['suitable_for_bertopic']:
+            logger.info("Messages suitable for BERTopic analysis")
+            bertopic_results = self._extract_topics_with_bertopic(messages, min_topic_size, nr_topics)
+        else:
+            logger.info("Messages not suitable for BERTopic - using Discord-optimized approach")
+            bertopic_results = self._extract_topics_discord_optimized(messages, quality_assessment)
+        
+        return bertopic_results, domain_analysis
+
+    def _assess_message_quality(self, messages: List[str]) -> Dict[str, Any]:
+        """Assess if messages are suitable for advanced topic modeling."""
+        if not messages:
+            return {'suitable_for_bertopic': False, 'reason': 'no_messages'}
+        
+        # Analyze message characteristics
+        total_messages = len(messages)
+        short_messages = 0  # < 30 chars (increased threshold)
+        medium_messages = 0  # 30-150 chars
+        long_messages = 0   # > 150 chars
+        mention_heavy = 0   # > 20% mentions/emojis (stricter)
+        substantive_messages = 0  # Messages with meaningful content
+        conversational_messages = 0  # Messages that are clearly conversational
+        
+        # Conversational patterns that indicate casual Discord chat
+        conversational_patterns = [
+            r'\b(thanks?|thank you|lol|haha|😂|😊|👍|❤️)\b',
+            r'\b(hey|hi|hello|bye|see you|good luck|good job)\b',
+            r'\b(awesome|amazing|great|nice|cool|wow|omg)\b',
+            r'\b(i think|i feel|i hope|i wish|i love|i hate)\b',
+            r'\b(you know|you see|you think|you feel)\b',
+            r'@everyone|@here',
+            r'<@\d+>',  # User mentions
+        ]
+        
+        for msg in messages:
+            msg_len = len(msg.strip())
+            
+            if msg_len < 30:  # Increased from 20
+                short_messages += 1
+            elif msg_len < 150:  # Increased from 100
+                medium_messages += 1
+            else:
+                long_messages += 1
+            
+            # Check for mention/emoji heavy content (stricter threshold)
+            mention_count = msg.count('@') + msg.count('<:') + len([c for c in msg if ord(c) > 127])
+            if mention_count / max(len(msg), 1) > 0.2:  # Reduced from 0.3
+                mention_heavy += 1
+            
+            # Check for conversational patterns
+            is_conversational = False
+            for pattern in conversational_patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    is_conversational = True
+                    break
+            
+            if is_conversational:
+                conversational_messages += 1
+            
+            # Check for substantive content (after cleaning) - stricter criteria
+            cleaned = self._clean_content_discord(msg)
+            words = cleaned.split()
+            meaningful_words = [w for w in words if len(w) > 3 and w.isalpha()]
+            domain_words = [w for w in meaningful_words if self._is_domain_specific_term(w)]
+            
+            # Require either 5+ meaningful words OR 2+ domain-specific words
+            if len(meaningful_words) >= 5 or len(domain_words) >= 2:
+                substantive_messages += 1
+        
+        # Calculate percentages
+        short_pct = short_messages / total_messages
+        long_pct = long_messages / total_messages
+        mention_heavy_pct = mention_heavy / total_messages
+        substantive_pct = substantive_messages / total_messages
+        conversational_pct = conversational_messages / total_messages
+        
+        # Much stricter criteria for BERTopic suitability
+        suitable_for_bertopic = (
+            total_messages >= 20 and  # Increased minimum
+            substantive_pct >= 0.5 and  # Increased from 0.3
+            short_pct < 0.5 and  # Reduced from 0.7 (less tolerance for short messages)
+            mention_heavy_pct < 0.4 and  # Reduced from 0.6
+            conversational_pct < 0.6 and  # New criterion: less than 60% conversational
+            long_pct >= 0.2  # At least 20% long messages for depth
+        )
+        
+        return {
+            'suitable_for_bertopic': suitable_for_bertopic,
+            'total_messages': total_messages,
+            'short_messages_pct': round(short_pct, 2),
+            'long_messages_pct': round(long_pct, 2),
+            'mention_heavy_pct': round(mention_heavy_pct, 2),
+            'substantive_pct': round(substantive_pct, 2),
+            'conversational_pct': round(conversational_pct, 2),
+            'reason': 'quality_check_complete'
+        }
+
+    def _extract_topics_with_bertopic(
+        self, 
+        messages: List[str], 
+        min_topic_size: int, 
+        nr_topics: Optional[int]
+    ) -> List[Dict[str, Any]]:
+        """Extract topics using BERTopic for high-quality messages."""
         try:
             # Clean and filter messages
             cleaned_messages = self._clean_messages(messages)
             if len(cleaned_messages) < 2:
-                return [], domain_analysis
+                return []
             
             logger.info(f"Extracting topics from {len(cleaned_messages)} messages using BERTopic")
             
@@ -566,6 +673,7 @@ class TopicAnalyzer:
             topic_info = topic_model.get_topic_info()
             
             # Convert to our format
+            bertopic_results = []
             for _, row in topic_info.iterrows():
                 topic_id = row['Topic']
                 
@@ -614,13 +722,352 @@ class TopicAnalyzer:
             bertopic_results.sort(key=lambda x: x['frequency'], reverse=True)
             
             logger.info(f"Successfully extracted {len(bertopic_results)} high-quality BERTopic topics")
+            return bertopic_results
             
         except Exception as e:
             logger.error(f"Error extracting topics with BERTopic: {e}")
-            # Fallback to simple keyword extraction for BERTopic part
-            bertopic_results = self._fallback_topic_extraction(messages)
+            # Fallback to Discord-optimized approach
+            return self._extract_topics_discord_optimized(messages, {})
+
+    def _extract_topics_discord_optimized(
+        self, 
+        messages: List[str], 
+        quality_assessment: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Extract topics optimized for Discord conversations (short, casual messages)."""
+        logger.info("Using Discord-optimized topic extraction")
         
-        return bertopic_results, domain_analysis
+        # For Discord conversations, focus on:
+        # 1. Recurring themes and subjects
+        # 2. Tools, technologies, and platforms mentioned
+        # 3. Activities and actions discussed
+        # 4. Questions and problems being solved
+        
+        from collections import Counter, defaultdict
+        import re
+        
+        # Extract different types of content
+        tools_mentioned = Counter()
+        activities_discussed = Counter()
+        questions_asked = Counter()
+        topics_mentioned = Counter()
+        recurring_phrases = Counter()
+        meeting_related = Counter()
+        time_related = Counter()
+        
+        # Enhanced patterns for different content types
+        tool_patterns = [
+            r'\b(zapier|n8n|discord|github|google|calendar|zoom|slack|teams|notion|airtable|figma|stripe|paypal)\b',
+            r'\b(api|webhook|automation|integration|workflow|pipeline|dashboard|analytics|database|server)\b',
+            r'\b(ai|ml|gpt|chatgpt|openai|claude|llm|neural|model|algorithm|machine learning)\b'
+        ]
+        
+        activity_patterns = [
+            r'\b(meeting|discussion|session|workshop|demo|presentation|review|planning|brainstorming)\b',
+            r'\b(building|creating|developing|designing|implementing|testing|deploying|launching)\b',
+            r'\b(learning|studying|researching|exploring|investigating|analyzing|documenting)\b'
+        ]
+        
+        question_patterns = [
+            r'\b(how to|how do|what is|what are|where can|when should|why does|which one)\b',
+            r'\b(anyone know|does anyone|has anyone|can someone|help with|need help)\b'
+        ]
+        
+        # Specific patterns for common Discord conversation topics
+        meeting_patterns = [
+            r'\b(meeting|session|call|zoom|teams|recording|agenda|schedule)\b',
+            r'\b(today|tomorrow|next week|this week|yesterday|later)\b'
+        ]
+        
+        time_patterns = [
+            r'\b(\d{1,2}:\d{2}|morning|afternoon|evening|tonight|today|tomorrow)\b',
+            r'\b(hour|minute|time|schedule|calendar|appointment)\b'
+        ]
+        
+        for message in messages:
+            if not message or len(message.strip()) < 5:
+                continue
+            
+            # Clean message but preserve more content than BERTopic cleaning
+            cleaned = self._clean_content_discord_light(message)
+            if len(cleaned.split()) < 2:
+                continue
+            
+            # Extract tools and technologies
+            for pattern in tool_patterns:
+                matches = re.findall(pattern, cleaned, re.IGNORECASE)
+                for match in matches:
+                    tools_mentioned[match.lower()] += 1
+            
+            # Extract activities
+            for pattern in activity_patterns:
+                matches = re.findall(pattern, cleaned, re.IGNORECASE)
+                for match in matches:
+                    activities_discussed[match.lower()] += 1
+            
+            # Extract meeting-related content
+            for pattern in meeting_patterns:
+                matches = re.findall(pattern, cleaned, re.IGNORECASE)
+                for match in matches:
+                    meeting_related[match.lower()] += 1
+            
+            # Extract time-related content
+            for pattern in time_patterns:
+                matches = re.findall(pattern, cleaned, re.IGNORECASE)
+                for match in matches:
+                    time_related[match.lower()] += 1
+            
+            # Extract questions and help requests
+            for pattern in question_patterns:
+                if re.search(pattern, cleaned, re.IGNORECASE):
+                    # Extract the main subject of the question
+                    words = cleaned.lower().split()
+                    # Look for nouns after question words
+                    for i, word in enumerate(words[:-1]):
+                        if word in ['about', 'with', 'to', 'how', 'what', 'where']:
+                            next_word = words[i + 1]
+                            if len(next_word) > 3 and next_word.isalpha():
+                                questions_asked[next_word] += 1
+            
+            # Extract meaningful 2-3 word phrases (improved)
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', cleaned.lower())
+            for i in range(len(words) - 1):
+                if len(words[i]) > 3 and len(words[i + 1]) > 3:
+                    phrase = f"{words[i]} {words[i + 1]}"
+                    if not self._is_generic_phrase(phrase) and self._is_meaningful_phrase(phrase):
+                        recurring_phrases[phrase] += 1
+            
+            # Extract single meaningful terms
+            for word in words:
+                if (len(word) > 4 and 
+                    self._is_domain_specific_term(word) and 
+                    not self._is_generic_word(word)):
+                    topics_mentioned[word] += 1
+        
+        # Build topics from extracted content
+        topics = []
+        
+        # Add meeting/scheduling topics (very common in Discord channels)
+        meeting_count = sum(meeting_related.values())
+        if meeting_count >= 3:
+            topics.append({
+                "topic": "Meeting & Scheduling",
+                "topic_id": len(topics),
+                "frequency": meeting_count,
+                "relevance_score": round(meeting_count / len(messages), 3),
+                "keywords": list(meeting_related.keys())[:3],
+                "keyword_scores": [1.0] * min(3, len(meeting_related)),
+                "representative_docs": [],
+                "coherence_score": 0.8
+            })
+        
+        # Add tool/technology topics
+        for tool, count in tools_mentioned.most_common(5):
+            if count >= 2:
+                topics.append({
+                    "topic": f"{tool.title()} Technology",
+                    "topic_id": len(topics),
+                    "frequency": count,
+                    "relevance_score": round(count / len(messages), 3),
+                    "keywords": [tool],
+                    "keyword_scores": [1.0],
+                    "representative_docs": [],
+                    "coherence_score": 0.8
+                })
+        
+        # Add activity topics
+        for activity, count in activities_discussed.most_common(3):
+            if count >= 2:
+                topics.append({
+                    "topic": f"{activity.title()} Activities",
+                    "topic_id": len(topics),
+                    "frequency": count,
+                    "relevance_score": round(count / len(messages), 3),
+                    "keywords": [activity],
+                    "keyword_scores": [1.0],
+                    "representative_docs": [],
+                    "coherence_score": 0.7
+                })
+        
+        # Add time/scheduling topics
+        time_count = sum(time_related.values())
+        if time_count >= 3:
+            topics.append({
+                "topic": "Time & Scheduling",
+                "topic_id": len(topics),
+                "frequency": time_count,
+                "relevance_score": round(time_count / len(messages), 3),
+                "keywords": list(time_related.keys())[:3],
+                "keyword_scores": [1.0] * min(3, len(time_related)),
+                "representative_docs": [],
+                "coherence_score": 0.6
+            })
+        
+        # Add recurring phrase topics (more selective)
+        for phrase, count in recurring_phrases.most_common(3):
+            if count >= 4:  # Higher threshold for phrases
+                topics.append({
+                    "topic": self._create_topic_name_from_phrase(phrase),
+                    "topic_id": len(topics),
+                    "frequency": count,
+                    "relevance_score": round(count / len(messages), 3),
+                    "keywords": phrase.split(),
+                    "keyword_scores": [1.0] * len(phrase.split()),
+                    "representative_docs": [],
+                    "coherence_score": 0.6
+                })
+        
+        # Add question/help topics
+        help_topics = [topic for topic, count in questions_asked.most_common(3) if count >= 2]
+        if help_topics:
+            topics.append({
+                "topic": "Help & Questions",
+                "topic_id": len(topics),
+                "frequency": sum(questions_asked.values()),
+                "relevance_score": round(sum(questions_asked.values()) / len(messages), 3),
+                "keywords": help_topics,
+                "keyword_scores": [1.0] * len(help_topics),
+                "representative_docs": [],
+                "coherence_score": 0.5
+            })
+        
+        # If no specific topics found, create general conversation categories
+        if not topics and len(messages) > 10:
+            # Analyze for general conversation patterns
+            total_words = sum(len(msg.split()) for msg in messages)
+            avg_length = total_words / len(messages)
+            
+            if avg_length < 10:
+                topics.append({
+                    "topic": "Quick Updates & Check-ins",
+                    "topic_id": 0,
+                    "frequency": len(messages),
+                    "relevance_score": 1.0,
+                    "keywords": ["updates", "check-ins", "quick"],
+                    "keyword_scores": [1.0, 1.0, 1.0],
+                    "representative_docs": [],
+                    "coherence_score": 0.4
+                })
+            else:
+                topics.append({
+                    "topic": "Team Discussion",
+                    "topic_id": 0,
+                    "frequency": len(messages),
+                    "relevance_score": 1.0,
+                    "keywords": ["team", "discussion", "conversation"],
+                    "keyword_scores": [1.0, 1.0, 1.0],
+                    "representative_docs": [],
+                    "coherence_score": 0.4
+                })
+        
+        logger.info(f"Discord-optimized extraction found {len(topics)} topics")
+        return topics
+
+    def _is_meaningful_phrase(self, phrase: str) -> bool:
+        """Check if a phrase is meaningful for Discord topic analysis."""
+        words = phrase.split()
+        if len(words) != 2:
+            return False
+        
+        # At least one word should be domain-specific or meaningful
+        meaningful_count = sum(1 for word in words if 
+                             self._is_domain_specific_term(word) or 
+                             len(word) > 5 or
+                             word in ['meeting', 'session', 'team', 'project', 'work', 'time', 'schedule'])
+        
+        return meaningful_count >= 1
+
+    def _clean_content_discord_light(self, text: str) -> str:
+        """Light cleaning for Discord content that preserves more meaningful content."""
+        # Remove Discord-specific patterns but preserve more content
+        text = re.sub(r"<@[!&]?\d+>", "", text)  # Remove mentions
+        text = re.sub(r"<#\d+>", "", text)  # Remove channel references
+        text = re.sub(r"<:\w+:\d+>", "", text)  # Remove custom emojis
+        text = re.sub(r"https?://\S+", "", text)  # Remove URLs
+        text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)  # Remove code blocks
+        text = re.sub(r"`[^`]+`", "", text)  # Remove inline code
+        
+        # Remove excessive punctuation but keep some
+        text = re.sub(r"[!]{2,}", "!", text)
+        text = re.sub(r"[?]{2,}", "?", text)
+        text = re.sub(r"[.]{3,}", "...", text)
+        
+        # Clean up spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+
+    def _is_generic_phrase(self, phrase: str) -> bool:
+        """Check if a phrase is too generic for topic analysis."""
+        generic_phrases = {
+            'you know', 'i think', 'we can', 'it is', 'this is', 'that is',
+            'will be', 'can be', 'have been', 'has been', 'going to',
+            'need to', 'want to', 'able to', 'try to', 'how to',
+            'thank you', 'thanks for', 'let me', 'let us', 'right now',
+            'make sure', 'as well', 'of course', 'by the', 'in the',
+            'on the', 'at the', 'for the', 'with the', 'from the'
+        }
+        return phrase.lower() in generic_phrases
+
+    def _create_topic_name_from_phrase(self, phrase: str) -> str:
+        """Create a topic name from a recurring phrase."""
+        words = phrase.split()
+        if len(words) == 2:
+            return f"{words[0].title()} & {words[1].title()}"
+        else:
+            return phrase.title()
+
+    def _is_domain_specific_term(self, word: str) -> bool:
+        """Check if a word is domain-specific and worth including in topics."""
+        # Technical domains
+        tech_terms = {
+            'ai', 'ml', 'api', 'cloud', 'data', 'algorithm', 'neural', 'model', 'llm', 'gpt',
+            'automation', 'pipeline', 'framework', 'metrics', 'analytics', 'deployment',
+            'infrastructure', 'database', 'server', 'frontend', 'backend', 'integration',
+            'optimization', 'workflow', 'strategy', 'architecture', 'microservices',
+            'kubernetes', 'docker', 'aws', 'azure', 'gcp', 'terraform', 'ansible',
+            'python', 'javascript', 'typescript', 'react', 'vue', 'angular', 'node',
+            'sql', 'nosql', 'mongodb', 'postgresql', 'redis', 'elasticsearch',
+            'machine', 'learning', 'deep', 'neural', 'network', 'transformer',
+            'bert', 'chatgpt', 'openai', 'anthropic', 'claude', 'gemini'
+        }
+        
+        # Business domains
+        business_terms = {
+            'finance', 'marketing', 'sales', 'customer', 'business', 'operations',
+            'collaboration', 'team', 'management', 'leadership', 'strategy', 'planning',
+            'budget', 'revenue', 'profit', 'investment', 'roi', 'kpi', 'metrics',
+            'analytics', 'reporting', 'dashboard', 'visualization', 'insights',
+            'growth', 'scaling', 'expansion', 'acquisition', 'partnership',
+            'compliance', 'security', 'privacy', 'governance', 'audit'
+        }
+        
+        # Industry-specific terms
+        industry_terms = {
+            'healthcare', 'education', 'fintech', 'edtech', 'biotech', 'medtech',
+            'saas', 'paas', 'iaas', 'b2b', 'b2c', 'enterprise', 'startup',
+            'ecommerce', 'retail', 'manufacturing', 'logistics', 'supply',
+            'chain', 'inventory', 'warehouse', 'distribution', 'fulfillment'
+        }
+        
+        # Tools and platforms
+        tool_terms = {
+            'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'slack', 'teams',
+            'zoom', 'notion', 'airtable', 'trello', 'asana', 'monday', 'linear',
+            'figma', 'sketch', 'adobe', 'canva', 'miro', 'lucidchart', 'draw.io',
+            'stripe', 'paypal', 'square', 'shopify', 'woocommerce', 'magento',
+            'salesforce', 'hubspot', 'mailchimp', 'sendgrid', 'twilio', 'zapier'
+        }
+        
+        # Proper nouns (likely companies, products, technologies)
+        if word[0].isupper() and len(word) > 3:
+            return True
+        
+        word_lower = word.lower()
+        return (word_lower in tech_terms or 
+                word_lower in business_terms or 
+                word_lower in industry_terms or 
+                word_lower in tool_terms)
 
     def _post_process_topics(self, topics: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Post-process topics to improve quality and remove noise."""
@@ -1068,210 +1515,6 @@ class TopicAnalyzer:
             
         # Average of top word scores as coherence proxy
         return round(sum(scores[:5]) / min(len(scores), 5), 3)
-
-    def _fallback_topic_extraction(self, messages: List[str]) -> List[Dict[str, Any]]:
-        """Advanced fallback topic extraction using improved NLP techniques."""
-        logger.warning("Using enhanced fallback topic extraction method")
-        
-        # Clean messages more thoroughly
-        cleaned_messages = []
-        for message in messages:
-            cleaned = self._clean_content_discord(message)
-            if len(cleaned.split()) >= 3:
-                cleaned_messages.append(cleaned)
-        
-        if not cleaned_messages:
-            return []
-        
-        # Extract n-grams and meaningful phrases
-        topics = self._extract_topics_from_ngrams(cleaned_messages)
-        
-        # Post-process topics for quality
-        topics = self._post_process_topics(topics)
-        
-        return topics
-
-    def _extract_topics_from_ngrams(self, messages: List[str]) -> List[Dict[str, Any]]:
-        """Extract topics using n-gram analysis and co-occurrence with domain focus."""
-        from collections import Counter, defaultdict
-        import re
-        
-        # Extract 1-grams, 2-grams, and 3-grams
-        unigrams = Counter()
-        bigrams = Counter()
-        trigrams = Counter()
-        
-        stop_words = set(self._get_tech_stop_words())
-        
-        for message in messages:
-            # More aggressive tokenization to capture domain terms
-            words = re.findall(r'\b[a-zA-Z][a-zA-Z0-9_-]{2,}\b', message.lower())
-            # Filter words more strictly
-            words = [w for w in words if w not in stop_words and len(w) > 2 and not self._is_generic_word(w)]
-            
-            # Count n-grams only if they contain domain-specific terms
-            for word in words:
-                if self._is_domain_specific_term(word):
-                    unigrams[word] += 1
-            
-            for i in range(len(words) - 1):
-                bigram = f"{words[i]} {words[i+1]}"
-                # Only count bigrams that have at least one domain-specific term
-                if self._is_domain_specific_term(words[i]) or self._is_domain_specific_term(words[i+1]):
-                    bigrams[bigram] += 1
-            
-            for i in range(len(words) - 2):
-                trigram = f"{words[i]} {words[i+1]} {words[i+2]}"
-                # Only count trigrams that have at least one domain-specific term
-                if (self._is_domain_specific_term(words[i]) or 
-                    self._is_domain_specific_term(words[i+1]) or 
-                    self._is_domain_specific_term(words[i+2])):
-                    trigrams[trigram] += 1
-        
-        # Create topics from meaningful n-grams with higher thresholds
-        topics = []
-        
-        # Add trigram topics (most specific) - higher threshold
-        for trigram, count in trigrams.most_common(3):
-            if count >= 3:  # Must appear in at least 3 messages
-                topics.append(self._create_topic_from_ngram(trigram, count, len(messages), 3))
-        
-        # Add bigram topics - higher threshold
-        for bigram, count in bigrams.most_common(6):
-            if count >= 4 and not self._is_ngram_covered(bigram, [t['topic'] for t in topics]):
-                topics.append(self._create_topic_from_ngram(bigram, count, len(messages), 2))
-        
-        # Add unigram topics (least specific, only if very frequent and domain-specific)
-        for unigram, count in unigrams.most_common(8):
-            if (count >= 6 and 
-                not self._is_ngram_covered(unigram, [t['topic'] for t in topics]) and
-                self._is_meaningful_unigram(unigram)):
-                topics.append(self._create_topic_from_ngram(unigram, count, len(messages), 1))
-        
-        return topics
-    
-    def _is_domain_specific_term(self, word: str) -> bool:
-        """Check if a word is domain-specific and worth including in topics."""
-        # Technical domains
-        tech_terms = {
-            'ai', 'ml', 'api', 'cloud', 'data', 'algorithm', 'neural', 'model', 'llm', 'gpt',
-            'automation', 'pipeline', 'framework', 'metrics', 'analytics', 'deployment',
-            'infrastructure', 'database', 'server', 'frontend', 'backend', 'integration',
-            'optimization', 'workflow', 'strategy', 'architecture', 'microservices',
-            'kubernetes', 'docker', 'aws', 'azure', 'gcp', 'terraform', 'ansible',
-            'python', 'javascript', 'typescript', 'react', 'vue', 'angular', 'node',
-            'sql', 'nosql', 'mongodb', 'postgresql', 'redis', 'elasticsearch',
-            'machine', 'learning', 'deep', 'neural', 'network', 'transformer',
-            'bert', 'chatgpt', 'openai', 'anthropic', 'claude', 'gemini'
-        }
-        
-        # Business domains
-        business_terms = {
-            'finance', 'marketing', 'sales', 'customer', 'business', 'operations',
-            'collaboration', 'team', 'management', 'leadership', 'strategy', 'planning',
-            'budget', 'revenue', 'profit', 'investment', 'roi', 'kpi', 'metrics',
-            'analytics', 'reporting', 'dashboard', 'visualization', 'insights',
-            'growth', 'scaling', 'expansion', 'acquisition', 'partnership',
-            'compliance', 'security', 'privacy', 'governance', 'audit'
-        }
-        
-        # Industry-specific terms
-        industry_terms = {
-            'healthcare', 'education', 'fintech', 'edtech', 'biotech', 'medtech',
-            'saas', 'paas', 'iaas', 'b2b', 'b2c', 'enterprise', 'startup',
-            'ecommerce', 'retail', 'manufacturing', 'logistics', 'supply',
-            'chain', 'inventory', 'warehouse', 'distribution', 'fulfillment'
-        }
-        
-        # Tools and platforms
-        tool_terms = {
-            'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'slack', 'teams',
-            'zoom', 'notion', 'airtable', 'trello', 'asana', 'monday', 'linear',
-            'figma', 'sketch', 'adobe', 'canva', 'miro', 'lucidchart', 'draw.io',
-            'stripe', 'paypal', 'square', 'shopify', 'woocommerce', 'magento',
-            'salesforce', 'hubspot', 'mailchimp', 'sendgrid', 'twilio', 'zapier'
-        }
-        
-        # Proper nouns (likely companies, products, technologies)
-        if word[0].isupper() and len(word) > 3:
-            return True
-        
-        word_lower = word.lower()
-        return (word_lower in tech_terms or 
-                word_lower in business_terms or 
-                word_lower in industry_terms or 
-                word_lower in tool_terms)
-
-    def _create_topic_from_ngram(self, ngram: str, count: int, total_messages: int, ngram_type: int) -> Dict[str, Any]:
-        """Create a topic from an n-gram."""
-        words = ngram.split()
-        
-        # Create semantic topic name
-        topic_name = self._create_semantic_topic_name(words, [])
-        if topic_name == "Unknown Topic":
-            topic_name = self._create_simple_topic_name(words)
-        
-        # Calculate relevance score
-        relevance_score = count / total_messages
-        
-        # Create coherence score based on n-gram type and frequency
-        coherence_score = min(0.9, (count / total_messages) * ngram_type * 0.5)
-        
-        return {
-            "topic": topic_name,
-            "topic_id": len(words),  # Use word count as ID
-            "frequency": count,
-            "relevance_score": round(relevance_score, 3),
-            "keywords": words,
-            "keyword_scores": [1.0] * len(words),
-            "representative_docs": [],
-            "coherence_score": round(coherence_score, 3)
-        }
-
-    def _is_ngram_covered(self, ngram: str, existing_topics: List[str]) -> bool:
-        """Check if an n-gram is already covered by existing topics."""
-        ngram_words = set(ngram.lower().split())
-        
-        for topic in existing_topics:
-            topic_words = set(topic.lower().split())
-            # If significant overlap, consider it covered
-            if len(ngram_words.intersection(topic_words)) / len(ngram_words) > 0.6:
-                return True
-        
-        return False
-
-    def _is_meaningful_unigram(self, word: str) -> bool:
-        """Check if a unigram represents a meaningful topic - very selective."""
-        # Only very specific, high-value single terms that clearly represent topics
-        high_value_terms = {
-            # AI/ML specific
-            'ai', 'ml', 'llm', 'gpt', 'bert', 'transformer', 'neural', 'algorithm',
-            'chatgpt', 'openai', 'anthropic', 'claude', 'gemini',
-            
-            # Very specific technologies
-            'kubernetes', 'docker', 'terraform', 'ansible', 'jenkins', 'github',
-            'postgresql', 'mongodb', 'redis', 'elasticsearch', 'kafka', 'spark',
-            'react', 'vue', 'angular', 'typescript', 'python', 'javascript',
-            
-            # Very specific business domains
-            'fintech', 'edtech', 'biotech', 'medtech', 'saas', 'paas', 'iaas',
-            'ecommerce', 'blockchain', 'cryptocurrency', 'defi', 'nft',
-            
-            # Specific tools/platforms
-            'salesforce', 'hubspot', 'stripe', 'paypal', 'shopify', 'aws', 'azure',
-            'figma', 'notion', 'airtable', 'trello', 'slack', 'zoom', 'teams',
-            
-            # Very specific methodologies
-            'agile', 'scrum', 'kanban', 'devops', 'cicd', 'microservices',
-            'serverless', 'containerization', 'orchestration'
-        }
-        
-        # Proper nouns (likely specific tools/companies) - but be more selective
-        if (word[0].isupper() and len(word) > 4 and 
-            not any(char.isdigit() for char in word)):  # No numbers in proper nouns
-            return True
-        
-        return word.lower() in high_value_terms
 
     def analyze(
         self,
