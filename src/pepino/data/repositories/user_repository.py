@@ -192,20 +192,22 @@ class UserRepository:
 
     def get_available_users(self, limit: Optional[int] = None) -> List[str]:
         """
-        Get list of available users (humans only).
+        Get list of available users (humans only) with display names.
         
         Args:
             limit: Maximum number of users to return (None = all users)
             
         Returns:
-            List of usernames sorted alphabetically
+            List of display names sorted alphabetically
         """
         query = """
-        SELECT DISTINCT author_name
+        SELECT DISTINCT 
+            author_name,
+            COALESCE(author_display_name, author_name) as display_name
         FROM messages 
         WHERE content IS NOT NULL
         AND (author_is_bot = 0 OR author_is_bot IS NULL)
-        ORDER BY author_name
+        ORDER BY display_name
         """
         
         params = []
@@ -215,7 +217,7 @@ class UserRepository:
         
         results = self.db_manager.execute_query(query, tuple(params) if params else ())
         
-        return [row['author_name'] for row in results] if results else []
+        return [row['display_name'] for row in results] if results else []
 
     def get_top_users_by_message_count(
         self, 
