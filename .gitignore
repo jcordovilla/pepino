@@ -44,14 +44,26 @@ ENV/
 
 # Logs
 temp/logs/
+logs/
+src/logs/
 *.log
 
 # Database
+data/
 data/backups/
 data/exports/
+archive/*.db
+archive/*.db-*
 
-# Charts
+# Charts and exports
 temp/charts/
+exports/
+*_export.csv
+*_export.json
+*_analysis.txt
+*_report.txt
+output.log
+fetch_output.log
 
 # OS files
 .DS_Store
@@ -75,3 +87,11 @@ htmlcov/
 
 # temp folder
 temp/
+
+# ML models and caches
+*.pkl
+*.joblib
+*.model
+models/
+embeddings/
+.bertopic_cache/
