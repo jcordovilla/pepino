@@ -506,6 +506,56 @@ class UserRepository:
         
         return [row['content'] for row in results] if results else []
 
+    def get_user_temporal_data(
+        self, username: str, days: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get user's daily activity data for chart generation.
+        
+        Args:
+            username: User name to analyze
+            days: Number of days to look back (None = all time)
+            
+        Returns:
+            Dictionary with daily activity data
+        """
+        query = """
+        SELECT 
+            DATE(timestamp) as date,
+            COUNT(*) as message_count
+        FROM messages 
+        WHERE author_name = ?
+        """
+        
+        params = [username]
+        
+        if days:
+            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
+            params.append(days)
+        
+        query += """
+        AND timestamp IS NOT NULL
+        AND content IS NOT NULL
+        GROUP BY DATE(timestamp)
+        ORDER BY date
+        """
+        
+        results = self.db_manager.execute_query(query, tuple(params))
+        
+        activity_by_day = [
+            {
+                'date': row['date'],
+                'message_count': row['message_count']
+            }
+            for row in results
+        ] if results else []
+        
+        return {
+            'activity_by_day': activity_by_day,
+            'total_days': len(activity_by_day),
+            'total_messages': sum(day['message_count'] for day in activity_by_day)
+        }
+
     # Existing async methods (keep for compatibility)
 
     def get_users_by_channel(

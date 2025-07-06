@@ -227,6 +227,9 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             if not analysis:
                 return None
             
+            # Get user daily activity data for charts
+            user_temporal_data = facade.user_repository.get_user_temporal_data(username, days)
+            
             # Prepare template data
             template_data = {
                 'user_info': {
@@ -256,6 +259,15 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     }
                     for pattern in analysis.time_patterns
                 ],
+                'top_topics': [
+                    {
+                        'topic': topic.topic,
+                        'frequency': topic.frequency,
+                        'relevance_score': topic.relevance_score
+                    }
+                    for topic in analysis.top_topics
+                ] if analysis.top_topics else [],
+                'daily_activity_data': user_temporal_data,  # Add temporal data for graph
                 'semantic_analysis': None
             }
             
@@ -1783,6 +1795,50 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Send result
             if result:
                 await self._send_long_message_slash(interaction, result)
+                
+                # Generate and send activity chart
+                try:
+                    # Get temporal data for chart generation
+                    from ...analysis.data_facade import get_analysis_data_facade
+                    from ...config import Settings
+                    
+                    settings = Settings()
+                    with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+                        temporal_data = facade.user_repository.get_user_temporal_data(username, days)
+                        
+                        if temporal_data and temporal_data.get('activity_by_day'):
+                            analysis_params = {'days': days or 'all time'}
+                            chart_path = self._generate_user_activity_chart(username, temporal_data, analysis_params)
+                            
+                            if chart_path:
+                                try:
+                                    import os
+                                    chart_file = discord.File(chart_path, filename=f"user_activity_{username}.png")
+                                    await interaction.followup.send(
+                                        f"📊 **Activity Chart for {username}:**",
+                                        file=chart_file
+                                    )
+                                    
+                                    # Clean up chart file
+                                    try:
+                                        os.remove(chart_path)
+                                    except:
+                                        pass  # Don't fail if cleanup fails
+                                        
+                                except Exception as e:
+                                    logger.error(f"Failed to send user activity chart: {e}")
+                                    await interaction.followup.send("⚠️ Chart generated but failed to send")
+                            else:
+                                logger.warning("User activity chart generation failed")
+                        else:
+                            logger.warning(f"No temporal data available for user {username} chart")
+                            
+                except Exception as e:
+                    logger.error(f"User activity chart generation failed: {e}")
+                    # Don't fail the whole operation if chart generation fails
+                
+                # Send completion message
+                await interaction.followup.send(f"✅ User analysis completed in {exec_time:.2f}s")
             else:
                 await interaction.followup.send(f"❌ No data found for user '{username}'")
             
@@ -2095,6 +2151,99 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             return None
         except Exception as e:
             logger.error(f"Server overview chart generation failed: {e}")
+            return None
+
+    def _generate_user_activity_chart(self, username: str, temporal_data, analysis_params):
+        """Generate user activity chart showing daily message activity."""
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            from datetime import datetime, timedelta
+            import numpy as np
+            import os
+            
+            if not temporal_data or not temporal_data.get('activity_by_day'):
+                logger.warning(f"No temporal data for user {username} chart generation")
+                return None
+            
+            # Extract dates and message counts
+            activity_data = temporal_data['activity_by_day']
+            dates = []
+            message_counts = []
+            
+            for item in activity_data:
+                try:
+                    date_obj = datetime.strptime(item['date'], '%Y-%m-%d')
+                    dates.append(date_obj)
+                    message_counts.append(item['message_count'])
+                except (ValueError, KeyError) as e:
+                    logger.warning(f"Invalid date format in temporal data: {item}, error: {e}")
+                    continue
+            
+            if not dates or not message_counts:
+                logger.warning(f"No valid temporal data for user {username} chart generation")
+                return None
+            
+            # Sort by date
+            sorted_data = sorted(zip(dates, message_counts))
+            dates, message_counts = zip(*sorted_data)
+            
+            # Create the chart
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+            # Bar chart for daily messages
+            bars = ax.bar(dates, message_counts, alpha=0.7, color='#57F287', label='Daily Messages')
+            
+            # 1-week moving average line (if enough data)
+            if len(message_counts) >= 7:
+                # Calculate 1-week moving average
+                window_size = 7
+                moving_avg = []
+                for i in range(len(message_counts)):
+                    if i < window_size - 1:
+                        # For the first few points, use available data
+                        moving_avg.append(np.mean(message_counts[:i+1]))
+                    else:
+                        # Use 7-day window
+                        moving_avg.append(np.mean(message_counts[i-window_size+1:i+1]))
+                
+                ax.plot(dates, moving_avg, color='#ED4245', linestyle='--', linewidth=2, 
+                       label='1-Week Moving Average')
+            else:
+                # Fallback to simple average for short periods
+                avg_messages = np.mean(message_counts)
+                ax.axhline(y=avg_messages, color='#ED4245', linestyle='--', linewidth=2, 
+                          label=f'Average ({avg_messages:.1f} messages)')
+            
+            # Formatting
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Number of Messages')
+            time_desc = f"{analysis_params.get('days')} days" if analysis_params.get('days') else "all time"
+            ax.set_title(f"Daily Message Activity for {username} ({time_desc})")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            # Format x-axis dates
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
+            plt.xticks(rotation=45)
+            
+            # Tight layout to prevent label cutoff
+            plt.tight_layout()
+            
+            # Save chart
+            chart_path = f"temp/user_activity_chart_{username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return chart_path
+            
+        except ImportError:
+            logger.warning("Matplotlib not available for user activity chart generation")
+            return None
+        except Exception as e:
+            logger.error(f"User activity chart generation failed: {e}")
             return None
 
 
