@@ -385,19 +385,22 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             
             # Get server-wide statistics
             try:
-                # Get database statistics using existing methods
+                # Get RAW database statistics (unfiltered for accurate total counts)
+                raw_human_bot_stats = self._get_server_human_bot_statistics(facade, days)
+                
+                # Get FILTERED database statistics using existing methods (for analytics)
                 total_messages = facade.message_repository.get_total_message_count()
                 total_users = facade.message_repository.get_distinct_user_count()
                 total_channels = facade.channel_repository.get_distinct_channel_count()
-                
-                # Get human vs bot statistics
-                human_bot_stats = self._get_server_human_bot_statistics(facade, days)
                 
                 # Get temporal data for graph generation
                 temporal_data = self._get_server_temporal_data(facade, days)
                 
                 # Get engagement metrics
                 engagement_metrics = self._get_server_engagement_metrics(facade, days)
+                
+                # Get topic analysis
+                topic_analysis = self._get_server_topic_analysis(facade, days)
                 
                 # Get top channels
                 top_channels = facade.channel_repository.get_top_channels_by_message_count(limit=10, days=days)
@@ -486,22 +489,23 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     'days_back': days,
                     'time_period': f"last {days} days" if days is not None else "all time",
                     'server_stats': {
-                        'total_messages': total_messages,
-                        'total_users': total_users,
-                        'total_channels': total_channels,
-                        'messages_per_user': round(total_messages / total_users, 1) if total_users > 0 else 0,
-                        'messages_per_channel': round(total_messages / total_channels, 1) if total_channels > 0 else 0,
+                        # Use RAW statistics for accurate total counts
+                        'total_messages': raw_human_bot_stats.get('human_messages', 0) + raw_human_bot_stats.get('bot_messages', 0),
+                        'total_users': raw_human_bot_stats.get('unique_human_users', 0) + raw_human_bot_stats.get('unique_bot_users', 0),
+                        'total_channels': total_channels,  # Keep filtered for analytics
+                        'messages_per_user': round((raw_human_bot_stats.get('human_messages', 0) + raw_human_bot_stats.get('bot_messages', 0)) / max(raw_human_bot_stats.get('unique_human_users', 0) + raw_human_bot_stats.get('unique_bot_users', 0), 1), 1),
+                        'messages_per_channel': round(total_messages / total_channels, 1) if total_channels > 0 else 0,  # Use filtered for analytics
                         'activity_score': activity_score,
                         'engagement_level': engagement_level,
                         'activity_trend': activity_trend,
                         'trend_percentage': trend_percentage,
-                        # Add human vs bot statistics
-                        'human_messages': human_bot_stats.get('human_messages', 0),
-                        'bot_messages': human_bot_stats.get('bot_messages', 0),
-                        'unique_human_users': human_bot_stats.get('unique_human_users', 0),
-                        'unique_bot_users': human_bot_stats.get('unique_bot_users', 0),
-                        'human_percentage': human_bot_stats.get('human_percentage', 0),
-                        'bot_percentage': human_bot_stats.get('bot_percentage', 0)
+                        # Add RAW human vs bot statistics (unfiltered for accurate counts)
+                        'human_messages': raw_human_bot_stats.get('human_messages', 0),
+                        'bot_messages': raw_human_bot_stats.get('bot_messages', 0),
+                        'unique_human_users': raw_human_bot_stats.get('unique_human_users', 0),
+                        'unique_bot_users': raw_human_bot_stats.get('unique_bot_users', 0),
+                        'human_percentage': raw_human_bot_stats.get('human_percentage', 0),
+                        'bot_percentage': raw_human_bot_stats.get('bot_percentage', 0)
                     },
                     'date_range': date_range,
                     'top_channels': top_channels[:5],  # Top 5 channels
@@ -511,7 +515,8 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     'temporal_data': temporal_analysis if hasattr(temporal_analysis, 'patterns') else None,
                     'daily_activity_data': temporal_data,  # Add temporal data for graph
                     'engagement_metrics': engagement_metrics,  # Add engagement metrics
-                    'capabilities_used': ['server_analysis', 'database_stats', 'temporal_analysis', 'engagement_analysis']
+                    'topic_analysis': topic_analysis,  # Add topic analysis
+                    'capabilities_used': ['server_analysis', 'database_stats', 'temporal_analysis', 'engagement_analysis', 'topic_analysis']
                 }
                 
                 # Render template
@@ -525,9 +530,9 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 return None
     
     def _get_server_human_bot_statistics(self, facade, days: Optional[int]) -> Dict[str, Any]:
-        """Get server-wide human vs bot message statistics."""
+        """Get server-wide human vs bot message statistics (RAW - unfiltered for accurate counts)."""
         try:
-            # Build query with optional date filtering
+            # Build query with optional date filtering but NO base filter for raw stats
             date_condition = ""
             params = []
             
@@ -535,7 +540,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 date_condition = " AND timestamp >= datetime('now', '-' || ? || ' days')"
                 params.append(days)
             
-            # Get comprehensive human vs bot statistics
+            # Get comprehensive human vs bot statistics WITHOUT base filter for raw counts
             query = f"""
             SELECT 
                 COUNT(*) as total_messages,
@@ -544,8 +549,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users,
                 COUNT(DISTINCT CASE WHEN author_is_bot = 1 THEN author_name END) as unique_bot_users
             FROM messages 
-            WHERE {facade.message_repository.base_filter}
-            AND content IS NOT NULL
+            WHERE content IS NOT NULL
             {date_condition}
             """
             
@@ -590,7 +594,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             }
     
     def _get_server_temporal_data(self, facade, days: Optional[int]) -> Dict[str, Any]:
-        """Get server-wide temporal data for graph generation."""
+        """Get server-wide temporal data for graph generation (HUMAN MESSAGES ONLY)."""
         try:
             # Default to last 30 days if no days specified
             analysis_days = days or 30
@@ -598,6 +602,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Build query for daily message counts
             date_condition = f"timestamp >= datetime('now', '-{analysis_days} days')"
             
+            # Only count human messages for meaningful activity graphs
             query = f"""
             SELECT 
                 DATE(timestamp) as date,
@@ -605,6 +610,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             FROM messages 
             WHERE {facade.message_repository.base_filter}
             AND content IS NOT NULL
+            AND (author_is_bot = 0 OR author_is_bot IS NULL)
             AND {date_condition}
             GROUP BY DATE(timestamp)
             ORDER BY date ASC
@@ -633,9 +639,9 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             return {'activity_by_day': []}
     
     def _get_server_engagement_metrics(self, facade, days: Optional[int]) -> Dict[str, Any]:
-        """Get server-wide engagement metrics similar to channel analytics."""
+        """Get server-wide engagement metrics (filtered for meaningful analysis)."""
         try:
-            # Build query with optional date filtering
+            # Build query with optional date filtering and base filter for analytics
             date_condition = ""
             params = []
             
@@ -643,57 +649,135 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 date_condition = " AND timestamp >= datetime('now', '-' || ? || ' days')"
                 params.append(days)
             
-            # Get engagement statistics (human messages only)
+            # Get engagement metrics using filtered data (excludes analysis bots)
             query = f"""
             SELECT 
                 COUNT(*) as total_messages,
                 COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
-                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND referenced_message_id IS NOT NULL THEN 1 END) as human_replies,
-                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND referenced_message_id IS NULL THEN 1 END) as human_original_posts,
-                COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
-                COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as total_original_posts
+                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND (referenced_message_id IS NULL OR referenced_message_id = '') THEN 1 END) as human_original_posts,
+                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND (referenced_message_id IS NOT NULL AND referenced_message_id != '') THEN 1 END) as human_replies,
+                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND (reactions IS NOT NULL AND reactions != '' AND reactions != '[]') THEN 1 END) as human_posts_with_reactions
             FROM messages 
-            WHERE {facade.message_repository.base_filter}
-            AND content IS NOT NULL
+            WHERE content IS NOT NULL
             {date_condition}
             """
+            
+            # Apply base filter for analytics
+            from ...config import Settings
+            settings = Settings()
+            if settings.base_filter:
+                query = query.replace("WHERE content IS NOT NULL", f"WHERE content IS NOT NULL AND {settings.base_filter}")
             
             result = facade.message_repository.db_manager.execute_query(query, tuple(params), fetch_one=True)
             
             if not result:
                 return {}
             
-            # Calculate engagement ratios
-            human_messages = result['human_messages'] or 0
-            human_replies = result['human_replies'] or 0
             human_original_posts = result['human_original_posts'] or 0
+            human_replies = result['human_replies'] or 0
+            human_posts_with_reactions = result['human_posts_with_reactions'] or 0
             
-            human_replies_per_post = (
-                human_replies / max(human_original_posts, 1) 
-                if human_original_posts > 0 else 0
-            )
-            
-            # Estimate reaction rate (simplified - we don't have actual reaction data)
-            # Using a heuristic based on message engagement patterns
-            estimated_reactions = min(human_messages * 0.1, human_messages)  # Assume 10% get reactions
-            human_reaction_rate = estimated_reactions / max(human_messages, 1) if human_messages > 0 else 0
+            # Calculate engagement metrics
+            human_replies_per_post = round(human_replies / human_original_posts, 2) if human_original_posts > 0 else 0
+            human_reaction_rate = round((human_posts_with_reactions / human_original_posts) * 100, 1) if human_original_posts > 0 else 0
             
             return {
-                'total_replies': result['total_replies'] or 0,
-                'original_posts': result['total_original_posts'] or 0,
-                'human_replies': human_replies,
                 'human_original_posts': human_original_posts,
-                'human_replies_per_post': round(human_replies_per_post, 2),
-                'human_posts_with_reactions': int(estimated_reactions),
-                'human_reaction_rate': round(human_reaction_rate * 100, 1),  # Convert to percentage
-                'posts_with_reactions': int(estimated_reactions),
-                'replies_per_post': round((result['total_replies'] or 0) / max(result['total_original_posts'] or 1, 1), 2),
-                'reaction_rate': round(human_reaction_rate * 100, 1)
+                'human_replies': human_replies,
+                'human_posts_with_reactions': human_posts_with_reactions,
+                'human_replies_per_post': human_replies_per_post,
+                'human_reaction_rate': human_reaction_rate
             }
             
         except Exception as e:
             logger.error(f"Failed to get server engagement metrics: {e}")
             return {}
+
+    def _get_server_topic_analysis(self, facade, days: Optional[int]) -> Dict[str, Any]:
+        """Get server-wide topic analysis using TopicAnalyzer."""
+        try:
+            from ...analysis.topic_analyzer import TopicAnalyzer
+            
+            # Initialize topic analyzer
+            topic_analyzer = TopicAnalyzer(facade)
+            
+            # Get server-wide messages for topic analysis
+            messages = []
+            messages_with_timestamps = []
+            
+            # Build query with optional date filtering and base filter
+            date_condition = ""
+            params = []
+            
+            if days:
+                date_condition = " AND timestamp >= datetime('now', '-' || ? || ' days')"
+                params.append(days)
+            
+            # Get messages for topic analysis (using filtered data for meaningful analysis)
+            query = f"""
+            SELECT content, timestamp
+            FROM messages 
+            WHERE content IS NOT NULL
+            AND LENGTH(content) > 10
+            AND (author_is_bot = 0 OR author_is_bot IS NULL)
+            {date_condition}
+            ORDER BY RANDOM()
+            LIMIT 1000
+            """
+            
+            # Apply base filter for analytics
+            from ...config import Settings
+            settings = Settings()
+            if settings.base_filter:
+                query = query.replace("WHERE content IS NOT NULL", f"WHERE content IS NOT NULL AND {settings.base_filter}")
+            
+            results = facade.message_repository.db_manager.execute_query(query, tuple(params))
+            
+            if not results:
+                return {'topics': [], 'message_count': 0}
+            
+            # Extract messages and timestamps
+            for row in results:
+                content = row['content']
+                timestamp = row['timestamp']
+                if content:
+                    messages.append(content)
+                    messages_with_timestamps.append((content, timestamp))
+            
+            if len(messages) < 5:
+                logger.info("Not enough messages for server topic analysis")
+                return {'topics': [], 'message_count': len(messages)}
+            
+            logger.info(f"Analyzing {len(messages)} server messages for topics")
+            
+            # Extract topics using hybrid approach
+            bertopic_results, domain_analysis = topic_analyzer.extract_topics(
+                messages, 
+                messages_with_timestamps=messages_with_timestamps,
+                min_topic_size=3  # Require at least 3 messages for server topics
+            )
+            
+            # Format topics for template
+            topic_items = []
+            for topic_data in bertopic_results[:8]:  # Top 8 server topics
+                topic_items.append({
+                    'topic': topic_data["topic"],
+                    'frequency': topic_data["frequency"],
+                    'relevance_score': topic_data["relevance_score"],
+                    'keywords': topic_data.get("keywords", [])[:5]  # Top 5 keywords
+                })
+            
+            logger.info(f"Found {len(topic_items)} server topics")
+            
+            return {
+                'topics': topic_items,
+                'message_count': len(messages),
+                'domain_analysis': domain_analysis
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get server topic analysis: {e}")
+            return {'topics': [], 'message_count': 0}
     
     def _sync_analyze_single_channel(self, channel_name: str, **analysis_params) -> str:
         """Sync single channel analysis with temporal filtering."""
@@ -1946,7 +2030,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             fig, ax = plt.subplots(figsize=(12, 6))
             
             # Bar chart for daily messages
-            bars = ax.bar(dates, message_counts, alpha=0.7, color='#5865F2', label='Daily Messages')
+            bars = ax.bar(dates, message_counts, alpha=0.7, color='#5865F2', label='Daily Human Messages')
             
             # 1-week moving average line
             if len(message_counts) >= 7:
@@ -1971,8 +2055,8 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             
             # Formatting
             ax.set_xlabel('Date')
-            ax.set_ylabel('Number of Messages')
-            ax.set_title(f"Server-wide Daily Message Activity ({analysis_params.get('days', 30)} days)")
+            ax.set_ylabel('Number of Human Messages')
+            ax.set_title(f"Server-wide Daily Human Message Activity ({analysis_params.get('days', 30)} days)")
             ax.legend()
             ax.grid(True, alpha=0.3)
             

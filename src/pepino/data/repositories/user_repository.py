@@ -219,7 +219,7 @@ class UserRepository:
         days: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get top users by message count (humans only).
+        Get top users by message count (humans only) with display names.
         
         Args:
             limit: Maximum number of users to return
@@ -231,6 +231,7 @@ class UserRepository:
         query = """
         SELECT 
             author_name,
+            COALESCE(author_display_name, author_name) as display_name,
             COUNT(*) as message_count,
             COUNT(DISTINCT channel_name) as unique_channels,
             MIN(timestamp) as first_message,
@@ -248,7 +249,7 @@ class UserRepository:
             params.append(days)
         
         query += """
-        GROUP BY author_name
+        GROUP BY author_name, author_display_name
         ORDER BY message_count DESC
         LIMIT ?
         """
@@ -259,6 +260,7 @@ class UserRepository:
         return [
             {
                 'author_name': row['author_name'],
+                'display_name': row['display_name'],
                 'message_count': row['message_count'],
                 'unique_channels': row['unique_channels'],
                 'first_message': row['first_message'],

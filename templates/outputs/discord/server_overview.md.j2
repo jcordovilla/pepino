@@ -1,6 +1,6 @@
 ## 🏠 Server Overview Analysis{% if time_period %} ({{ time_period }}){% else %} (All Time){% endif %}
 
-**📊 Server Statistics:**
+**📊 Server Statistics (Raw Data):**
 • Total Messages: {{ server_stats.total_messages | format_number }}
   - Human Messages: {{ server_stats.human_messages | format_number }} ({{ server_stats.human_percentage }}%)
   - Bot Messages: {{ server_stats.bot_messages | format_number }} ({{ server_stats.bot_percentage }}%)
@@ -41,14 +41,14 @@
 
 {% endif -%}
 {% if top_channels and top_channels | length > 0 -%}
-**📺 Top Channels:**
+**📺 Top Channels (Filtered Analytics):**
 {% for channel in top_channels -%}
 {{ loop.index }}. #{{ channel.channel_name or channel.name }} - {{ channel.message_count | format_number }} messages
 {% endfor -%}
 
 {% endif -%}
 {% if top_users and top_users | length > 0 -%}
-**👥 Top Users:**
+**👥 Top Users (Filtered Analytics):**
 {% for user in top_users -%}
 {{ loop.index }}. {{ user.display_name or user.author_name }} - {{ user.message_count | format_number }} messages
 {% endfor -%}
@@ -62,10 +62,22 @@
 
 {% endif -%}
 {% if daily_activity_data and daily_activity_data.activity_by_day -%}
-**📈 Recent Activity (Daily Messages):**
+**📈 Recent Activity (Daily Human Messages):**
 {% for day in daily_activity_data.activity_by_day[-7:] -%}
-• {{ day.date }}: {{ day.message_count | format_number }} messages
+• {{ day.date }}: {{ day.message_count | format_number }} human messages
 {% endfor -%}
+
+{% endif -%}
+{% if topic_analysis and topic_analysis.topics and topic_analysis.topics | length > 0 -%}
+**🔍 Most Common Topics:**
+{% for topic in topic_analysis.topics -%}
+{{ loop.index }}. **{{ topic.topic }}** ({{ topic.frequency }} messages, {{ (topic.relevance_score * 100) | round(1) }}% relevance)
+{% if topic.keywords and topic.keywords | length > 0 -%}
+   *Keywords: {{ topic.keywords | join(', ') }}*
+{% endif -%}
+{% endfor -%}
+
+*Based on analysis of {{ topic_analysis.message_count | format_number }} human messages*
 
 {% endif -%}
 ---
