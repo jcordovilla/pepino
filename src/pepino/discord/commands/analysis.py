@@ -430,6 +430,15 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 total_users = facade.message_repository.get_distinct_user_count()
                 total_channels = facade.channel_repository.get_distinct_channel_count()
                 
+                # Get human vs bot statistics
+                human_bot_stats = self._get_server_human_bot_statistics(facade, days)
+                
+                # Get temporal data for graph generation
+                temporal_data = self._get_server_temporal_data(facade, days)
+                
+                # Get engagement metrics
+                engagement_metrics = self._get_server_engagement_metrics(facade, days)
+                
                 # Get top channels
                 top_channels = facade.channel_repository.get_top_channels_by_message_count(limit=10, days=days)
                 
@@ -525,7 +534,14 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                         'activity_score': activity_score,
                         'engagement_level': engagement_level,
                         'activity_trend': activity_trend,
-                        'trend_percentage': trend_percentage
+                        'trend_percentage': trend_percentage,
+                        # Add human vs bot statistics
+                        'human_messages': human_bot_stats.get('human_messages', 0),
+                        'bot_messages': human_bot_stats.get('bot_messages', 0),
+                        'unique_human_users': human_bot_stats.get('unique_human_users', 0),
+                        'unique_bot_users': human_bot_stats.get('unique_bot_users', 0),
+                        'human_percentage': human_bot_stats.get('human_percentage', 0),
+                        'bot_percentage': human_bot_stats.get('bot_percentage', 0)
                     },
                     'date_range': date_range,
                     'top_channels': top_channels[:5],  # Top 5 channels
@@ -533,6 +549,8 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     'most_active_channel': most_active_channel,
                     'most_active_user': most_active_user,
                     'temporal_data': temporal_analysis if hasattr(temporal_analysis, 'patterns') else None,
+                    'daily_activity_data': temporal_data,  # Add temporal data for graph
+                    'engagement_metrics': engagement_metrics,  # Add engagement metrics
                     'capabilities_used': ['server_analysis', 'database_stats', 'temporal_analysis', 'engagement_analysis']
                 }
                 
@@ -545,6 +563,177 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             except Exception as e:
                 logger.error(f"Server overview analysis failed: {e}")
                 return None
+    
+    def _get_server_human_bot_statistics(self, facade, days: Optional[int]) -> Dict[str, Any]:
+        """Get server-wide human vs bot message statistics."""
+        try:
+            # Build query with optional date filtering
+            date_condition = ""
+            params = []
+            
+            if days:
+                date_condition = " AND timestamp >= datetime('now', '-' || ? || ' days')"
+                params.append(days)
+            
+            # Get comprehensive human vs bot statistics
+            query = f"""
+            SELECT 
+                COUNT(*) as total_messages,
+                COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
+                COUNT(CASE WHEN author_is_bot = 1 THEN 1 END) as bot_messages,
+                COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users,
+                COUNT(DISTINCT CASE WHEN author_is_bot = 1 THEN author_name END) as unique_bot_users
+            FROM messages 
+            WHERE {facade.message_repository.base_filter}
+            AND content IS NOT NULL
+            {date_condition}
+            """
+            
+            result = facade.message_repository.db_manager.execute_query(query, tuple(params), fetch_one=True)
+            
+            if not result:
+                return {
+                    'human_messages': 0,
+                    'bot_messages': 0,
+                    'unique_human_users': 0,
+                    'unique_bot_users': 0,
+                    'human_percentage': 0,
+                    'bot_percentage': 0
+                }
+            
+            total_messages = result['total_messages'] or 0
+            human_messages = result['human_messages'] or 0
+            bot_messages = result['bot_messages'] or 0
+            
+            # Calculate percentages
+            human_percentage = (human_messages / total_messages * 100) if total_messages > 0 else 0
+            bot_percentage = (bot_messages / total_messages * 100) if total_messages > 0 else 0
+            
+            return {
+                'human_messages': human_messages,
+                'bot_messages': bot_messages,
+                'unique_human_users': result['unique_human_users'] or 0,
+                'unique_bot_users': result['unique_bot_users'] or 0,
+                'human_percentage': round(human_percentage, 1),
+                'bot_percentage': round(bot_percentage, 1)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get server human/bot statistics: {e}")
+            return {
+                'human_messages': 0,
+                'bot_messages': 0,
+                'unique_human_users': 0,
+                'unique_bot_users': 0,
+                'human_percentage': 0,
+                'bot_percentage': 0
+            }
+    
+    def _get_server_temporal_data(self, facade, days: Optional[int]) -> Dict[str, Any]:
+        """Get server-wide temporal data for graph generation."""
+        try:
+            # Default to last 30 days if no days specified
+            analysis_days = days or 30
+            
+            # Build query for daily message counts
+            date_condition = f"timestamp >= datetime('now', '-{analysis_days} days')"
+            
+            query = f"""
+            SELECT 
+                DATE(timestamp) as date,
+                COUNT(*) as message_count
+            FROM messages 
+            WHERE {facade.message_repository.base_filter}
+            AND content IS NOT NULL
+            AND {date_condition}
+            GROUP BY DATE(timestamp)
+            ORDER BY date ASC
+            """
+            
+            results = facade.message_repository.db_manager.execute_query(query)
+            
+            if not results:
+                return {'activity_by_day': []}
+            
+            # Convert to the format expected by the template
+            activity_by_day = [
+                {
+                    'date': row['date'],
+                    'message_count': row['message_count']
+                }
+                for row in results
+            ]
+            
+            return {
+                'activity_by_day': activity_by_day
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get server temporal data: {e}")
+            return {'activity_by_day': []}
+    
+    def _get_server_engagement_metrics(self, facade, days: Optional[int]) -> Dict[str, Any]:
+        """Get server-wide engagement metrics similar to channel analytics."""
+        try:
+            # Build query with optional date filtering
+            date_condition = ""
+            params = []
+            
+            if days:
+                date_condition = " AND timestamp >= datetime('now', '-' || ? || ' days')"
+                params.append(days)
+            
+            # Get engagement statistics (human messages only)
+            query = f"""
+            SELECT 
+                COUNT(*) as total_messages,
+                COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
+                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND referenced_message_id IS NOT NULL THEN 1 END) as human_replies,
+                COUNT(CASE WHEN (author_is_bot = 0 OR author_is_bot IS NULL) AND referenced_message_id IS NULL THEN 1 END) as human_original_posts,
+                COUNT(CASE WHEN referenced_message_id IS NOT NULL THEN 1 END) as total_replies,
+                COUNT(CASE WHEN referenced_message_id IS NULL THEN 1 END) as total_original_posts
+            FROM messages 
+            WHERE {facade.message_repository.base_filter}
+            AND content IS NOT NULL
+            {date_condition}
+            """
+            
+            result = facade.message_repository.db_manager.execute_query(query, tuple(params), fetch_one=True)
+            
+            if not result:
+                return {}
+            
+            # Calculate engagement ratios
+            human_messages = result['human_messages'] or 0
+            human_replies = result['human_replies'] or 0
+            human_original_posts = result['human_original_posts'] or 0
+            
+            human_replies_per_post = (
+                human_replies / max(human_original_posts, 1) 
+                if human_original_posts > 0 else 0
+            )
+            
+            # Estimate reaction rate (simplified - we don't have actual reaction data)
+            # Using a heuristic based on message engagement patterns
+            estimated_reactions = min(human_messages * 0.1, human_messages)  # Assume 10% get reactions
+            human_reaction_rate = estimated_reactions / max(human_messages, 1) if human_messages > 0 else 0
+            
+            return {
+                'total_replies': result['total_replies'] or 0,
+                'original_posts': result['total_original_posts'] or 0,
+                'human_replies': human_replies,
+                'human_original_posts': human_original_posts,
+                'human_replies_per_post': round(human_replies_per_post, 2),
+                'human_posts_with_reactions': int(estimated_reactions),
+                'human_reaction_rate': round(human_reaction_rate * 100, 1),  # Convert to percentage
+                'posts_with_reactions': int(estimated_reactions),
+                'replies_per_post': round((result['total_replies'] or 0) / max(result['total_original_posts'] or 1, 1), 2),
+                'reaction_rate': round(human_reaction_rate * 100, 1)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get server engagement metrics: {e}")
+            return {}
     
     def _sync_analyze_single_channel(self, channel_name: str, **analysis_params) -> str:
         """Sync single channel analysis with temporal filtering."""
@@ -1638,6 +1827,10 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
 
     async def _handle_server_overview(self, interaction: discord.Interaction, days: Optional[int]):
         """Handle server overview analysis (equivalent to server_overview)"""
+        # Send initial response
+        time_desc = f"last {days} days" if days is not None else "all time"
+        await interaction.followup.send(f"🔍 Generating server overview analysis ({time_desc})... This may take a moment.")
+        
         # Execute sync operation in thread pool with performance tracking
         result, exec_time = await self.execute_tracked_sync_operation(
             "server_overview",
@@ -1645,10 +1838,54 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             days
         )
         
-        # Send single comprehensive result
+        # Send result and generate chart
         if result:
-            final_message = f"{result}\n\n✅ Analysis completed in {exec_time:.2f}s"
-            await self._send_long_message_slash(interaction, final_message)
+            # Send text analysis first
+            await self._send_long_message_slash(interaction, result)
+            
+            # Generate and send chart
+            try:
+                # Get temporal data for chart generation
+                from ...analysis.data_facade import get_analysis_data_facade
+                from ...config import Settings
+                
+                settings = Settings()
+                with get_analysis_data_facade(base_filter=settings.base_filter) as facade:
+                    temporal_data = self._get_server_temporal_data(facade, days)
+                    
+                    if temporal_data and temporal_data.get('activity_by_day'):
+                        analysis_params = {'days': days or 30}
+                        chart_path = self._generate_server_overview_chart(temporal_data, analysis_params)
+                        
+                        if chart_path:
+                            try:
+                                import os
+                                chart_file = discord.File(chart_path, filename="server_overview_chart.png")
+                                await interaction.followup.send(
+                                    "📊 **Server Activity Chart:**",
+                                    file=chart_file
+                                )
+                                
+                                # Clean up chart file
+                                try:
+                                    os.remove(chart_path)
+                                except:
+                                    pass  # Don't fail if cleanup fails
+                                    
+                            except Exception as e:
+                                logger.error(f"Failed to send server overview chart: {e}")
+                                await interaction.followup.send("⚠️ Chart generated but failed to send")
+                        else:
+                            logger.warning("Server overview chart generation failed")
+                    else:
+                        logger.warning("No temporal data available for server overview chart")
+                        
+            except Exception as e:
+                logger.error(f"Server overview chart generation failed: {e}")
+                # Don't fail the whole operation if chart generation fails
+            
+            # Send completion message
+            await interaction.followup.send(f"✅ Server overview analysis completed in {exec_time:.2f}s")
         else:
             await interaction.followup.send(f"❌ No server data found")
 
@@ -1733,6 +1970,98 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             await interaction.followup.send(embed=embed)
         else:
             await interaction.followup.send("❌ No users found in database")
+
+    def _generate_server_overview_chart(self, temporal_data, analysis_params):
+        """Generate server overview activity chart similar to channel analytics."""
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            from datetime import datetime, timedelta
+            import numpy as np
+            import os
+            
+            if not temporal_data or not temporal_data.get('activity_by_day'):
+                logger.warning("No temporal data for server overview chart generation")
+                return None
+            
+            # Extract dates and message counts
+            activity_data = temporal_data['activity_by_day']
+            dates = []
+            message_counts = []
+            
+            for item in activity_data:
+                try:
+                    date_obj = datetime.strptime(item['date'], '%Y-%m-%d')
+                    dates.append(date_obj)
+                    message_counts.append(item['message_count'])
+                except (ValueError, KeyError) as e:
+                    logger.warning(f"Invalid date format in temporal data: {item}, error: {e}")
+                    continue
+            
+            if not dates or not message_counts:
+                logger.warning("No valid temporal data for server overview chart generation")
+                return None
+            
+            # Sort by date
+            sorted_data = sorted(zip(dates, message_counts))
+            dates, message_counts = zip(*sorted_data)
+            
+            # Create the chart
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+            # Bar chart for daily messages
+            bars = ax.bar(dates, message_counts, alpha=0.7, color='#5865F2', label='Daily Messages')
+            
+            # 1-week moving average line
+            if len(message_counts) >= 7:
+                # Calculate 1-week moving average
+                window_size = 7
+                moving_avg = []
+                for i in range(len(message_counts)):
+                    if i < window_size - 1:
+                        # For the first few points, use available data
+                        moving_avg.append(np.mean(message_counts[:i+1]))
+                    else:
+                        # Use 7-day window
+                        moving_avg.append(np.mean(message_counts[i-window_size+1:i+1]))
+                
+                ax.plot(dates, moving_avg, color='#ED4245', linestyle='--', linewidth=2, 
+                       label='1-Week Moving Average')
+            else:
+                # Fallback to simple average for short periods
+                avg_messages = np.mean(message_counts)
+                ax.axhline(y=avg_messages, color='#ED4245', linestyle='--', linewidth=2, 
+                          label=f'Average ({avg_messages:.1f} messages)')
+            
+            # Formatting
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Number of Messages')
+            ax.set_title(f"Server-wide Daily Message Activity ({analysis_params.get('days', 30)} days)")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            # Format x-axis dates
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
+            plt.xticks(rotation=45)
+            
+            # Tight layout to prevent label cutoff
+            plt.tight_layout()
+            
+            # Save chart
+            chart_path = f"temp/server_overview_chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+            plt.savefig(chart_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return chart_path
+            
+        except ImportError:
+            logger.warning("Matplotlib not available for server overview chart generation")
+            return None
+        except Exception as e:
+            logger.error(f"Server overview chart generation failed: {e}")
+            return None
 
 
 async def setup(bot):

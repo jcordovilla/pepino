@@ -5,7 +5,7 @@ Sync repository for handling sync log operations.
 import json
 from typing import Any, Dict, Optional
 
-from pepino.logging_config import get_logger
+from ...logging_config import get_logger
 
 from ..database.manager import DatabaseManager
 from ..models.sync import SyncLogEntry

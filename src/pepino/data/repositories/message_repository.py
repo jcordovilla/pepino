@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from ...config import Settings
 from ..database.manager import DatabaseManager
 from ..models.message import Message
-from pepino.logging_config import get_logger
+from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 

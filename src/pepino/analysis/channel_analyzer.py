@@ -13,7 +13,7 @@ from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import ChannelAnalysisResponse
 from .models import LocalChannelStatistics, UserActivity
 from .utils import safe_timestamp_to_iso
-from pepino.logging_config import get_logger
+from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 

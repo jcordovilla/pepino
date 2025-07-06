@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 import os
 
-from pepino.config import Settings
+from .config import Settings
 
 
 class ColoredFormatter(logging.Formatter):

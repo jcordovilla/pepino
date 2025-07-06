@@ -5,8 +5,8 @@ Database repository for low-level database operations like exports and metadata.
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from pepino.data.database.manager import DatabaseManager
-from pepino.logging_config import get_logger
+from ..database.manager import DatabaseManager
+from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 

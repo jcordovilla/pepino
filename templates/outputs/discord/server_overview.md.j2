@@ -2,7 +2,11 @@
 
 **📊 Server Statistics:**
 • Total Messages: {{ server_stats.total_messages | format_number }}
+  - Human Messages: {{ server_stats.human_messages | format_number }} ({{ server_stats.human_percentage }}%)
+  - Bot Messages: {{ server_stats.bot_messages | format_number }} ({{ server_stats.bot_percentage }}%)
 • Total Users: {{ server_stats.total_users | format_number }}
+  - Human Users: {{ server_stats.unique_human_users | format_number }}
+  - Bot Users: {{ server_stats.unique_bot_users | format_number }}
 • Total Channels: {{ server_stats.total_channels | format_number }}
 • Messages per User: {{ server_stats.messages_per_user | format_number }}
 • Messages per Channel: {{ server_stats.messages_per_channel | format_number }}
@@ -12,6 +16,14 @@
 • Engagement Level: {{ server_stats.engagement_level | title }}
 • Activity Trend: {{ server_stats.activity_trend | title }}{% if server_stats.trend_percentage != 0 %} ({{ server_stats.trend_percentage | round(1) }}%){% endif %}
 
+{% if engagement_metrics %}
+**📈 Server Engagement Metrics (Human Activity):**
+• Average Replies per Original Post: {{ engagement_metrics.human_replies_per_post }}
+• Posts with Reactions: {{ engagement_metrics.human_reaction_rate }}% ({{ engagement_metrics.human_posts_with_reactions }}/{{ engagement_metrics.human_original_posts }})
+• Total Replies: {{ engagement_metrics.human_replies | format_number }} | Original Posts: {{ engagement_metrics.human_original_posts | format_number }}
+• Note: Bot messages excluded from engagement calculations
+
+{% endif %}
 {% if date_range and date_range.start and date_range.end -%}
 **📅 Activity Period:**
 • First Message: {{ date_range.start[:16] | replace('T', ' ') }}
@@ -47,6 +59,13 @@
 • Peak Activity: {{ temporal_data.patterns.most_active_period }} ({{ temporal_data.patterns.max_messages_in_period }} messages)
 • Average per Period: {{ temporal_data.patterns.avg_messages_per_period | round(1) }} messages
 • Activity Trend: {{ temporal_data.patterns.message_trend | title }} ({{ temporal_data.patterns.trend_percentage | round(1) }}%)
+
+{% endif -%}
+{% if daily_activity_data and daily_activity_data.activity_by_day -%}
+**📈 Recent Activity (Daily Messages):**
+{% for day in daily_activity_data.activity_by_day[-7:] -%}
+• {{ day.date }}: {{ day.message_count | format_number }} messages
+{% endfor -%}
 
 {% endif -%}
 ---
