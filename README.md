@@ -719,7 +719,7 @@ pepino analyze channels --format txt
 #### **Charts Not Generating**
 1. Install chart dependencies: `poetry install --extras charts`
 2. Check `ENABLE_CHARTS=true` in `.env`
-3. Verify write permissions in temp directory
+3. Verify write permissions in temporary directory
 4. Check matplotlib backend: `export MPLBACKEND=Agg`
 
 ### **Performance Optimization**

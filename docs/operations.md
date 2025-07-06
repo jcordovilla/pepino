@@ -56,7 +56,7 @@ DISCORD_TOKEN=your_discord_bot_token_here
 | **Visualization** | | |
 | `CHART_DPI` | `300` | Chart resolution quality |
 | `CHART_FORMAT` | `png` | Chart output format |
-| `TEMP_DIRECTORY` | `temp` | Temporary files directory |
+| `TEMP_DIRECTORY` | `temp` | Temporary files directory (auto-created) |
 | **Logging** | | |
 | `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
 | `DEBUG` | `false` | Enable debug mode |
@@ -195,6 +195,7 @@ Once deployed, the bot provides these slash commands:
 *All commands support autocomplete and include optional charts*
 
 **📖 For detailed bot operations and troubleshooting, see [bot_operations.md](bot_operations.md)**
+**🚀 For a simple getting started guide, see the [Discord Bot Quick Start Guide](../README.md#-discord-bot-quick-start-guide) in the README**
 
 ## Database Operations
 
