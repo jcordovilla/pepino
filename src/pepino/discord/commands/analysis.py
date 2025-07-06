@@ -1948,19 +1948,26 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         )
         
         if channels:
-            # Apply limit if specified
-            display_limit = limit if limit and limit > 0 else 30
-            channel_list = "\n".join([f"• **{channel}**" for channel in channels[:display_limit]])
-            
-            if len(channels) > display_limit:
-                channel_list += f"\n... and {len(channels) - display_limit} more channels"
+            # Apply limit only if specified by user
+            if limit and limit > 0:
+                display_channels = channels[:limit]
+                channel_list = "\n".join([f"• **{channel}**" for channel in display_channels])
+                
+                if len(channels) > limit:
+                    channel_list += f"\n... and {len(channels) - limit} more channels"
+                    
+                footer_text = f"Showing {len(display_channels)} of {len(channels)} channels • Retrieved in {exec_time:.2f}s"
+            else:
+                # Show all channels when no limit specified
+                channel_list = "\n".join([f"• **{channel}**" for channel in channels])
+                footer_text = f"Total: {len(channels)} channels • Retrieved in {exec_time:.2f}s"
             
             embed = discord.Embed(
                 title="📺 Available Channels for Analysis",
                 description=channel_list,
                 color=discord.Color.blue()
             )
-            embed.set_footer(text=f"Total: {len(channels)} channels • Retrieved in {exec_time:.2f}s")
+            embed.set_footer(text=footer_text)
             await interaction.followup.send(embed=embed)
         else:
             await interaction.followup.send("❌ No channels found in database")
@@ -1974,19 +1981,26 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
         )
         
         if users:
-            # Apply limit if specified
-            display_limit = limit if limit and limit > 0 else 20
-            user_list = "\n".join([f"• **{user}**" for user in users[:display_limit]])
-            
-            if len(users) > display_limit:
-                user_list += f"\n... and {len(users) - display_limit} more users"
+            # Apply limit only if specified by user
+            if limit and limit > 0:
+                display_users = users[:limit]
+                user_list = "\n".join([f"• **{user}**" for user in display_users])
+                
+                if len(users) > limit:
+                    user_list += f"\n... and {len(users) - limit} more users"
+                    
+                footer_text = f"Showing {len(display_users)} of {len(users)} users • Retrieved in {exec_time:.2f}s"
+            else:
+                # Show all users when no limit specified
+                user_list = "\n".join([f"• **{user}**" for user in users])
+                footer_text = f"Total: {len(users)} users • Retrieved in {exec_time:.2f}s"
             
             embed = discord.Embed(
                 title="👥 Available Users for Analysis",
                 description=user_list,
                 color=discord.Color.green()
             )
-            embed.set_footer(text=f"Total: {len(users)} users • Retrieved in {exec_time:.2f}s")
+            embed.set_footer(text=footer_text)
             await interaction.followup.send(embed=embed)
         else:
             await interaction.followup.send("❌ No users found in database")

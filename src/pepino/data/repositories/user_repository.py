@@ -190,12 +190,12 @@ class UserRepository:
             for row in results
         ] if results else []
 
-    def get_available_users(self, limit: int = 500) -> List[str]:
+    def get_available_users(self, limit: Optional[int] = None) -> List[str]:
         """
         Get list of available users (humans only).
         
         Args:
-            limit: Maximum number of users to return (default: 500 for better autocomplete)
+            limit: Maximum number of users to return (None = all users)
             
         Returns:
             List of usernames sorted alphabetically
@@ -206,10 +206,14 @@ class UserRepository:
         WHERE content IS NOT NULL
         AND (author_is_bot = 0 OR author_is_bot IS NULL)
         ORDER BY author_name
-        LIMIT ?
         """
         
-        results = self.db_manager.execute_query(query, (limit,))
+        params = []
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        
+        results = self.db_manager.execute_query(query, tuple(params) if params else ())
         
         return [row['author_name'] for row in results] if results else []
 
