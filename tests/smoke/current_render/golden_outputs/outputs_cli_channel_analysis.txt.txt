@@ -1,0 +1,1 @@
+❌ Error rendering template 'outputs/cli/channel_analysis.txt.j2': 'dict object' has no attribute 'user_stats'

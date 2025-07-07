@@ -4,9 +4,9 @@ Channel Members: {{ total_members | format_number }}
 
 Period: {{ data.period.start_date }} - {{ data.period.end_date }}
 
-Pulse: {{ (data.user_stats.current_human_users / total_members * 100) | round(1) if total_members and total_members > 0 else 0 }}% participation rate ({{ data.user_stats.current_human_users }} members), activity {% if data.user_stats.trend_direction == 'new_activity' %}started{% elif data.user_stats.trend_direction == 'increasing' %}increasing{% elif data.user_stats.trend_direction == 'decreasing' %}decreasing{% else %}unchanged{% endif %} ({% if data.user_stats.trend_direction == 'new_activity' %}vs no previous activity{% else %}{{ data.user_stats.human_user_change_pct | round(1) }}%{% endif %} vs last week)
+Pulse: {{ (data.user_stats.current_human_users / total_members * 100) | round(1) if total_members and total_members > 0 else 0 }}% participation rate ({{ data.user_stats.current_human_users }} active contributors out of {{ total_members | format_number }} total members), activity {% if data.user_stats.trend_direction == 'new_activity' %}started{% elif data.user_stats.trend_direction == 'increasing' %}increasing{% elif data.user_stats.trend_direction == 'decreasing' %}decreasing{% else %}unchanged{% endif %} ({% if data.user_stats.trend_direction == 'new_activity' %}vs no previous activity{% else %}{{ data.user_stats.human_user_change_pct | round(1) }}%{% endif %} vs last week)
 
-Participation: {{ data.participation_distribution.distribution }} distributed ({{ data.participation_distribution.top_contributors_count }} top contributors posted {{ data.participation_distribution.top_contributors_percentage | round(1) }}% of all messages)
+Participation: {{ data.participation_distribution.distribution }} distributed ({{ data.participation_distribution.top_contributors_percentage | round(1) }}% of messages by top 5% active contributors)
 
 Bot Activity: {{ "More" if data.message_stats.bot_percentage > data.message_stats.human_percentage else "Less" }} than humans (posted {{ (data.message_stats.bot_percentage | int) }}% of all messages)
 
@@ -42,6 +42,20 @@ Top 3 Commented Messages:
 {% endfor %}
 {% else %}
 - No reply data available
+{% endif %}
+
+{% if not channel_name and data.most_active_channels %}
+Top 5 Most Active Channels:
+{% for channel in data.most_active_channels[:5] %}
+- #{{ channel.channel_name }} ({{ channel.message_count }} messages by {{ channel.unique_users }} contributors)
+{% endfor %}
+
+Top 5 Least Active Channels:
+{% for channel in data.least_active_channels[:5] %}
+- #{{ channel.channel_name }} ({{ channel.message_count }} messages by {{ channel.unique_users }} contributors)
+{% endfor %}
+
+Active/Inactive Channels: {{ data.active_channels_qualifier | title }} ratio with {{ data.active_channels_percentage | round(1) }}% active ({{ data.active_channels_count }}/{{ data.total_channels_analyzed }} channels)
 {% endif %}
 
 ---

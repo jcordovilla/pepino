@@ -1,0 +1,32 @@
+---
+Top 10 Contributors across all channels(ranked by number of messages and replies)
+Period: 2024-06-12 to 2024-07-12
+
+- Alice Smith
+ Volume: 89 messages posted
+ Most Active in Channels:
+  - general: 45 messages
+  - random: 23 messages
+ Top Messages:
+  - https://discord.com/channels/123/456/789: 5 replies
+  - no direct replies
+
+- Bob Johnson
+ Volume: 67 messages posted
+ Most Active in Channels:
+  - general: 35 messages
+  - help: 20 messages
+ Top Messages:
+  - https://discord.com/channels/123/456/790: 3 replies
+  - no direct replies
+
+- Charlie Brown
+ Volume: 45 messages posted
+ Most Active in Channels:
+  - random: 30 messages
+  - general: 15 messages
+ Top Messages:
+  - https://discord.com/channels/123/456/791: 2 replies
+  - no direct replies
+
+--- 

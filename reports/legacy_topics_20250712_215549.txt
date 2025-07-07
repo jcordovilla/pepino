@@ -1,0 +1,75 @@
+🔍 Topic Analysis Report
+==================================================
+
+📊 Analysis Overview
+------------------------------
+Scope: All Channels
+Time Period: Last 30 days
+Total Messages Analyzed: 1,000
+Topics Extracted: 10
+Capabilities Used: bertopic_modeling, spacy_nlp
+
+🏷️ Top Topics
+------------------------------
+1. 0_to_the_you_for
+   • Frequency: 271
+   • Relevance Score: 0.271
+
+2. 1_and_ai_the_to
+   • Frequency: 167
+   • Relevance Score: 0.167
+
+3. 2_and_you_to_the
+   • Frequency: 155
+   • Relevance Score: 0.155
+
+4. 3_trello_to_you_and
+   • Frequency: 30
+   • Relevance Score: 0.03
+
+5. 4_passcode_zoom_link_you
+   • Frequency: 25
+   • Relevance Score: 0.025
+
+6. 5_fair_they_that_so
+   • Frequency: 22
+   • Relevance Score: 0.022
+
+7. 6_it_empty_see_im
+   • Frequency: 17
+   • Relevance Score: 0.017
+
+8. 7_22_super_added_may
+   • Frequency: 14
+   • Relevance Score: 0.014
+
+9. 8_video_the_midjourney_heygen
+   • Frequency: 14
+   • Relevance Score: 0.014
+
+
+
+📈 Topic Evolution
+------------------------------
+Topic Distribution:
+  0_to_the_you_for: 27.1%
+  1_and_ai_the_to: 16.7%
+  2_and_you_to_the: 15.5%
+  3_trello_to_you_and: 3.0%
+  4_passcode_zoom_link_you: 2.5%
+  5_fair_they_that_so: 2.2%
+  6_it_empty_see_im: 1.7%
+  7_22_super_added_may: 1.4%
+  8_video_the_midjourney_heygen: 1.4%
+
+Most Discussed Topic: 0_to_the_you_for
+Least Discussed Topic: 8_video_the_midjourney_heygen
+
+🔧 Technical Details
+------------------------------
+Analysis Method: BERTopic with spaCy preprocessing
+Advanced Features:
+  • bertopic_modeling
+  • spacy_nlp
+
+Generated: 2025-07-12 21:55:48 

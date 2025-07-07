@@ -1,0 +1,75 @@
+📊 Database Statistics Report
+{{ "=" * 50 }}
+
+🗄️ Database Information
+{{ "-" * 30 }}
+File Path: {{ database_info.file_path }}
+Size: {{ database_info.size_mb | round(2) }} MB
+Last Modified: {{ database_info.last_modified | format_timestamp if database_info.last_modified else 'N/A' }}
+
+📈 Table Statistics
+{{ "-" * 30 }}
+{% for table in table_stats %}
+{{ table.table_name | title }}:
+  • Rows: {{ table.row_count | format_number }}
+  • Size: {{ table.size_mb | round(2) }} MB
+  • Last Insert: {{ table.last_insert | format_timestamp if table.last_insert else 'N/A' }}
+{% endfor %}
+
+📋 Summary
+{{ "-" * 30 }}
+Total Messages: {{ summary.total_messages | format_number }}
+Total Users: {{ summary.total_users | format_number }}
+Total Channels: {{ summary.total_channels | format_number }}
+
+{% if summary.date_range %}
+Date Range: {{ summary.date_range.start | format_timestamp }} to {{ summary.date_range.end | format_timestamp }}
+{% endif %}
+
+{% if summary.most_active_channel %}
+Most Active Channel: {{ summary.most_active_channel.name }} ({{ summary.most_active_channel.message_count | format_number }} messages)
+{% endif %}
+
+{% if summary.most_active_user %}
+Most Active User: {{ summary.most_active_user.name }} ({{ summary.most_active_user.message_count | format_number }} messages)
+{% endif %}
+
+🏥 Database Health
+{{ "-" * 30 }}
+{% if database_info.size_mb > 0 %}
+✅ Database file exists and is accessible
+{% else %}
+❌ Database file not found or inaccessible
+{% endif %}
+
+{% if summary.total_messages > 0 %}
+✅ Messages data available
+{% else %}
+⚠️ No messages found in database
+{% endif %}
+
+{% if summary.total_users > 0 %}
+✅ User data available
+{% else %}
+⚠️ No user data found
+{% endif %}
+
+{% if summary.total_channels > 0 %}
+✅ Channel data available
+{% else %}
+⚠️ No channel data found
+{% endif %}
+
+📊 Performance Metrics
+{{ "-" * 30 }}
+{% if summary.avg_messages_per_day %}
+Average Messages per Day: {{ summary.avg_messages_per_day | round(1) }}
+{% endif %}
+{% if summary.avg_messages_per_user %}
+Average Messages per User: {{ summary.avg_messages_per_user | round(1) }}
+{% endif %}
+{% if summary.avg_messages_per_channel %}
+Average Messages per Channel: {{ summary.avg_messages_per_channel | round(1) }}
+{% endif %}
+
+Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }} 

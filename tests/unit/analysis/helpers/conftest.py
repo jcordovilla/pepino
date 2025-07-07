@@ -48,19 +48,19 @@ def time_series_data(test_data):
 def test_settings():
     """Create test settings with in-memory database"""
     return Settings(
-        db_path=":memory:",
-        discord_token=None,  # Not needed for tests
+        database_sqlite_path=":memory:",
+        discord_bot_token=None,  # Not needed for tests
         sync_batch_size=10,
         analysis_max_results=100,
         embedding_batch_size=16,
-        log_level="WARNING",
+        logging_level="WARNING",
     )
 
 
 @pytest.fixture(scope="module")
 async def test_db(test_settings):
     """Create in-memory SQLite DB and populate with mock data"""
-    db_manager = DatabaseManager(test_settings.db_path)
+    db_manager = DatabaseManager(test_settings.database_sqlite_path)
     await db_manager.initialize()
 
     # Create messages table

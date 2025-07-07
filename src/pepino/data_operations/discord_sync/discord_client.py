@@ -4,7 +4,6 @@ Main Discord client class for synchronizing message data.
 
 import asyncio
 import json
-import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -94,13 +93,65 @@ class DiscordClient(discord.Client):
                     # Always sync all messages (no incremental logic)
                     new_messages = await self.sync_with_retry(channel, None)
 
-                    if new_messages:
-                        logger.info(f"    ✅ {len(new_messages)} message(s) synced")
-                        self.sync_log_entry.total_messages_synced += len(new_messages)
-                        logger.info(f"Synced {len(new_messages)} messages")
-                        self.new_data[guild.name].setdefault(channel.name, []).extend(
-                            new_messages
-                        )
+                    # Flatten message dicts for DB compatibility
+                    def flatten_message(msg):
+                        import json
+                        
+                        # Copy top-level fields from nested dicts
+                        flat = dict(msg)
+                        if isinstance(msg.get("author"), dict):
+                            for k, v in msg["author"].items():
+                                flat[f"author_{k}"] = v
+                            # Remove the original nested dict
+                            del flat["author"]
+                        if isinstance(msg.get("guild"), dict):
+                            for k, v in msg["guild"].items():
+                                flat[f"guild_{k}"] = v
+                            # Remove the original nested dict
+                            del flat["guild"]
+                        if isinstance(msg.get("channel"), dict):
+                            for k, v in msg["channel"].items():
+                                flat[f"channel_{k}"] = v
+                            # Remove the original nested dict
+                            del flat["channel"]
+                        if isinstance(msg.get("user_presence"), dict):
+                            for k, v in msg["user_presence"].items():
+                                flat[f"author_{k}"] = v
+                            # Remove the original nested dict
+                            del flat["user_presence"]
+                        
+                        # Convert list fields to JSON strings for database compatibility
+                        list_fields = [
+                            "mentions", "mention_roles", "mention_channels", 
+                            "attachments", "embeds", "reactions", "components", 
+                            "stickers", "emoji_stats", "guild_features", "channel_overwrites"
+                        ]
+                        for field in list_fields:
+                            if field in flat and isinstance(flat[field], list):
+                                flat[field] = json.dumps(flat[field])
+                        
+                        # Convert dict fields to JSON strings for database compatibility
+                        dict_fields = [
+                            "author_activity", "author_status", "author_desktop_status", 
+                            "author_mobile_status", "author_web_status", "thread", 
+                            "application", "activity", "interaction", 
+                            "message_reference", "allowed_mentions", "emoji_stats"
+                        ]
+                        for field in dict_fields:
+                            if field in flat and isinstance(flat[field], dict):
+                                flat[field] = json.dumps(flat[field])
+                        
+                        return flat
+
+                    # Apply flattening
+                    flattened_messages = [flatten_message(m) for m in new_messages]
+                    
+                    if flattened_messages:
+                        logger.info(f"    ✅ {len(flattened_messages)} message(s) synced")
+                        self.sync_log_entry.total_messages_synced += len(flattened_messages)
+                        logger.info(f"Synced {len(flattened_messages)} messages")
+                        # Flatten before saving
+                        self.new_data[guild.name].setdefault(channel.name, []).extend(flattened_messages)
                     else:
                         logger.info(f"    📫 No messages found")
 

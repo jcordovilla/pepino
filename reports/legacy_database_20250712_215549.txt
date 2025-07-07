@@ -1,0 +1,53 @@
+📊 Database Statistics Report
+==================================================
+
+🗄️ Database Information
+------------------------------
+File Path: /Users/gpavlov/dev/pepino/data/discord_messages.db
+Size: 21.11 MB
+Last Modified: 2025-07-12
+
+📈 Table Statistics
+------------------------------
+Messages:
+  • Rows: 9,248
+  • Size: 9.25 MB
+  • Last Insert: 2025-07-12
+Users:
+  • Rows: 0
+  • Size: 0 MB
+  • Last Insert: N/A
+Channels:
+  • Rows: 0
+  • Size: 0 MB
+  • Last Insert: N/A
+Reactions:
+  • Rows: 0
+  • Size: 0 MB
+  • Last Insert: N/A
+Attachments:
+  • Rows: 0
+  • Size: 0 MB
+  • Last Insert: N/A
+
+📋 Summary
+------------------------------
+Total Messages: 7,204
+Total Users: 0
+Total Channels: 71
+
+
+Most Active Channel: 🏘old-general-chat
+
+
+🏥 Database Health
+------------------------------
+✅ Database file exists and is accessible
+
+✅ Messages data available
+
+⚠️ No user data found
+
+✅ Channel data available
+
+Generated: 2025-07-12 21:55:22 

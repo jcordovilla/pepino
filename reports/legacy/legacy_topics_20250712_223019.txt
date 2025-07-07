@@ -1,0 +1,75 @@
+🔍 Topic Analysis Report
+==================================================
+
+📊 Analysis Overview
+------------------------------
+Scope: All Channels
+Time Period: Last 30 days
+Total Messages Analyzed: 1,000
+Topics Extracted: 10
+Capabilities Used: bertopic_modeling, spacy_nlp
+
+🏷️ Top Topics
+------------------------------
+1. 0_the_to_you_for
+   • Frequency: 213
+   • Relevance Score: 0.213
+
+2. 1_and_to_you_the
+   • Frequency: 181
+   • Relevance Score: 0.181
+
+3. 2_and_ai_to_the
+   • Frequency: 162
+   • Relevance Score: 0.162
+
+4. 3_questions_question_this_qa
+   • Frequency: 47
+   • Relevance Score: 0.047
+
+5. 4_the_to_you_and
+   • Frequency: 47
+   • Relevance Score: 0.047
+
+6. 5_passcode_zoom_see_link
+   • Frequency: 43
+   • Relevance Score: 0.043
+
+7. 6_hope_you_good_summer
+   • Frequency: 26
+   • Relevance Score: 0.026
+
+8. 7_fair_they_that_so
+   • Frequency: 22
+   • Relevance Score: 0.022
+
+9. 8_22_super_powerful_added
+   • Frequency: 15
+   • Relevance Score: 0.015
+
+
+
+📈 Topic Evolution
+------------------------------
+Topic Distribution:
+  0_the_to_you_for: 21.3%
+  1_and_to_you_the: 18.1%
+  2_and_ai_to_the: 16.2%
+  3_questions_question_this_qa: 4.7%
+  4_the_to_you_and: 4.7%
+  5_passcode_zoom_see_link: 4.3%
+  6_hope_you_good_summer: 2.6%
+  7_fair_they_that_so: 2.2%
+  8_22_super_powerful_added: 1.5%
+
+Most Discussed Topic: 0_the_to_you_for
+Least Discussed Topic: 8_22_super_powerful_added
+
+🔧 Technical Details
+------------------------------
+Analysis Method: BERTopic with spaCy preprocessing
+Advanced Features:
+  • bertopic_modeling
+  • spacy_nlp
+
+Generated: 2025-07-12 22:30:18 

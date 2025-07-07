@@ -28,17 +28,17 @@ class SyncManager:
 
     def __init__(self, db_path: Optional[str] = None):
         self.settings = Settings()
-        self.db_path = db_path or self.settings.db_path
-        self.discord_token = self.settings.discord_token
+        self.db_path = db_path or self.settings.database_sqlite_path
+        self.discord_token = self.settings.discord_bot_token
         self._db_manager = None
 
         # Configure Discord intents
         self.intents = discord.Intents.default()
-        self.intents.message_content = self.settings.message_content_intent
+        self.intents.message_content = self.settings.discord_bot_message_content_intent
         self.intents.guilds = True
         self.intents.messages = True
         self.intents.reactions = True
-        self.intents.members = self.settings.members_intent
+        self.intents.members = self.settings.discord_bot_members_intent
 
     @property
     def db_manager(self) -> DatabaseManager:
@@ -66,9 +66,9 @@ class SyncManager:
         try:
             sync_repo = SyncRepository(self.db_manager)
             last_sync = sync_repo.get_last_sync_log()
-            if last_sync and last_sync.get("completed_at"):
+            if last_sync and last_sync.timestamp:
                 return datetime.fromisoformat(
-                    last_sync["completed_at"].replace("Z", "+00:00")
+                    last_sync.timestamp.replace("Z", "+00:00")
                 )
             return None
         except Exception as e:
@@ -77,7 +77,7 @@ class SyncManager:
 
     def is_data_stale(self, max_age_hours: Optional[int] = None) -> bool:
         """Check if data is older than the staleness threshold"""
-        max_age_hours = max_age_hours or self.settings.auto_sync_threshold_hours
+        max_age_hours = max_age_hours or self.settings.sync_auto_threshold_hours
         last_sync = self.get_last_sync_time()
 
         if not last_sync:
@@ -157,7 +157,7 @@ class SyncManager:
             messages_data, sync_log = await self.perform_sync()
 
             # Save results using repositories directly
-            self.save_sync_results(messages_data, sync_log)
+            await self.save_sync_results(messages_data, sync_log)
 
             duration = time.time() - start_time
             new_messages = sync_log.total_messages_synced
@@ -185,27 +185,46 @@ class SyncManager:
                 sync_performed=False, error=str(e), duration=duration
             )
 
-    def save_sync_results(
+    async def save_sync_results(
         self, messages_data: Dict[str, Any], sync_log: SyncLogEntry
     ) -> None:
         """Save sync results to database using repositories directly"""
         if messages_data:
             logger.info("💾 Saving messages to database...")
             message_repo = MessageRepository(self.db_manager)
-            message_repo.bulk_insert_messages(messages_data)
+            
+            # Extract all messages from the nested structure
+            all_messages = []
+            for guild_name, guild_data in messages_data.items():
+                for channel_name, channel_data in guild_data.items():
+                    # Skip special keys like _channel_members
+                    if channel_name.startswith('_'):
+                        continue
+                    # channel_data should be a list of flattened message dicts
+                    if isinstance(channel_data, list):
+                        all_messages.extend(channel_data)
+                    else:
+                        logger.warning(f"Unexpected channel data type for {guild_name}/{channel_name}: {type(channel_data)}")
+            
+            if all_messages:
+                logger.info(f"📝 Inserting {len(all_messages)} messages into database...")
+                message_repo.insert_messages_batch(all_messages)
+                logger.info("✅ Messages saved successfully")
+            else:
+                logger.warning("⚠️ No messages to save")
 
             logger.info("👥 Saving channel members to database...")
             channel_repo = ChannelRepository(self.db_manager)
-            channel_repo.save_channel_members(messages_data)
+            await channel_repo.save_channel_members(messages_data)
 
             logger.info("📝 Saving sync log to database...")
             sync_repo = SyncRepository(self.db_manager)
-            sync_repo.save_sync_log(sync_log.model_dump())
+            sync_repo.save_sync_log(sync_log)
 
             logger.info("\n📂 Data updated in database.")
             logger.info(f"📝 Total messages synced: {sync_log.total_messages_synced}")
         else:
-            logger.info("\n✅ No new messages found.")
+            logger.info("📭 No new data to save")
 
     def clear_database(self) -> None:
         """Clear the database for a fresh start using repository directly"""
@@ -216,9 +235,9 @@ class SyncManager:
             message_repo = MessageRepository(self.db_manager)
             message_repo.clear_all_messages()
 
-            # Clear channels
-            channel_repo = ChannelRepository(self.db_manager)
-            channel_repo.clear_all_channels()
+            # Clear channels - channels are cleared when messages are cleared
+            # since they are referenced by messages, so no separate clear needed
+            pass
 
             # Clear users
             user_repo = UserRepository(self.db_manager)

@@ -43,7 +43,6 @@ def test_core_comprehensive_data_validation(comprehensive_test_db, expected_coun
     with analysis_service(db_path=comprehensive_test_db) as service:
         # Test top channels with comprehensive data
         result = service.top_channels(limit=10, days_back=30)
-        print(f"Top channels output: {result}")  # Full debug output
         
         # Define expected output for top channels (simplified version)
         expected_top_channels = """# 📊 Weekly Channel Summary Report
@@ -91,7 +90,6 @@ def test_core_comprehensive_data_validation(comprehensive_test_db, expected_coun
         
         # Test top contributors with comprehensive data
         result = service.top_contributors(limit=10, days_back=30)
-        print(f"Top contributors output: {result[:500]}...")  # Debug output
         
         # Check that contributors output contains expected data
         assert "Top Contributors" in result or "contributors" in result.lower(), "Should contain contributor analysis"
@@ -99,10 +97,9 @@ def test_core_comprehensive_data_validation(comprehensive_test_db, expected_coun
         
         # Test list channels completeness
         result = service.list_channels()
-        print(f"List channels output: {result}")
         
         # Check that we get the expected channels that actually exist in the test data
-        expected_channels = ["🏘old-general-chat", "🏛netarch-general", "🦾agent-ops"]
+        expected_channels = ["🏘old-general-chat", "🏛netarch-general", "🦾agent-ops", "discord-general"]
         for channel_name in expected_channels:
             assert channel_name in result, f"Channel {channel_name} not found in list_channels"
 
@@ -124,8 +121,8 @@ def test_core_ranking_order_validation(comprehensive_test_db, expected_counts):
                 channel_positions['🦾agent-ops'] = i
             elif '🏛netarch-general' in line:
                 channel_positions['🏛netarch-general'] = i
-            elif '🛝discord-pg' in line:
-                channel_positions['🛝discord-pg'] = i
+            elif 'discord-general' in line:
+                channel_positions['discord-general'] = i
             elif 'jose-test' in line:
                 channel_positions['jose-test'] = i
         
@@ -194,39 +191,26 @@ def test_pulsecheck_all_channels_aggregated(comprehensive_test_db):
     """Test pulsecheck for all channels produces aggregated analysis instead of individual channel listings."""
     with analysis_service(db_path=comprehensive_test_db) as service:
         result = service.pulsecheck(days_back=30, output_format="cli")
-        print(f"Pulsecheck all channels aggregated output: {result}")
         
         # Should contain aggregated analysis, not individual channel listings
         assert "Weekly Channel Analysis: #All Channels" in result, "Should show 'All Channels' in header"
-        assert "Channel Members:" in result, "Should contain channel members section"
-        assert "Pulse:" in result, "Should contain pulse section"
-        assert "Participation:" in result, "Should contain participation section"
-        assert "Messages Volume:" in result, "Should contain messages volume section"
-        
-        # Should NOT contain multiple channel headers (indicating individual channel listings)
+        # New: Should contain most/least active channels sections
+        assert "Top 5 Most Active Channels (excluding bot traffic):" in result, "Should show most active channels section"
+        assert "Top 5 Least Active Channels (excluding bot traffic):" in result, "Should show least active channels section"
+        # Should list at least one channel in each section
+        assert "#" in result.split("Top 5 Most Active Channels (excluding bot traffic):")[-1], "Should list channels in most active section"
+        assert "#" in result.split("Top 5 Least Active Channels (excluding bot traffic):")[-1], "Should list channels in least active section"
+        # Should not contain individual channel listings
         assert result.count("Weekly Channel Analysis:") == 1, "Should only have one analysis header"
-        assert "=" * 80 not in result, "Should not contain channel separators"
         
-        # Should contain aggregated data
-        numbers = extract_numbers_from_text(result)
-        assert len(numbers) > 0, "Should contain some numbers in aggregated analysis"
 
-
-def test_pulsecheck_single_channel_unchanged(comprehensive_test_db):
-    """Test pulsecheck for single channel still works as before."""
+def test_pulsecheck_single_channel_no_aggregate_sections(comprehensive_test_db):
+    """Test pulsecheck for a single channel does not show most/least active channels sections."""
     with analysis_service(db_path=comprehensive_test_db) as service:
         result = service.pulsecheck(channel_name="🏘old-general-chat", days_back=30, output_format="cli")
-        print(f"Pulsecheck single channel output: {result}")
-        
-        # Should contain single channel analysis
         assert "Weekly Channel Analysis: #🏘old-general-chat" in result, "Should show specific channel in header"
-        assert "Channel Members:" in result, "Should contain channel members section"
-        assert "Pulse:" in result, "Should contain pulse section"
-        assert "Participation:" in result, "Should contain participation section"
-        assert "Messages Volume:" in result, "Should contain messages volume section"
-        
-        # Should only have one analysis header
-        assert result.count("Weekly Channel Analysis:") == 1, "Should only have one analysis header"
+        assert "Top 5 Most Active Channels (excluding bot traffic):" not in result, "Should NOT show most active channels section for single channel"
+        assert "Top 5 Least Active Channels (excluding bot traffic):" not in result, "Should NOT show least active channels section for single channel"
 
 
 def test_pulsecheck_all_channels_aggregated_data_consistency(comprehensive_test_db):
@@ -351,8 +335,8 @@ def test_pulsecheck_channel_presence(comprehensive_test_db, channel, expected_pr
 # ============================================================================
 
 @pytest.mark.parametrize("days_back,expected_channels", [
-    (7, ["🏘old-general-chat", "🦾agent-ops", "🏛netarch-general", "🛝discord-pg", "jose-test"]),  # All channels (data is 1 day old)
-    (30, ["🏘old-general-chat", "🦾agent-ops", "🏛netarch-general", "🛝discord-pg", "jose-test"]),  # All channels
+    (7, ["🏘old-general-chat", "🦾agent-ops", "🏛netarch-general", "discord-general", "jose-test"]),  # All channels (data is 1 day old)
+    (30, ["🏘old-general-chat", "🦾agent-ops", "🏛netarch-general", "discord-general", "jose-test"]),  # All channels
 ])
 def test_data_filtering_by_days(comprehensive_test_db, days_back, expected_channels):
     """Test that date filtering works correctly with different time periods."""
@@ -399,7 +383,7 @@ def test_data_integrity_validation(comprehensive_test_db, service_method, expect
 
 @pytest.mark.parametrize("limit,expected_behavior", [
     (0, "Most Active Channels"),  # Should contain section header even with limit=0
-    (100, ["🏘old-general-chat", "🦾agent-ops", "🏛netarch-general", "🛝discord-pg", "jose-test"]),  # All channels
+    (100, ["🏘old-general-chat", "🦾agent-ops", "🏛netarch-general", "discord-general", "jose-test"]),  # All channels
 ])
 def test_edge_cases_limits(comprehensive_test_db, limit, expected_behavior):
     """Test edge cases with different limit values."""

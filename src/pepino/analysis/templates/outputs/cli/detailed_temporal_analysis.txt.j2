@@ -1,0 +1,104 @@
+⏰ Detailed Temporal Analysis Report
+{{ "=" * 50 }}
+
+📊 Analysis Overview
+{{ "-" * 30 }}
+{% if channel_name %}
+Channel: {{ channel_name }}
+{% else %}
+Scope: All Channels
+{% endif %}
+{% if days_back %}
+Time Period: Last {{ days_back }} days
+{% endif %}
+Granularity: {{ granularity | title }}
+Capabilities Used: {{ capabilities_used | join(', ') }}
+
+📈 Activity Patterns
+{{ "-" * 30 }}
+{% if temporal_data %}
+{% if granularity == 'hourly' %}
+Hourly Activity (24-hour format):
+{% for item in temporal_data %}
+  {{ item.period }} - {{ item.message_count | format_number }} messages ({{ item.unique_users }} users)
+{% endfor %}
+{% elif granularity == 'daily' %}
+Daily Activity:
+{% for item in temporal_data %}
+  {{ item.period | format_timestamp }} - {{ item.message_count | format_number }} messages ({{ item.unique_users }} users)
+{% endfor %}
+{% elif granularity == 'weekly' %}
+Weekly Activity:
+{% for item in temporal_data %}
+  Week of {{ item.period | format_timestamp }} - {{ item.message_count | format_number }} messages ({{ item.unique_users }} users)
+{% endfor %}
+{% endif %}
+{% endif %}
+
+🎯 Pattern Analysis
+{{ "-" * 30 }}
+{% if patterns %}
+{% if patterns.peak_hours %}
+Peak Activity Hours:
+{% for hour in patterns.peak_hours %}
+  • {{ hour }}:00
+{% endfor %}
+{% endif %}
+
+{% if patterns.peak_days %}
+Peak Activity Days:
+{% for day in patterns.peak_days %}
+  • {{ day }}
+{% endfor %}
+{% endif %}
+
+{% if patterns.quiet_periods %}
+Quiet Periods:
+{% for period in patterns.quiet_periods %}
+  • {{ period }}
+{% endfor %}
+{% endif %}
+
+{% if patterns.trends %}
+Activity Trends:
+{% for trend in patterns.trends %}
+  • {{ trend }}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+📊 Statistical Summary
+{{ "-" * 30 }}
+{% if temporal_data %}
+{% set total_messages = temporal_data | map(attribute='message_count') | sum %}
+{% set avg_messages = total_messages / temporal_data | length %}
+{% set max_messages = temporal_data | map(attribute='message_count') | max %}
+{% set min_messages = temporal_data | map(attribute='message_count') | min %}
+
+Total Messages: {{ total_messages | format_number }}
+Average per Period: {{ avg_messages | round(1) }}
+Peak Activity: {{ max_messages | format_number }} messages
+Lowest Activity: {{ min_messages | format_number }} messages
+{% endif %}
+
+🔍 Insights
+{{ "-" * 30 }}
+{% if patterns %}
+{% if patterns.peak_hours %}
+• Community is most active during {{ patterns.peak_hours[0] }}:00 hours
+{% endif %}
+
+{% if patterns.peak_days %}
+• Most active day: {{ patterns.peak_days[0] }}
+{% endif %}
+
+{% if patterns.trends %}
+{% for trend in patterns.trends %}
+• {{ trend }}
+{% endfor %}
+{% endif %}
+{% else %}
+• No significant patterns detected in the analyzed time period
+{% endif %}
+
+Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }} 

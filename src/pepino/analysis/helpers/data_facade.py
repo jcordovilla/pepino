@@ -15,6 +15,7 @@ from ...data.repositories import (
     ChannelRepository,
     MessageRepository,
     UserRepository,
+    DatabaseRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class AnalysisDataFacade:
         self.settings = Settings()
         
         if db_manager is None:
-            self.db_manager = DatabaseManager(self.settings.db_path)
+            self.db_manager = DatabaseManager(self.settings.database_sqlite_path)
             self._owns_db_manager = True
         else:
             self.db_manager = db_manager
@@ -55,7 +56,7 @@ class AnalysisDataFacade:
             
         # Handle base filter - use provided or fallback to settings
         if base_filter is None:
-            self.base_filter = self.settings.base_filter
+            self.base_filter = self.settings.analysis_base_filter_sql
         else:
             self.base_filter = base_filter
         
@@ -63,6 +64,7 @@ class AnalysisDataFacade:
         self._user_repository = None
         self._channel_repository = None
         self._message_repository = None
+        self._database_repository = None
         
         logger.info("AnalysisDataFacade initialized with dependency injection support")
     
@@ -92,6 +94,13 @@ class AnalysisDataFacade:
             # Override the base filter with our configured one
             self._message_repository.base_filter = self.base_filter.strip()
         return self._message_repository
+    
+    @property
+    def database_repository(self) -> DatabaseRepository:
+        """Get database repository instance."""
+        if self._database_repository is None:
+            self._database_repository = DatabaseRepository(self.db_manager)
+        return self._database_repository
     
     @contextmanager
     def transaction(self):

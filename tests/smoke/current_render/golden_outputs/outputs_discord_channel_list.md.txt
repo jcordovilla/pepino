@@ -1,0 +1,8 @@
+# 📋 Available Channels
+
+- **#{'channel_name': 'general', 'message_count': 450, 'unique_users': 45}**
+- **#{'channel_name': 'random', 'message_count': 320, 'unique_users': 38}**
+- **#{'channel_name': 'help', 'message_count': 280, 'unique_users': 32}**
+- **#{'channel_name': 'announcements', 'message_count': 150, 'unique_users': 25}**
+- **#{'channel_name': 'archive', 'message_count': 50, 'unique_users': 8}**
+ 

@@ -12,14 +12,14 @@ Primary Interface:
 from .service import DataOperationsService
 from .exporters import DataExporter
 
-# Discord sync components
-from .discord_sync import SyncManager, DiscordClient
+# Discord sync components - imported lazily to avoid discord.py dependency
+# from .discord_sync import SyncManager, DiscordClient
 
 __all__ = [
     # Primary services
     "DataOperationsService",
     "DataExporter",
-    # Discord sync
-    "SyncManager", 
-    "DiscordClient",
+    # Discord sync - available but not imported at module level
+    # "SyncManager", 
+    # "DiscordClient",
 ] 

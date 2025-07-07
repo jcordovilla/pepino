@@ -48,41 +48,19 @@ class DatabaseManager:
         
         logger.info(f"DatabaseManager initialized with path: {self.db_path}")
     
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get thread-local database connection."""
+    def initialize(self):
+        """Initialize the database with proper schema."""
         
-        if not hasattr(self._local, 'connection') or self._local.connection is None:
-            with self._lock:
-                try:
-                    # Create connection with optimizations
-                    conn = sqlite3.connect(
-                        str(self.db_path),
-                        check_same_thread=False,
-                        timeout=30.0
-                    )
-                    
-                    # Configure connection
-                    conn.row_factory = sqlite3.Row  # Dict-like row access
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    conn.execute("PRAGMA synchronous=NORMAL") 
-                    conn.execute("PRAGMA cache_size=10000")
-                    conn.execute("PRAGMA temp_store=MEMORY")
-                    
-                    self._local.connection = conn
-                    self._connection_count += 1
-                    
-                    logger.debug(f"Created new database connection (total: {self._connection_count})")
-                    
-                    # Initialize schema if this is the first connection
-                    if not self._initialized:
-                        self._initialize_schema(conn)
-                        self._initialized = True
-                    
-                except Exception as e:
-                    logger.error(f"Failed to create database connection: {e}")
-                    raise
+        with self._lock:
+            # Get or create connection
+            conn = self._get_connection()
+            
+            # Initialize schema if this is the first connection
+            if not self._initialized:
+                self._initialize_schema(conn)
+                self._initialized = True
         
-        return self._local.connection
+        return conn
     
     def _initialize_schema(self, conn: sqlite3.Connection):
         """Initialize database schema if needed."""
@@ -114,7 +92,6 @@ class DatabaseManager:
             logger.info("Initializing missing database schema components...")
             
             # Only create missing tables without overwriting existing data
-            from .schema import SCHEMA_QUERIES
             
             # Create tables that don't exist
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -140,20 +117,7 @@ class DatabaseManager:
             conn.rollback()
             raise
     
-    @contextmanager
-    def get_connection(self):
-        """Context manager for database connections."""
-        
-        conn = self._get_connection()
-        try:
-            yield conn
-        except Exception as e:
-            logger.error(f"Database operation failed: {e}")
-            conn.rollback()
-            raise
-        finally:
-            # Connection stays open for thread reuse
-            pass
+
     
     def execute_query(
         self, 
@@ -216,246 +180,30 @@ class DatabaseManager:
                 logger.error(f"Batch execution failed: {query[:100]}... Error: {e}")
                 raise
     
-    def insert_message(self, message_data: Dict[str, Any]) -> bool:
-        """Insert a single message into database."""
-        
-        query = """
-        INSERT OR REPLACE INTO messages (
-            message_id, channel_name, author_name, content, 
-            timestamp, message_type, reply_to, thread_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    def execute_single(
+        self, 
+        query: str, 
+        params: Optional[Tuple] = None
+    ) -> Optional[sqlite3.Row]:
         """
+        Execute a database query and return a single row.
         
-        params = (
-            message_data.get('message_id'),
-            message_data.get('channel_name'),
-            message_data.get('author_name'),
-            message_data.get('content'),
-            message_data.get('timestamp'),
-            message_data.get('message_type', 'default'),
-            message_data.get('reply_to'),
-            message_data.get('thread_id')
-        )
-        
-        try:
-            with self.get_connection() as conn:
-                conn.execute(query, params)
-                conn.commit()
-            return True
+        Args:
+            query: SQL query to execute
+            params: Query parameters
             
-        except Exception as e:
-            logger.error(f"Failed to insert message: {e}")
-            return False
-    
-    def insert_messages_batch(self, messages: List[Dict[str, Any]]) -> int:
-        """Insert multiple messages in a single transaction."""
-        
-        query = """
-        INSERT OR REPLACE INTO messages (
-            message_id, channel_name, author_name, content, 
-            timestamp, message_type, reply_to, thread_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        Returns:
+            Single row as sqlite3.Row object or None if no results
         """
         
-        params_list = []
-        for msg in messages:
-            params = (
-                msg.get('message_id'),
-                msg.get('channel_name'),
-                msg.get('author_name'),
-                msg.get('content'),
-                msg.get('timestamp'),
-                msg.get('message_type', 'default'),
-                msg.get('reply_to'),
-                msg.get('thread_id')
-            )
-            params_list.append(params)
-        
-        try:
-            return self.execute_many(query, params_list)
-        except Exception as e:
-            logger.error(f"Failed to insert message batch: {e}")
-            return 0
-    
-    def get_messages_by_channel(
-        self, 
-        channel_name: str, 
-        limit: Optional[int] = None,
-        days: Optional[int] = None
-    ) -> List[sqlite3.Row]:
-        """Get messages for a specific channel."""
-        
-        query = "SELECT * FROM messages WHERE channel_name = ?"
-        params = [channel_name]
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += " ORDER BY timestamp DESC"
-        
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-        
-        return self.execute_query(query, tuple(params))
-    
-    def get_messages_by_user(
-        self, 
-        username: str, 
-        limit: Optional[int] = None,
-        days: Optional[int] = None
-    ) -> List[sqlite3.Row]:
-        """Get messages for a specific user."""
-        
-        query = "SELECT * FROM messages WHERE author_name = ?"
-        params = [username]
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += " ORDER BY timestamp DESC"
-        
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-        
-        return self.execute_query(query, tuple(params))
-    
-    def get_channel_statistics(self, channel_name: str, days: Optional[int] = None) -> Dict[str, Any]:
-        """Get statistics for a channel."""
-        
-        base_query = "SELECT COUNT(*) as total_messages FROM messages WHERE channel_name = ?"
-        params = [channel_name]
-        
-        if days:
-            base_query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        total_result = self.execute_query(base_query, tuple(params), fetch_one=True)
-        total_messages = total_result['total_messages'] if total_result else 0
-        
-        # Get unique users
-        user_query = base_query.replace("COUNT(*) as total_messages", "COUNT(DISTINCT author_name) as unique_users")
-        user_result = self.execute_query(user_query, tuple(params), fetch_one=True)
-        unique_users = user_result['unique_users'] if user_result else 0
-        
-        return {
-            'total_messages': total_messages,
-            'unique_users': unique_users,
-            'channel_name': channel_name
-        }
-    
-    def get_user_statistics(self, username: str, days: Optional[int] = None) -> Dict[str, Any]:
-        """Get statistics for a user."""
-        
-        base_query = "SELECT COUNT(*) as total_messages FROM messages WHERE author_name = ?"
-        params = [username]
-        
-        if days:
-            base_query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        total_result = self.execute_query(base_query, tuple(params), fetch_one=True)
-        total_messages = total_result['total_messages'] if total_result else 0
-        
-        # Get unique channels
-        channel_query = base_query.replace("COUNT(*) as total_messages", "COUNT(DISTINCT channel_name) as unique_channels")
-        channel_result = self.execute_query(channel_query, tuple(params), fetch_one=True)
-        unique_channels = channel_result['unique_channels'] if channel_result else 0
-        
-        return {
-            'total_messages': total_messages,
-            'unique_channels': unique_channels,
-            'username': username
-        }
-    
-    def get_available_channels(self) -> List[str]:
-        """Get list of channels with messages."""
-        
-        query = "SELECT DISTINCT channel_name FROM messages ORDER BY channel_name"
-        results = self.execute_query(query)
-        
-        return [row['channel_name'] for row in results] if results else []
-    
-    def get_available_users(self) -> List[str]:
-        """Get list of users with messages."""
-        
-        query = "SELECT DISTINCT author_name FROM messages ORDER BY author_name"
-        results = self.execute_query(query)
-        
-        return [row['author_name'] for row in results] if results else []
-    
-    def get_top_users(self, limit: int = 10, days: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Get top users by message count."""
-        
-        query = """
-        SELECT 
-            author_name,
-            COUNT(*) as message_count,
-            COUNT(DISTINCT channel_name) as channels_active
-        FROM messages 
-        WHERE 1=1
-        """
-        
-        params = []
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += """
-        GROUP BY author_name 
-        ORDER BY message_count DESC 
-        LIMIT ?
-        """
-        params.append(limit)
-        
-        results = self.execute_query(query, tuple(params))
-        
-        return [
-            {
-                'username': row['author_name'],
-                'message_count': row['message_count'],
-                'channels_active': row['channels_active']
-            }
-            for row in results
-        ] if results else []
-    
-    def get_top_channels(self, limit: int = 10, days: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Get top channels by message count."""
-        
-        query = """
-        SELECT 
-            channel_name,
-            COUNT(*) as message_count,
-            COUNT(DISTINCT author_name) as unique_users
-        FROM messages 
-        WHERE 1=1
-        """
-        
-        params = []
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += """
-        GROUP BY channel_name 
-        ORDER BY message_count DESC 
-        LIMIT ?
-        """
-        params.append(limit)
-        
-        results = self.execute_query(query, tuple(params))
-        
-        return [
-            {
-                'channel_name': row['channel_name'],
-                'message_count': row['message_count'],
-                'unique_users': row['unique_users']
-            }
-            for row in results
-        ] if results else []
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.execute(query, params or ())
+                return cursor.fetchone()
+                    
+            except Exception as e:
+                logger.error(f"Single query execution failed: {query[:100]}... Error: {e}")
+                raise
     
     def health_check(self) -> Dict[str, Any]:
         """Perform database health check."""
@@ -463,7 +211,7 @@ class DatabaseManager:
         try:
             # Test basic query
             result = self.execute_query("SELECT COUNT(*) as total FROM messages", fetch_one=True)
-            total_messages = result['total_messages'] if result else 0
+            total_messages = result['total'] if result else 0
             
             # Test connection
             with self.get_connection() as conn:
@@ -483,6 +231,82 @@ class DatabaseManager:
                 'error': str(e),
                 'db_path': str(self.db_path)
             }
+    
+    def execute_script(self, script: str) -> None:
+        """Execute a SQL script."""
+        with self.get_connection() as conn:
+            try:
+                conn.executescript(script)
+                conn.commit()
+            except Exception as e:
+                logger.error(f"Script execution failed: {e}")
+                raise
+    
+    def backup_database(self, backup_path: str) -> None:
+        """Create a backup of the database."""
+        import shutil
+        try:
+            shutil.copy2(str(self.db_path), backup_path)
+            logger.info(f"Database backed up to: {backup_path}")
+        except Exception as e:
+            logger.error(f"Database backup failed: {e}")
+            raise
+    
+    def vacuum(self) -> None:
+        """Vacuum the database to reclaim space."""
+        with self.get_connection() as conn:
+            try:
+                conn.execute("VACUUM")
+                logger.info("Database vacuum completed")
+            except Exception as e:
+                logger.error(f"Database vacuum failed: {e}")
+                raise
+    
+    def analyze_tables(self) -> None:
+        """Analyze tables for query optimization."""
+        with self.get_connection() as conn:
+            try:
+                conn.execute("ANALYZE")
+                logger.info("Database analyze completed")
+            except Exception as e:
+                logger.error(f"Database analyze failed: {e}")
+                raise
+    
+    def get_table_names(self) -> List[str]:
+        """Get list of table names in the database."""
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                return [row[0] for row in cursor.fetchall()]
+            except Exception as e:
+                logger.error(f"Failed to get table names: {e}")
+                raise
+    
+    def get_table_info(self, table_name: str) -> List[Dict[str, Any]]:
+        """Get table information."""
+        with self.get_connection() as conn:
+            try:
+                # Validate table name to prevent SQL injection
+                if not table_name.replace('_', '').replace('-', '').isalnum():
+                    raise ValueError(f"Invalid table name: {table_name}")
+                cursor = conn.execute(f"PRAGMA table_info({table_name})")
+                return [dict(row) for row in cursor.fetchall()]
+            except Exception as e:
+                logger.error(f"Failed to get table info for {table_name}: {e}")
+                raise
+    
+    def get_row_count(self, table_name: str) -> int:
+        """Get row count for a table."""
+        with self.get_connection() as conn:
+            try:
+                # Validate table name to prevent SQL injection
+                if not table_name.replace('_', '').replace('-', '').isalnum():
+                    raise ValueError(f"Invalid table name: {table_name}")
+                cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+                return cursor.fetchone()[0]
+            except Exception as e:
+                logger.error(f"Failed to get row count for {table_name}: {e}")
+                raise
     
     def close_connections(self):
         """Close all thread-local connections."""
@@ -504,6 +328,31 @@ class DatabaseManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close_connections()
 
+    @contextmanager
+    def get_connection(self):
+        """Context manager for database connections."""
+        conn = self._get_connection()
+        try:
+            yield conn
+        except Exception as e:
+            logger.error(f"Database operation failed: {e}")
+            conn.rollback()
+            raise
+        # Do not close the connection here; it is reused for the thread
 
-# Global instance for easy access
-db_manager = DatabaseManager() 
+    def _get_connection(self):
+        """Get thread-local database connection."""
+        if not hasattr(self._local, 'connection') or self._local.connection is None:
+            conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA cache_size=10000")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            self._local.connection = conn
+            self._connection_count += 1
+            logger.debug(f"Created new database connection (total: {self._connection_count})")
+        return self._local.connection
+
+
+ 

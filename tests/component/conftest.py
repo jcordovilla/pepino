@@ -35,8 +35,6 @@ def comprehensive_test_db():
     """Create a comprehensive test database with known quantities for precise validation."""
     db_path = os.path.join(os.path.dirname(__file__), "..", "comprehensive_test.db")
     
-    print(f"DEBUG: Creating database at {db_path}")
-    
     # Remove existing database if it exists
     if os.path.exists(db_path):
         os.remove(db_path)
@@ -46,18 +44,17 @@ def comprehensive_test_db():
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    print(f"DEBUG: Database connection created successfully")
     
     # Insert known test data with precise quantities
-    # Use recent UTC timestamps so messages fall within the 30-day analysis window
-    base_time = datetime.utcnow() - timedelta(days=1)
+    # Use timestamps that fall within the 30-day analysis window (from 30 days ago to now)
+    base_time = datetime.utcnow() - timedelta(days=15)  # Middle of the 30-day window
     
     # Test channels with exact message counts to match expected output
     test_channels = [
         ("🏘old-general-chat", 166),  # 166 messages (146 + 20 recent)
         ("🦾agent-ops", 70),          # 70 messages
         ("🏛netarch-general", 46),    # 46 messages
-        ("🛝discord-pg", 27),         # 27 messages
+        ("discord-general", 27),      # 27 messages (renamed from discord-pg to avoid filter)
         ("jose-test", 22),            # 22 messages
     ]
     
@@ -70,6 +67,13 @@ def comprehensive_test_db():
         ("charlie.test", 20),         # 20 messages
         ("diana.test", 15),           # 15 messages
         ("eve.test", 10),             # 10 messages
+    ]
+    
+    # Test bot users
+    test_bots = [
+        ("PepinoBot", 25),            # 25 bot messages
+        ("ModBot", 15),               # 15 bot messages
+        ("WelcomeBot", 10),           # 10 bot messages
     ]
     
     # Create messages with exact counts per channel
@@ -170,21 +174,100 @@ def comprehensive_test_db():
                 message_id += 1
                 messages_created += 1
 
+        # Add bot messages to each channel
+        for bot_name, bot_messages in test_bots:
+            if messages_created >= total_messages:
+                break
+                
+            # Calculate how many bot messages for this channel
+            bot_ratio = bot_messages / sum(b[1] for b in test_bots)
+            channel_bot_messages = int(total_messages * bot_ratio * 0.3)  # 30% of channel messages can be bots
+            
+            # Ensure we don't exceed the total for this channel
+            remaining_messages = total_messages - messages_created
+            channel_bot_messages = min(channel_bot_messages, remaining_messages)
+            
+            # Ensure at least 1 bot message if bot has activity
+            if channel_bot_messages == 0 and bot_messages > 0 and messages_created < total_messages:
+                channel_bot_messages = 1
+            
+            for i in range(channel_bot_messages):
+                message_time = base_time + timedelta(hours=message_id)
+                cursor.execute("""
+                    INSERT INTO messages (
+                        id, content, timestamp, edited_timestamp, jump_url,
+                        author_id, author_name, author_discriminator, author_display_name, author_is_bot, author_avatar_url, author_accent_color, author_banner_url, author_color, author_created_at, author_default_avatar_url, author_public_flags, author_system, author_verified,
+                        author_status, author_activity, author_desktop_status, author_mobile_status, author_web_status,
+                        guild_id, guild_name, guild_member_count, guild_description, guild_icon_url, guild_banner_url, guild_splash_url, guild_discovery_splash_url, guild_features, guild_verification_level, guild_explicit_content_filter, guild_mfa_level, guild_premium_tier, guild_premium_subscription_count,
+                        channel_id, channel_name, channel_type, channel_topic, channel_nsfw, channel_position, channel_slowmode_delay, channel_category_id, channel_overwrites,
+                        thread_id, thread_name, thread_archived, thread_auto_archive_duration, thread_locked, thread_member_count, thread_message_count, thread_owner_id, thread_parent_id, thread_slowmode_delay,
+                        mentions, mention_everyone, mention_roles, mention_channels, referenced_message_id, referenced_message,
+                        attachments, embeds,
+                        reactions, emoji_stats,
+                        pinned, flags, nonce, type, is_system, mentions_everyone, has_reactions,
+                        components, interaction,
+                        stickers, role_subscription_data,
+                        application_id, application,
+                        activity,
+                        position, role_subscription_listing_id, webhook_id, tts, suppress_embeds, allowed_mentions, message_reference,
+                        has_attachments, has_embeds, has_stickers, has_mentions, has_reference, is_webhook,
+                        created_at
+                    ) VALUES (
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?,
+                        ?, ?,
+                        ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?,
+                        ?, ?,
+                        ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?
+                    )
+                """, (
+                    f"msg_{message_id}",
+                    f"Bot message {message_id} by {bot_name} in {channel_name}",
+                    message_time.isoformat(),
+                    None,  # edited_timestamp
+                    None,  # jump_url
+                    f"bot_{bot_name}",
+                    bot_name,
+                    None,  # author_discriminator
+                    bot_name,
+                    1,  # author_is_bot
+                    None, None, None, None, None, None, None, None, None,
+                    None, None, None, None, None,
+                    "guild1",
+                    "Test Guild",
+                    None, None, None, None, None, None, None, None, None, None, None, None, None,
+                    channel_name,               # channel_id - use real name, no prefix
+                    channel_name,               # channel_name - real name, no prefix
+                    "text",
+                    None, None, None, None, None, None,
+                    None, None, None, None, None, None, None, None, None,
+                    None, None, None, None, None, None,
+                    None, None,
+                    None, None,
+                    None, None, None, None, None, None, None,
+                    None, None,
+                    None, 
+                    None, None, None, None, None, 
+                    None, None, None, None, None, None,
+                    0, 0, 0, 0, 0, 0, message_time.isoformat()
+                ))
+                message_id += 1
+                messages_created += 1
+
     conn.commit()
-    
-    # Debug: Check if messages were actually inserted
-    cursor.execute("SELECT COUNT(*) FROM messages")
-    message_count = cursor.fetchone()[0]
-    print(f"DEBUG: Messages inserted: {message_count}")
-    
-    # Debug: Check a few sample messages
-    cursor.execute("SELECT id, content, channel_name FROM messages LIMIT 3")
-    sample_messages = cursor.fetchall()
-    print(f"DEBUG: Sample messages: {sample_messages}")
-    
     conn.close()
-    
-    print(f"DEBUG: Database created successfully, size: {os.path.getsize(db_path)} bytes")
     
     yield db_path
     

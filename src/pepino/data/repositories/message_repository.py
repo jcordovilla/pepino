@@ -3,7 +3,6 @@ Message repository for data access operations.
 """
 
 import json
-import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -21,7 +20,7 @@ class MessageRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
         # Use unified settings for base filter
-        self.base_filter = Settings().base_filter.strip()
+        self.base_filter = Settings().analysis_base_filter_sql.strip()
 
     def get_messages_by_channel(
         self,
@@ -79,10 +78,10 @@ class MessageRepository:
 
     def get_messages_by_date_range(
         self, channel_name: Optional[str], start_date: datetime, end_date: datetime, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[dict]:
         """Get messages within a date range for a specific channel or all channels if channel_name is None."""
         query = f"""
-            SELECT id as message_id, content, author_name, author_display_name, channel_name, timestamp, author_is_bot
+            SELECT id, channel_id, channel_name, author_id, author_name, author_display_name, content, timestamp, author_is_bot
             FROM messages 
             WHERE timestamp BETWEEN ? AND ? 
             AND {self.base_filter}
@@ -99,18 +98,8 @@ class MessageRepository:
             params.append(limit)
 
         rows = self.db_manager.execute_query(query, tuple(params))
-        return [
-            {
-                'id': row['message_id'],
-                'content': row['content'],
-                'author_name': row['author_name'],
-                'author_display_name': row['author_display_name'],
-                'channel_name': row['channel_name'],
-                'timestamp': row['timestamp'],
-                'author_is_bot': row['author_is_bot'],
-            }
-            for row in rows
-        ]
+        # Return as list of dicts
+        return [dict(row) for row in rows]
 
     def get_message_statistics(
         self, channel_name: Optional[str] = None
@@ -771,20 +760,23 @@ class MessageRepository:
         """Get total count of messages."""
         query = f"SELECT COUNT(*) FROM messages WHERE {self.base_filter}"
         result = self.db_manager.execute_query(query, fetch_one=True)
-        return result[0] if result else 0
+        return result["COUNT(*)"] if result else 0
 
     def get_distinct_user_count(self) -> int:
         """Get count of distinct users."""
         query = f"SELECT COUNT(DISTINCT author_id) FROM messages WHERE {self.base_filter}"
         result = self.db_manager.execute_query(query, fetch_one=True)
-        return result[0] if result else 0
+        return result["COUNT(DISTINCT author_id)"] if result else 0
 
-    def get_user_messages(self, user_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Dict[str, Any]]:
+    def get_user_messages(self, user_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Message]:
         """Get messages from a specific user."""
         from datetime import datetime, timedelta
         
         query = f"""
-            SELECT id as message_id, content, author_name, channel_name, timestamp
+            SELECT id, channel_id, channel_name, author_id, author_name, author_display_name, 
+                   content, timestamp, edited_timestamp, author_is_bot, is_system, is_webhook,
+                   has_attachments, has_embeds, has_stickers, has_mentions, has_reactions, 
+                   has_reference, referenced_message_id
             FROM messages 
             WHERE (author_name LIKE ? OR author_display_name LIKE ?)
             AND content IS NOT NULL AND content != ''
@@ -802,23 +794,17 @@ class MessageRepository:
         params.append(limit)
         rows = self.db_manager.execute_query(query, tuple(params))
         
-        return [
-            {
-                "message_id": row["message_id"],
-                "content": row["content"],
-                "author_name": row["author_name"],
-                "channel_name": row["channel_name"],
-                "timestamp": row["timestamp"],
-            }
-            for row in rows
-        ]
+        return [Message.from_db_row(row) for row in rows]
 
-    def get_channel_messages(self, channel_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Dict[str, Any]]:
+    def get_channel_messages(self, channel_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Message]:
         """Get messages from a specific channel."""
         from datetime import datetime, timedelta
         
         query = f"""
-            SELECT id as message_id, content, author_name, channel_name, timestamp
+            SELECT id, channel_id, channel_name, author_id, author_name, author_display_name, 
+                   content, timestamp, edited_timestamp, author_is_bot, is_system, is_webhook,
+                   has_attachments, has_embeds, has_stickers, has_mentions, has_reactions, 
+                   has_reference, referenced_message_id
             FROM messages 
             WHERE channel_name = ?
             AND content IS NOT NULL AND content != ''
@@ -836,23 +822,17 @@ class MessageRepository:
         params.append(limit)
         rows = self.db_manager.execute_query(query, tuple(params))
         
-        return [
-            {
-                "message_id": row["message_id"],
-                "content": row["content"],
-                "author_name": row["author_name"],
-                "channel_name": row["channel_name"],
-                "timestamp": row["timestamp"],
-            }
-            for row in rows
-        ]
+        return [Message.from_db_row(row) for row in rows]
 
-    def get_recent_messages(self, limit: int = 1000, days_back: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_recent_messages(self, limit: int = 1000, days_back: Optional[int] = None) -> List[Message]:
         """Get recent messages."""
         from datetime import datetime, timedelta
         
         query = f"""
-            SELECT id as message_id, content, author_name, channel_name, timestamp
+            SELECT id, channel_id, channel_name, author_id, author_name, author_display_name, 
+                   content, timestamp, edited_timestamp, author_is_bot, is_system, is_webhook,
+                   has_attachments, has_embeds, has_stickers, has_mentions, has_reactions, 
+                   has_reference, referenced_message_id
             FROM messages 
             WHERE content IS NOT NULL AND content != ''
             AND {self.base_filter}
@@ -869,16 +849,7 @@ class MessageRepository:
         params.append(limit)
         rows = self.db_manager.execute_query(query, tuple(params))
         
-        return [
-            {
-                "message_id": row["message_id"],
-                "content": row["content"],
-                "author_name": row["author_name"],
-                "channel_name": row["channel_name"],
-                "timestamp": row["timestamp"],
-            }
-            for row in rows
-        ]
+        return [Message.from_db_row(row) for row in rows]
 
     def get_messages_without_embeddings(
         self, channel_filter: Optional[str] = None, max_messages: Optional[int] = None

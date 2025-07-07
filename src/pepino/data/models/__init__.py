@@ -1,7 +1,15 @@
 """
 Data models for the analysis module.
+
+Provides Pydantic models for data validation and serialization.
 """
 
+# Core data models
+from .channel import Channel
+from .message import Message
+from .user import User
+
+# Analysis-specific models
 from .analysis import (
     ConversationChain,
     MessageEmbedding,
@@ -10,20 +18,21 @@ from .analysis import (
     UserStatistics,
     WordFrequency,
 )
-from .channel import Channel
-from .message import Message
+
+# Sync models
 from .sync import (
     ChannelSkipInfo,
     GuildSyncInfo,
     SyncError,
     SyncLogEntry,
 )
-from .user import User
 
 __all__ = [
+    # Core models
     "Message",
-    "User",
+    "User", 
     "Channel",
+    # Analysis models
     "MessageEmbedding",
     "MessageTopic",
     "WordFrequency",

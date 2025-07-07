@@ -13,7 +13,6 @@ from pathlib import Path
 
 from pepino.config import Settings
 from pepino.data_operations.exporters import DataExporter
-from pepino.data_operations.discord_sync.sync_manager import SyncManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ class DataOperationsService:
             db_path: Optional database path (uses settings default if None)
         """
         self.settings = Settings()
-        self.db_path = db_path or self.settings.db_path
+        self.db_path = db_path or self.settings.database_sqlite_path
         
         # Lazy initialization - only create when needed
         self._sync_manager = None
@@ -43,9 +42,11 @@ class DataOperationsService:
         logger.debug(f"DataOperationsService initialized for {self.db_path}")
     
     @property
-    def sync_manager(self) -> SyncManager:
+    def sync_manager(self):
         """Get sync manager instance (lazy initialization)."""
         if self._sync_manager is None:
+            # Lazy import - only when actually needed for sync operations
+            from pepino.data_operations.discord_sync.sync_manager import SyncManager
             self._sync_manager = SyncManager(self.db_path)
         return self._sync_manager
     
@@ -255,7 +256,7 @@ def data_operations_service(db_path: Optional[str] = None):
         DataOperationsService instance
     """
     settings = Settings()
-    actual_db_path = db_path or settings.db_path
+    actual_db_path = db_path or settings.database_sqlite_path
     service = DataOperationsService(db_path=actual_db_path)
     try:
         yield service

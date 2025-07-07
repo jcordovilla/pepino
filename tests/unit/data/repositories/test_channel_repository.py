@@ -110,6 +110,7 @@ class TestChannelRepository:
         with patch.object(channel_repo.db_manager, "execute_query") as mock_execute:
             mock_execute.return_value = [
                 {
+                    "channel_id": "ch1",
                     "channel_name": "general",
                     "message_count": 100,
                     "unique_users": 25,
@@ -118,6 +119,7 @@ class TestChannelRepository:
                     "last_message": "2024-12-01T12:00:00Z",
                 },
                 {
+                    "channel_id": "ch2",
                     "channel_name": "random",
                     "message_count": 200,
                     "unique_users": 50,
@@ -128,16 +130,20 @@ class TestChannelRepository:
             ]
             channels = channel_repo.get_top_channels(limit=10)
             assert len(channels) == 2
-            assert channels[0]["channel_name"] == "general"
-            assert channels[0]["message_count"] == 100
-            assert channels[1]["channel_name"] == "random"
-            assert channels[1]["message_count"] == 200
+            assert isinstance(channels[0], Channel)
+            assert channels[0].channel_id == "ch1"
+            assert channels[0].channel_name == "general"
+            assert channels[0].message_count == 100
+            assert channels[1].channel_id == "ch2"
+            assert channels[1].channel_name == "random"
+            assert channels[1].message_count == 200
 
     def test_get_top_channels_with_custom_filter(self, channel_repo):
         """Test getting top channels with custom base filter (now just test normal call)."""
         with patch.object(channel_repo.db_manager, "execute_query") as mock_execute:
             mock_execute.return_value = [
                 {
+                    "channel_id": "ch1",
                     "channel_name": "general",
                     "message_count": 100,
                     "unique_users": 25,
@@ -148,7 +154,8 @@ class TestChannelRepository:
             ]
             channels = channel_repo.get_top_channels(limit=1)
             assert len(channels) == 1
-            assert channels[0]["channel_name"] == "general"
+            assert isinstance(channels[0], Channel)
+            assert channels[0].channel_name == "general"
 
     def test_get_channel_statistics_by_limit_empty_result(self, channel_repo):
         """Test getting channel statistics by limit with empty result."""

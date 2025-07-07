@@ -36,7 +36,7 @@ class TestDiscordClient:
         assert hasattr(discord_client, "new_data")
         assert hasattr(discord_client, "rate_limit_delay")
         assert hasattr(discord_client, "max_retries")
-        assert hasattr(discord_client, "sync_logger")
+        assert hasattr(discord_client, "sync_log_entry")
 
     @pytest.mark.asyncio
     async def test_sync_with_retry_success(self, discord_client):
@@ -52,7 +52,7 @@ class TestDiscordClient:
         mock_channel.history = MagicMock(return_value=async_iter())
 
         with patch(
-            "pepino.discord_bot.extractors.MessageExtractor.extract_message_data"
+            "pepino.data_operations.discord_sync.extractors.message_extractor.MessageExtractor.extract_message_data"
         ) as mock_extract:
             mock_extract.return_value = {"id": "msg1", "content": "test"}
 
@@ -95,7 +95,7 @@ class TestDiscordClient:
 
         with patch("asyncio.sleep") as mock_sleep:
             with patch(
-                "pepino.discord_bot.extractors.MessageExtractor.extract_message_data"
+                "pepino.data_operations.discord_sync.extractors.message_extractor.MessageExtractor.extract_message_data"
             ) as mock_extract:
                 mock_extract.return_value = {"id": "msg1", "content": "test"}
 
@@ -208,18 +208,18 @@ class TestDiscordClient:
     async def test_get_sync_log(self, discord_client):
         """Test getting sync log."""
         # Add some sync data
-        discord_client.sync_logger.add_guild_sync("Test Guild", "123456")
-        discord_client.sync_logger.add_messages_synced(10)
-        discord_client.sync_logger.add_channel_skip(
-            "Test Guild", "test-channel", "789", "No access"
-        )
+        discord_client.sync_log_entry.guilds_synced = ["Test Guild"]
+        discord_client.sync_log_entry.total_messages_synced = 10
+        discord_client.sync_log_entry.channels_skipped = [
+            {"guild": "Test Guild", "channel": "test-channel", "channel_id": "789", "reason": "No access"}
+        ]
 
         sync_log = discord_client.get_sync_log()
 
         # Check for actual attributes in sync log (now Pydantic model)
         assert hasattr(sync_log, "guilds_synced")
         assert hasattr(sync_log, "total_messages_synced")
-        assert hasattr(sync_log, "errors")
+        assert hasattr(sync_log, "channels_skipped")
         assert sync_log.total_messages_synced == 10
 
     @pytest.mark.asyncio
@@ -306,7 +306,7 @@ class TestDiscordClient:
         mock_channel.history = MagicMock(return_value=async_iter())
 
         with patch(
-            "pepino.discord_bot.extractors.MessageExtractor.extract_message_data"
+            "pepino.data_operations.discord_sync.extractors.message_extractor.MessageExtractor.extract_message_data"
         ) as mock_extract:
             mock_extract.return_value = {"id": "msg2", "content": "test"}
 

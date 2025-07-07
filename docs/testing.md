@@ -1,10 +1,34 @@
-# Testing Guidelines
+# Testing Guide
 
 ## Overview
 
-Pepino uses **repository mocking** for fast, reliable, and isolated tests. This document provides detailed guidelines for writing and maintaining tests.
+Pepino uses **repository mocking** for fast, reliable, and isolated tests. This document provides comprehensive testing guidelines and strategies.
 
-**📋 For testing strategy overview, see [architecture.md](architecture.md)**
+## 🧪 Testing Strategy
+
+### Repository Mocking Approach
+
+We use **repository mocking** instead of database fixtures for fast, reliable, and isolated tests. This eliminates database dependencies while providing comprehensive coverage of business logic.
+
+```python
+@pytest.mark.asyncio
+async def test_analyzer_method():
+    """Test analyzer with mocked repository"""
+    mock_db_manager = MagicMock()
+    analyzer = SomeAnalyzer(mock_db_manager)
+    
+    with patch.object(analyzer.repo, 'some_method', new_callable=AsyncMock) as mock_method:
+        mock_method.return_value = test_data
+        result = await analyzer.analyze()
+        assert result["success"] is True
+        mock_method.assert_called_once_with(expected_params)
+```
+
+### Testing Benefits
+- **Speed**: Tests execute quickly with repository mocking
+- **Isolation**: Each test is completely independent
+- **Reliability**: No database state dependencies or cleanup needed
+- **Simplicity**: Focus on business logic rather than data setup
 
 ## Writing New Tests
 
@@ -141,10 +165,26 @@ poetry run pytest
 poetry run pytest --cov=src/pepino
 
 # Run specific test file
-poetry run pytest tests/test_analysis/test_users.py
+poetry run pytest tests/unit/analysis/test_users.py
 
 # Watch mode for development
 poetry run ptw
+```
+
+### Test Categories
+
+```bash
+# Unit tests (fast, mocked)
+poetry run pytest tests/unit/
+
+# Component tests (integration)
+poetry run pytest tests/component/
+
+# Smoke tests (template rendering)
+poetry run pytest tests/smoke/
+
+# All tests with coverage
+poetry run pytest --cov=src/pepino --cov-report=html
 ```
 
 ### Coverage Reports
@@ -158,6 +198,81 @@ open htmlcov/index.html
 # Generate coverage summary
 poetry run pytest --cov=src/pepino --cov-report=term-missing
 ```
+
+### Coverage Improvement Plan
+
+Current coverage is around 28%. To improve coverage:
+
+1. **Priority Areas**:
+   - Analysis services (core business logic)
+   - Repository layer (data access)
+   - CLI commands (user interface)
+
+2. **Testing Strategy**:
+   - Focus on unit tests for business logic
+   - Add integration tests for data flow
+   - Include edge cases and error handling
+
+3. **Coverage Goals**:
+   - Analysis modules: 80%+
+   - Repository layer: 70%+
+   - CLI interface: 60%+
+
+## 🔍 Test Types
+
+### Unit Tests (`tests/unit/`)
+Fast, isolated tests using repository mocking:
+- **Purpose**: Test individual components in isolation
+- **Speed**: Execute quickly
+- **Coverage**: Good coverage on analysis modules
+- **Pattern**: Mock repositories, test business logic
+
+### Component Tests (`tests/component/`)
+Integration tests with realistic data:
+- **Purpose**: Test component interactions and data flow
+- **Data**: Generated test data based on real patterns
+- **Validation**: Ensure mathematical correctness of reports
+- **Coverage**: End-to-end functionality testing
+
+### Smoke Tests (`tests/smoke/`)
+Template rendering validation:
+- **Purpose**: Ensure templates render consistently
+- **Golden Outputs**: Compare against expected results
+- **Coverage**: All CLI and Discord templates
+- **Regression Detection**: Catch template changes
+
+## 📊 Test Data
+
+### Mock Data Design
+Mock data should be:
+- **Realistic**: Match actual data structures
+- **Predictable**: Enable deterministic testing
+- **Comprehensive**: Cover various scenarios
+
+```python
+# Example: Mock user data
+mock_user_info = {
+    "author_id": "user123",
+    "display_name": "Alice Smith",
+    "author_name": "Alice"
+}
+
+mock_stats = {
+    "total_messages": 150,
+    "channels_active": 5,
+    "avg_message_length": 45.5,
+    "active_days": 25,
+    "first_message": "2024-01-01T12:00:00Z",
+    "last_message": "2024-12-01T12:00:00Z"
+}
+```
+
+### Component Test Data
+Component tests use generated test data based on real Discord patterns:
+- **Messages**: 1000+ realistic messages with proper distribution
+- **Channels**: Top 10 channels from actual data
+- **Users**: Top 20 users from actual data
+- **Temporal Patterns**: Based on actual activity patterns
 
 ## Best Practices
 

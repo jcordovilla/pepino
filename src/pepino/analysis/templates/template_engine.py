@@ -24,12 +24,22 @@ import json
 import yaml
 
 from pepino.logging_config import get_logger
-from pepino.analysis.visualization.charts import (
-    create_activity_graph,
-    create_channel_activity_pie, 
-    create_user_activity_bar,
-    create_word_cloud
-)
+# Optional visualization imports
+try:
+    from pepino.analysis.visualization.charts import (
+        create_activity_graph,
+        create_channel_activity_pie, 
+        create_user_activity_bar,
+        create_word_cloud
+    )
+    VISUALIZATION_AVAILABLE = True
+except ImportError:
+    # Visualization not available - create dummy functions
+    def create_activity_graph(*args, **kwargs): return "Chart not available"
+    def create_channel_activity_pie(*args, **kwargs): return "Chart not available"
+    def create_user_activity_bar(*args, **kwargs): return "Chart not available"
+    def create_word_cloud(*args, **kwargs): return "Chart not available"
+    VISUALIZATION_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -186,8 +196,8 @@ class TemplateEngine:
                 kwargs['messages'] = messages
                 kwargs['message_count'] = len(messages)
                 # Pre-compute some common message aggregations
-                kwargs['all_message_text'] = ' '.join(msg.get('content', '') for msg in messages if msg.get('content'))
-                kwargs['message_authors'] = list(set(msg.get('author', '') for msg in messages if msg.get('author')))
+                kwargs['all_message_text'] = ' '.join(self._safe_get_message_content(msg) for msg in messages if self._safe_get_message_content(msg))
+                kwargs['message_authors'] = list(set(self._safe_get_message_author(msg) for msg in messages if self._safe_get_message_author(msg)))
             
             # Check for missing required variables (only if not cached)
             if not cached_template:
@@ -230,13 +240,39 @@ class TemplateEngine:
             if messages:
                 kwargs['messages'] = messages
                 kwargs['message_count'] = len(messages)
-                kwargs['all_message_text'] = ' '.join(msg.get('content', '') for msg in messages if msg.get('content'))
-                kwargs['message_authors'] = list(set(msg.get('author', '') for msg in messages if msg.get('author')))
+                kwargs['all_message_text'] = ' '.join(self._safe_get_message_content(msg) for msg in messages if self._safe_get_message_content(msg))
+                kwargs['message_authors'] = list(set(self._safe_get_message_author(msg) for msg in messages if self._safe_get_message_author(msg)))
             
             return template.render(**kwargs)
         except Exception as e:
             logger.error(f"Error rendering template string: {str(e)}", exc_info=True)
             return f"❌ Error rendering template: {str(e)}"
+
+    def _safe_get_message_content(self, msg) -> str:
+        """Safely get message content from either dict or Pydantic model."""
+        if hasattr(msg, 'content'):
+            return msg.content or ''
+        elif isinstance(msg, dict):
+            return msg.get('content', '')
+        return ''
+
+    def _safe_get_message_author(self, msg) -> str:
+        """Safely get message author from either dict or Pydantic model."""
+        if hasattr(msg, 'author_name'):
+            return msg.author_name or ''
+        elif hasattr(msg, 'author'):
+            return msg.author or ''
+        elif isinstance(msg, dict):
+            return msg.get('author_name', msg.get('author', ''))
+        return ''
+
+    def _safe_get_message_id(self, msg) -> str:
+        """Safely get message ID from either dict or Pydantic model."""
+        if hasattr(msg, 'id'):
+            return msg.id or ''
+        elif isinstance(msg, dict):
+            return msg.get('id', '')
+        return ''
 
     def _register_analyzer_functions(self):
         """Register analyzer functions for use in templates."""
@@ -367,16 +403,17 @@ class TemplateEngine:
         
         results = []
         for msg in messages:
-            content = msg.get('content', '')
+            content = self._safe_get_message_content(msg)
             if content:
                 sentiment = self._safe_analyze_sentiment(content)
                 results.append({
-                    'message_id': msg.get('id'),
-                    'author': msg.get('author'),
+                    'message_id': self._safe_get_message_id(msg),
+                    'author': self._safe_get_message_author(msg),
                     'sentiment': sentiment['sentiment'],
                     'score': sentiment['score'],
                     'content_preview': content[:100] + '...' if len(content) > 100 else content
                 })
+        
         return results
 
     def _extract_message_concepts(self, messages: List[Dict]) -> List[Dict]:
@@ -384,35 +421,24 @@ class TemplateEngine:
         if not messages or not self.nlp_service:
             return []
         
-        all_concepts = []
-        for msg in messages:
-            content = msg.get('content', '')
-            if content:
-                concepts = self._safe_extract_concepts(content)
-                if concepts:
-                    all_concepts.extend([{
-                        'concept': concept,
-                        'message_id': msg.get('id'),
-                        'author': msg.get('author')
-                    } for concept in concepts])
-        return all_concepts
+        all_text = ' '.join(self._safe_get_message_content(msg) for msg in messages if self._safe_get_message_content(msg))
+        if not all_text:
+            return []
+        
+        concepts = self._safe_extract_concepts(all_text)
+        return [{'concept': concept, 'frequency': 1} for concept in concepts[:10]]
 
     def _get_message_entities(self, messages: List[Dict]) -> List[Dict]:
-        """Extract named entities from a list of messages."""
+        """Get named entities from a list of messages."""
         if not messages or not self.nlp_service:
             return []
         
-        all_entities = []
-        for msg in messages:
-            content = msg.get('content', '')
-            if content:
-                entities = self._safe_get_entities(content)
-                if entities:
-                    for entity in entities:
-                        entity['message_id'] = msg.get('id')
-                        entity['author'] = msg.get('author')
-                    all_entities.extend(entities)
-        return all_entities
+        all_text = ' '.join(self._safe_get_message_content(msg) for msg in messages if self._safe_get_message_content(msg))
+        if not all_text:
+            return []
+        
+        entities = self._safe_get_entities(all_text)
+        return [{'entity': entity, 'type': 'unknown'} for entity in entities[:10]]
 
     # Data Access Helper Functions
     def _get_messages_by_channel(self, channel_name: str, limit: int = 100) -> List[Dict]:
@@ -516,10 +542,14 @@ class TemplateEngine:
             return []
         return items[:n]
     
-    def _format_trend(self, trend: str, percentage: float) -> str:
-        """Format trend with emoji for Discord."""
-        emoji = "📈" if trend == "increasing" else "📉" if trend == "decreasing" else "➡️"
-        return f"{emoji} {trend.title()} ({percentage:+.1f}%)"
+    def _format_trend(self, trend: str, percentage: float, timeframe: str = "") -> str:
+        """Format trend string for display."""
+        if trend == "increasing":
+            return f"📈 Increasing (+{abs(percentage):.1f}% {timeframe})"
+        elif trend == "decreasing":
+            return f"📉 Decreasing (−{abs(percentage):.1f}% {timeframe})"
+        else:
+            return f"Stable (no significant change {timeframe})"
     
     def _create_activity_chart(self, dates: List[str], counts: List[int], 
                                title: str = "Activity Over Time") -> str:

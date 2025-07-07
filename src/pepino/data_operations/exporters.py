@@ -7,6 +7,7 @@ Handles data export operations with support for multiple formats using Pydantic 
 import csv
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
@@ -15,8 +16,9 @@ from pydantic import BaseModel
 
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.repositories import MessageRepository, UserRepository, ChannelRepository, SyncRepository
+from pepino.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ExportData(BaseModel):
@@ -26,7 +28,7 @@ class ExportData(BaseModel):
     record_count: int
     exported_at: datetime
     data: List[Dict[str, Any]]
-    schema: Optional[Dict[str, Any]] = None
+    table_schema: Optional[Dict[str, Any]] = None
 
 
 class DataExporter:
@@ -232,7 +234,9 @@ class DataExporter:
                 return [channel.__dict__ if hasattr(channel, '__dict__') else {"channel_name": channel} for channel in channels]
             elif table == "sync_logs":
                 repo = SyncRepository(self.db_manager)
-                return repo.get_all_sync_logs(limit=100)
+                sync_logs = repo.get_all_sync_logs(limit=100)
+                # Convert Pydantic models to dictionaries for export
+                return [sync_log.model_dump() for sync_log in sync_logs]
             else:
                 raise ValueError(f"Unknown table: {table}")
         except Exception as e:
@@ -258,7 +262,7 @@ class DataExporter:
             exported_at=datetime.now(),
             record_count=len(data),
             data=data,
-            schema=self.get_table_schema(table) if include_metadata else None
+            table_schema=self.get_table_schema(table) if include_metadata else None
         )
         
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -268,7 +272,9 @@ class DataExporter:
         """Export data to Excel file."""
         try:
             import pandas as pd
-            df = pd.DataFrame(data)
+            # Clean data for Excel export
+            cleaned_data = clean_list_for_excel(data)
+            df = pd.DataFrame(cleaned_data)
             df.to_excel(output_path, index=False, sheet_name=table)
         except ImportError:
             raise ValueError("pandas is required for Excel export")
@@ -302,7 +308,9 @@ class DataExporter:
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 for table, data in all_data.items():
                     if data:
-                        df = pd.DataFrame(data)
+                        # Clean data for Excel export
+                        cleaned_data = clean_list_for_excel(data)
+                        df = pd.DataFrame(cleaned_data)
                         df.to_excel(writer, sheet_name=table, index=False)
         except ImportError:
             raise ValueError("pandas and openpyxl are required for Excel export")
@@ -326,7 +334,7 @@ class DataExporter:
             exported_at=datetime.now() if include_metadata else None,
             record_count=len(data),
             data=data,
-            schema=None
+            table_schema=None
         )
         
         return export_data.model_dump_json(indent=2)
@@ -360,7 +368,7 @@ class DataExporter:
                 exported_at=datetime.now() if include_metadata else None,
                 record_count=len(data),
                 data=data,
-                schema=None
+                table_schema=None
             )
         
         export_data = {
@@ -389,4 +397,63 @@ class DataExporter:
         if self._db_manager:
             self._db_manager.close_connections()
         self._db_manager = None
-        logger.debug("DataExporter closed") 
+        logger.debug("DataExporter closed")
+
+
+def clean_for_excel(value: Any) -> Any:
+    """Clean a value for Excel export by removing illegal characters."""
+    if value is None:
+        return None
+    
+    if isinstance(value, str):
+        # Remove control characters except newlines and tabs
+        cleaned = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', str(value))
+        # Replace other problematic characters
+        cleaned = cleaned.replace('\x00', '')  # Null character
+        cleaned = cleaned.replace('\x01', '')  # Start of heading
+        cleaned = cleaned.replace('\x02', '')  # Start of text
+        cleaned = cleaned.replace('\x03', '')  # End of text
+        cleaned = cleaned.replace('\x04', '')  # End of transmission
+        cleaned = cleaned.replace('\x05', '')  # Enquiry
+        cleaned = cleaned.replace('\x06', '')  # Acknowledge
+        cleaned = cleaned.replace('\x07', '')  # Bell
+        cleaned = cleaned.replace('\x08', '')  # Backspace
+        cleaned = cleaned.replace('\x0B', '')  # Vertical tab
+        cleaned = cleaned.replace('\x0C', '')  # Form feed
+        cleaned = cleaned.replace('\x0E', '')  # Shift out
+        cleaned = cleaned.replace('\x0F', '')  # Shift in
+        cleaned = cleaned.replace('\x10', '')  # Data link escape
+        cleaned = cleaned.replace('\x11', '')  # Device control 1
+        cleaned = cleaned.replace('\x12', '')  # Device control 2
+        cleaned = cleaned.replace('\x13', '')  # Device control 3
+        cleaned = cleaned.replace('\x14', '')  # Device control 4
+        cleaned = cleaned.replace('\x15', '')  # Negative acknowledge
+        cleaned = cleaned.replace('\x16', '')  # Synchronous idle
+        cleaned = cleaned.replace('\x17', '')  # End of transmission block
+        cleaned = cleaned.replace('\x18', '')  # Cancel
+        cleaned = cleaned.replace('\x19', '')  # End of medium
+        cleaned = cleaned.replace('\x1A', '')  # Substitute
+        cleaned = cleaned.replace('\x1B', '')  # Escape
+        cleaned = cleaned.replace('\x1C', '')  # File separator
+        cleaned = cleaned.replace('\x1D', '')  # Group separator
+        cleaned = cleaned.replace('\x1E', '')  # Record separator
+        cleaned = cleaned.replace('\x1F', '')  # Unit separator
+        cleaned = cleaned.replace('\x7F', '')  # Delete
+        
+        # Truncate if too long (Excel has cell limits)
+        if len(cleaned) > 32000:
+            cleaned = cleaned[:32000] + "... [truncated]"
+        
+        return cleaned
+    
+    return value
+
+
+def clean_dict_for_excel(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Clean all values in a dictionary for Excel export."""
+    return {key: clean_for_excel(value) for key, value in data.items()}
+
+
+def clean_list_for_excel(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Clean all dictionaries in a list for Excel export."""
+    return [clean_dict_for_excel(item) for item in data] 

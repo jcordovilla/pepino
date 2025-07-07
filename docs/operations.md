@@ -194,7 +194,7 @@ Once deployed, the bot provides these slash commands:
 
 *All commands support autocomplete and include optional charts*
 
-**📖 For detailed bot operations and troubleshooting, see [bot_operations.md](bot_operations.md)**
+**📖 For detailed bot operations and troubleshooting, see the Discord bot setup section above**
 **🚀 For a simple getting started guide, see the [Discord Bot Quick Start Guide](../README.md#-discord-bot-quick-start-guide) in the README**
 
 ## Database Operations
@@ -257,7 +257,7 @@ logs/
 ### Test Architecture
 - **Fast Execution**: Tests complete in under 2 seconds (no database setup)
 - **Repository Mocking**: Uses `unittest.mock.AsyncMock` for isolation
-- **95%+ Coverage**: All analysis modules with comprehensive edge cases
+- **Good Coverage**: All analysis modules with comprehensive edge cases
 
 ## Monitoring & Troubleshooting
 
@@ -322,9 +322,9 @@ from pepino.data.config import Settings
 try:
     settings = Settings()
     print('✅ Configuration valid')
-    print(f'Discord token: {bool(settings.discord_token)}')
+    print(f'Discord token: {bool(settings.discord_bot_token)}')
     print(f'Database: {settings.database_url}')
-    print(f'Base filter: {settings.base_filter}')
+    print(f'Base filter: {settings.analysis_base_filter_sql}')
 except Exception as e:
     print(f'❌ Configuration error: {e}')
 "

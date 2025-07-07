@@ -1,24 +1,33 @@
 """
 Analysis package for Discord data analysis.
 
-Provides analyzer instances and data facade for centralized repository management:
-- UserAnalyzer: User activity and statistics
-- ChannelAnalyzer: Channel activity and insights  
-- TopicAnalyzer: Topic and keyword analysis
-- TemporalAnalyzer: Activity patterns over time
-- AnalysisDataFacade: Centralized repository and transaction management
+Primary Interface:
+    AnalysisService: Main service for all analysis operations
+    analysis_service: Context manager for convenient usage
 
-The data facade encapsulates all repository initialization and transactional behavior,
-providing a clean interface for analyzers without direct repository management.
+Core Components:
+    - AnalysisService: Orchestrates all analysis operations
+    - AnalysisDataFacade: Centralized repository management
+    - Individual Analyzers: Specialized analysis components
+
+The service layer provides a clean interface while hiding internal complexity.
+Individual analyzers are available for advanced use cases.
 """
 
-from .channel_analyzer import ChannelAnalyzer
-from .data_facade import AnalysisDataFacade, get_analysis_data_facade, analysis_transaction
-# Removed imports with external dependencies for now
-# from .conversation_analyzer import ConversationService
-# from .nlp_analyzer import NLPService
-# from .similarity_analyzer import SimilarityService
+# Primary service interface (recommended usage)
+from .service import AnalysisService, analysis_service
 
+# Data facade for advanced usage
+from .helpers.data_facade import AnalysisDataFacade, get_analysis_data_facade, analysis_transaction
+
+# Core analyzers (for advanced usage)
+from .helpers.user_analyzer import UserAnalyzer
+from .helpers.channel_analyzer import ChannelAnalyzer
+from .helpers.topic_analyzer import TopicAnalyzer
+from .helpers.temporal_analyzer import TemporalAnalyzer
+from .helpers.database_analyzer import DatabaseAnalyzer
+
+# Response models (for type hints and validation)
 from .models import (
     AnalysisErrorResponse,
     AnalysisResponse,
@@ -35,29 +44,32 @@ from .models import (
     UserInfo,
     UserStatistics,
 )
-from .temporal_analyzer import TemporalAnalyzer
-from .topic_analyzer import TopicAnalyzer
 
-# Core analyzers
-from .user_analyzer import UserAnalyzer
+# Template system
+from .templates import TemplateEngine
 
 __all__ = [
-    # Core analyzers
+    # Primary service interface (recommended)
+    "AnalysisService",
+    "analysis_service",
+    # Data facade
+    "AnalysisDataFacade",
+    "get_analysis_data_facade", 
+    "analysis_transaction",
+    # Core analyzers (advanced usage)
     "UserAnalyzer",
     "ChannelAnalyzer",
     "TopicAnalyzer",
     "TemporalAnalyzer",
-    # Data facade
-    "AnalysisDataFacade",
-    "get_analysis_data_facade",
-    "analysis_transaction",
-    # Models
+    "DatabaseAnalyzer",
+    # Response models
     "AnalysisResponse",
     "AnalysisErrorResponse",
     "UserAnalysisResponse",
     "ChannelAnalysisResponse",
     "TopicAnalysisResponse",
     "TemporalAnalysisResponse",
+    "DatabaseAnalysisResponse",
     "UserInfo",
     "UserStatistics",
     "ChannelInfo",
@@ -66,4 +78,9 @@ __all__ = [
     "TopicItem",
     "TemporalDataPoint",
     "TemporalPatterns",
+    "DatabaseInfo",
+    "TableStatistics",
+    "DatabaseSummary",
+    # Template system
+    "TemplateEngine",
 ]
