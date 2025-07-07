@@ -17,6 +17,51 @@ Pepino analyzes Discord server activity to help you:
 - **Track Growth**: How is your community evolving over time?
 - **Make Data-Driven Decisions**: Use real insights instead of gut feelings
 
+## 🤝 Collaboration Guidelines
+
+**Welcome contributors!** This project is open for collaboration. Please follow these guidelines to ensure smooth development:
+
+### **🔒 Security & Privacy First**
+- **Never commit sensitive data**: Database files (*.db), message exports (*.json), or real Discord tokens
+- **Use example data**: When creating tests or documentation, use synthetic/example data only
+- **Review .gitignore**: Before committing, ensure no sensitive files are tracked
+- **Environment variables**: Always use `.env` files for secrets (never commit them)
+
+### **💻 Development Standards**
+- **Branch naming**: Use descriptive names like `feature/user-analytics` or `fix/chart-rendering`
+- **Commit messages**: Use conventional commits format: `feat:`, `fix:`, `docs:`, `refactor:`
+- **Code quality**: Run `make quality` before submitting PRs (formatting, linting, type checks)
+- **Testing**: Include tests for new features and ensure existing tests pass
+
+### **📋 Contribution Process**
+1. **Fork & branch**: Create a feature branch from the latest `main`
+2. **Develop & test**: Implement changes with appropriate tests
+3. **Document**: Update README/docs if adding new features
+4. **Submit PR**: Include clear description of changes and any breaking changes
+5. **Code review**: Address feedback promptly and professionally
+
+### **🛡️ Data Handling Rules**
+- **Real Discord data**: Only use for local development, never share or commit
+- **Test data**: Create synthetic examples for documentation and tests
+- **User privacy**: Anonymize any user identifiers in examples or screenshots
+- **Compliance**: Ensure all contributions respect Discord's Terms of Service
+
+### **❓ Getting Help**
+- **Issues**: Use GitHub Issues for bugs, feature requests, and questions
+- **Discussions**: Use GitHub Discussions for general questions and ideas
+- **Documentation**: Check existing docs before asking questions
+
+### **📜 Open Source & Attribution**
+- **License**: This project is open source under MIT License - see [LICENSE](LICENSE) file
+- **Attribution**: Contributors retain credit for their contributions in git history
+- **Commercial use**: Permitted under MIT License terms
+- **Derivative works**: Encouraged! Please maintain attribution to original project
+- **Third-party libraries**: Ensure any added dependencies have compatible licenses
+- **Community driven**: This project belongs to the community - treat it with respect
+- **Name origin**: Pepino is named after a previous bot called "Pepe" - thanks to [@reisenhardt](https://github.com/reisenhardt) for the name!
+
+---
+
 ### **Key Capabilities**
 
 #### 🔍 **User Analytics**
