@@ -12,9 +12,56 @@ __pycache__/
 venv/
 .venv/
 
-# Database files
+# Database files (contain sensitive Discord message data)
 *.db
-*.sqlite
+*.db-*
+*.sqlite*
+*.backup
+discord_messages.db
+discord_messages*.db
+data/
+
+# Message exports and analysis outputs (contain sensitive data)
+*messages*.json
+*export*.json
+*backup*.json
+commits_since_*.json
+*_export.csv
+*_analysis.txt
+*_report.json
+
+# Generated content and temporary files
+archive/
+temp/
+tmp/
+output/
+exports/
+
+# Chart and visualization files (may contain sensitive data)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*_chart_*.png
+*_activity_*.png
+*_overview_*.png
+
+# Export and analysis files
+*.csv
+*.log
+*.txt
+fetch_output.log
+output.log
+
+# Machine learning models and caches (may be large or contain derived data)
+*.pkl
+*.joblib
+*.model
+.bertopic_cache/
+embeddings/
+models/
+.cache/
 
 # OS files
 .DS_Store
