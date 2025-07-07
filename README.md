@@ -1012,4 +1012,4 @@ The bot is designed to be intuitive - just try commands and see what insights yo
 
 ---
 
-**Ready to unlock insights from your Discord community?** Start with `make dev-setup` and explore what Pepino can reveal about your server! 🚀
+Created by **Jose Cordovilla** with vibecoding tools like Github Copilot and Cursor and a lot of dedication. Jose is Volunteer Network Architect at MIT Professional Education's GenAI Global Community
