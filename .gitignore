@@ -48,12 +48,30 @@ logs/
 src/logs/
 *.log
 
-# Database
+# Database files (contain sensitive Discord message data)
+*.db
+*.db-*
+*.sqlite*
+*.backup
+discord_messages.db
+discord_messages*.db
 data/
-data/backups/
-data/exports/
+
+# Message exports and analysis outputs (contain sensitive data)
+*messages*.json
+*export*.json
+*backup*.json
+commits_since_*.json
+*_export.csv
+*_analysis.txt
+*_report.json
+*_report.txt
+
+# Database backups and archives
 archive/*.db
 archive/*.db-*
+archive/*.backup
+archive/*.sqlite*
 
 # Charts and exports
 temp/charts/
@@ -61,9 +79,14 @@ exports/
 *_export.csv
 *_export.json
 *_analysis.txt
-*_report.txt
 output.log
 fetch_output.log
+
+# Generated content and temporary files
+archive/
+temp/
+tmp/
+output/
 
 # OS files
 .DS_Store
@@ -81,9 +104,9 @@ htmlcov/
 # MyPy
 .mypy_cache/
 
-# sqllite dbs
-*.db
-*.db-*
+# sqllite dbs - DEPRECATED (covered above in Database section)
+# *.db
+# *.db-*
 
 # temp folder
 temp/
