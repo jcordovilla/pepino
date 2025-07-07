@@ -242,7 +242,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     channel_name=channel_name, 
                     days_back=days_back, 
                     end_date=datetime.fromisoformat(end_date) if end_date else None,
-                    output_format="md"
+                    output_format="discord"
                 )
                 
         except Exception as e:

@@ -17,7 +17,7 @@ from pepino.analysis.templates.template_engine import TemplateEngine
 
 logger = logging.getLogger(__name__)
 
-OutputFormat = Literal["cli", "md"]
+OutputFormat = Literal["cli", "discord"]
 
 
 class AnalysisService:
@@ -120,7 +120,7 @@ class AnalysisService:
             return None
     
     def pulsecheck(self, channel_name: Optional[str] = None, days_back: int = 7, 
-                   end_date: Optional[datetime] = None, output_format: OutputFormat = "cli") -> str:
+                   end_date: Optional[datetime] = None,             output_format: OutputFormat = "cli") -> str:
         """
         Generate weekly channel analysis (pulsecheck).
         
@@ -128,7 +128,7 @@ class AnalysisService:
             channel_name: Optional channel name (None for all channels)
             days_back: Number of days to look back (default: 7)
             end_date: End date for analysis (default: now)
-            output_format: Output format ("cli" or "md")
+            output_format: Output format ("cli" or "discord")
             
         Returns:
             Formatted analysis string
@@ -165,6 +165,60 @@ class AnalysisService:
             }
         }
         
+        # Add channel activity data when no specific channel is selected
+        if not channel_name:
+            # Get top 5 most active channels (excluding bot traffic)
+            most_active_channels = self.data_facade.channel_repository.get_top_channels_by_message_count(
+                limit=5, days=days_back
+            )
+            
+            # Get all channels with activity in the period (including 0 messages)
+            all_channels_with_activity = self.data_facade.channel_repository.get_all_channels_with_activity(
+                days=days_back
+            )
+            
+            # Get least active channels (excluding bot traffic)
+            # Filter out channels with 0 messages and take the last 5 (least active)
+            active_channels = [ch for ch in all_channels_with_activity if ch['message_count'] > 0]
+            least_active_channels = active_channels[-5:] if len(active_channels) >= 5 else active_channels
+            
+            # --- Active/Inactive Channel Distribution ---
+            total_channels = len(all_channels_with_activity)  # All channels in the period
+            if total_channels > 0:
+                # Define "active" as channels with meaningful activity
+                # Use a threshold based on the average messages per channel
+                avg_messages = sum(ch['message_count'] for ch in all_channels_with_activity) / total_channels
+                min_active_threshold = max(5, int(avg_messages * 0.05))  # At least 5% of average or 5 messages
+                
+                # Count active channels (those meeting the threshold)
+                n_active = sum(1 for ch in all_channels_with_activity if ch['message_count'] >= min_active_threshold)
+                n_inactive = total_channels - n_active  # Includes channels with 0 messages
+                pct_active = (n_active / total_channels) * 100
+                
+                if pct_active >= 70:
+                    qualifier = 'good'
+                elif pct_active >= 50:
+                    qualifier = 'moderate'
+                else:
+                    qualifier = 'poor'
+            else:
+                n_active = 0
+                n_inactive = 0
+                pct_active = 0
+                qualifier = 'poor'
+                min_active_threshold = 0
+            
+            data['active_channels_count'] = n_active
+            data['inactive_channels_count'] = n_inactive
+            data['active_channels_percentage'] = pct_active
+            data['active_channels_qualifier'] = qualifier
+            data['active_channels_min_threshold'] = min_active_threshold
+            data['total_channels_analyzed'] = total_channels
+            
+            # Add channel activity data to the template context
+            data['most_active_channels'] = most_active_channels
+            data['least_active_channels'] = least_active_channels
+        
         template_name = f"outputs/{output_format}/channel_analysis.{'txt' if output_format == 'cli' else 'md'}.j2"
         
         return self.template_engine.render_template(
@@ -187,7 +241,7 @@ class AnalysisService:
             limit: Number of top users to show (default: 10)
             days_back: Number of days to look back (default: 30)
             end_date: End date for analysis (default: now)
-            output_format: Output format ("cli" or "md")
+            output_format: Output format ("cli" or "discord")
             
         Returns:
             Formatted analysis string
@@ -244,7 +298,7 @@ class AnalysisService:
             limit: Number of top channels to show (default: 5)
             days_back: Number of days to look back (default: 7)
             end_date: End date for analysis (default: now)
-            output_format: Output format ("cli" or "md")
+            output_format: Output format ("cli" or "discord")
             
         Returns:
             Formatted analysis string
@@ -365,7 +419,7 @@ class AnalysisService:
         List all available channels.
         
         Args:
-            output_format: Output format ("cli" or "md")
+            output_format: Output format ("cli" or "discord")
             
         Returns:
             Formatted channel list string
