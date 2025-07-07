@@ -1,155 +1,196 @@
-# Discord Message Fetcher
+# Pepino - Discord Message Fetcher
 
-A Python application that connects to Discord servers and fetches messages, storing them in a SQLite database for analysis and archival purposes.
+A lightweight Python application that connects to Discord servers and fetches messages, storing them in a SQLite database for analysis and archival purposes.
 
-## Features
+## 🚀 Features
 
-- 🤖 Fetches messages from Discord servers using a bot token
-- 💾 Stores messages in SQLite database with full metadata
-- 📊 Captures emojis, reactions, attachments, and user presence
-- 🔄 Incremental sync (only fetches new messages)
-- 📝 Comprehensive logging and error handling
-- 🛡️ Handles permission errors gracefully
+- 🤖 **Discord Integration** - Fetches messages from Discord servers using bot token
+- 💾 **SQLite Storage** - Stores messages in local database with full metadata
+- 📊 **Rich Data Capture** - Includes emojis, reactions, attachments, and user presence
+- 🔄 **Incremental Sync** - Only fetches new messages on subsequent runs
+- 📝 **Comprehensive Logging** - Detailed sync progress and error handling
+- 🛡️ **Error Resilient** - Gracefully handles permission errors and API limits
 
-## Prerequisites
+## 📋 Prerequisites
 
-- Python 3.7 or higher
-- Discord bot token
-- Access to Discord server(s) you want to fetch messages from
+- **Python 3.8+** (recommended 3.9 or higher)
+- **Discord Bot Token** with appropriate permissions
+- **Server Access** to Discord server(s) you want to fetch messages from
 
-## Installation
+## 🛠️ Quick Setup
 
-1. **Clone the repository**
+1. **Clone and Setup**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/jcordovilla/pepino.git
    cd pepino
    ```
 
-2. **Create a virtual environment**
+2. **Create Virtual Environment**
    ```bash
    python3 -m venv venv
-   source venv/bin/activate  # On macOS/Linux
+   source venv/bin/activate  # macOS/Linux
    # or
-   venv\Scripts\activate     # On Windows
+   venv\Scripts\activate     # Windows
    ```
 
-3. **Install dependencies**
+3. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Set up environment variables**
-   
-   Create a `.env` file in the project root:
+4. **Configure Environment**
    ```bash
-   cp .env.example .env  # If example exists, or create manually
-   ```
-   
-   Add your Discord bot token to `.env`:
-   ```
-   DISCORD_TOKEN=your_discord_bot_token_here
-   OPENAI_API_KEY=your_openai_api_key_here  # Optional
-   GUILD_ID=your_guild_id_here              # Optional
+   # Create .env file
+   echo "DISCORD_TOKEN=your_bot_token_here" > .env
    ```
 
-## Discord Bot Setup
+## 🤖 Discord Bot Setup
 
-1. **Create a Discord Application**
-   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
-   - Click "New Application" and give it a name
-   - Navigate to the "Bot" section
-   - Click "Add Bot"
-   - Copy the bot token to your `.env` file
+### 1. Create Discord Application
+- Visit [Discord Developer Portal](https://discord.com/developers/applications)
+- Click **"New Application"** and give it a name
+- Navigate to **"Bot"** section → **"Add Bot"**
+- Copy the bot token to your `.env` file
 
-2. **Invite the Bot to Your Server**
-   - In the Discord Developer Portal, go to "OAuth2" → "URL Generator"
-   - Select scopes: `bot`
-   - Select bot permissions: `Read Messages`, `Read Message History`, `View Channels`
-   - Use the generated URL to invite the bot to your server
+### 2. Configure Bot Permissions
+Enable these intents in the Bot section:
+- ✅ **Message Content Intent** (required for reading messages)
+- ✅ **Server Members Intent** (for user data)
 
-3. **Required Bot Permissions**
-   - View Channels
-   - Read Message History
-   - Read Messages/View Message History
+### 3. Invite Bot to Server
+- Go to **"OAuth2"** → **"URL Generator"**
+- Select scopes: `bot`
+- Select permissions:
+  - `View Channels`
+  - `Read Message History` 
+  - `Read Messages`
+- Use generated URL to invite bot to your server
 
-## Usage
+## 🚀 Usage
 
-**Run the message fetcher:**
+**Start the message fetcher:**
 ```bash
 python fetch_messages.py
 ```
 
-The application will:
-1. Connect to Discord using your bot token
-2. Initialize the SQLite database (`discord_messages.db`)
-3. Fetch messages from all accessible channels
-4. Store messages with full metadata
-5. Log sync progress and any errors
+### What happens during sync:
+1. 🔗 **Connect** to Discord using your bot token
+2. 🗄️ **Initialize** SQLite database (`data/discord_messages.db`)
+3. 📥 **Fetch** messages from all accessible channels
+4. 💾 **Store** messages with complete metadata
+5. 📊 **Log** sync progress and statistics
 
-## Database Schema
+### Sample output:
+```
+🚀 Starting Discord message sync...
+📊 Found 3 guilds, 15 channels
+📥 Syncing guild: My Server (123 members)
+  ✅ #general: 1,234 messages synced
+  ✅ #announcements: 56 messages synced
+✨ Sync complete! Total: 1,290 new messages
+```
 
-The SQLite database contains two main tables:
+## 🗃️ Database Schema
 
 ### `messages` table
-Stores all Discord messages with fields including:
-- Message content, timestamps, and metadata
-- Author information (ID, name, avatar, etc.)
-- Guild and channel details
+**Complete message data including:**
+- Message content, timestamps, and IDs
+- Author details (ID, name, display name, avatar)
+- Guild and channel information
 - Attachments, embeds, and reactions
-- Emoji statistics and mentions
+- Emoji usage and user mentions
+- Message references (replies, threads)
 
-### `sync_logs` table
-Tracks synchronization history:
-- Sync timestamps
+### `sync_logs` table  
+**Synchronization tracking:**
+- Sync timestamps and duration
 - Guilds and channels processed
-- Error logs and statistics
+- Message counts and statistics
+- Error logs and retry attempts
 
-## File Structure
+## 📁 Project Structure
 
 ```
 pepino/
-├── fetch_messages.py     # Main application
-├── requirements.txt      # Python dependencies
-├── .env                 # Environment variables (not tracked)
-├── .gitignore          # Git ignore rules
-├── discord_messages.db # SQLite database (not tracked)
-└── README.md           # This file
+├── fetch_messages.py      # 🎯 Main application
+├── requirements.txt       # 📦 Dependencies (discord.py, python-dotenv)
+├── .env                  # 🔐 Environment variables (not tracked)
+├── .gitignore           # 🚫 Git ignore rules
+├── data/                # 🗄️ Data directory
+│   └── discord_messages.db  # 💾 SQLite database (not tracked)
+└── README.md            # 📖 This documentation
 ```
 
-## Configuration
+## ⚙️ Configuration
 
-- **Database location**: Modify `db_path` parameter in functions (default: `discord_messages.db`)
-- **Message limits**: Adjust `limit` parameter in `channel.history()` call
-- **Emoji detection**: Customize regex patterns in `extract_emojis()` function
+### Environment Variables
+```bash
+# Required
+DISCORD_TOKEN=your_discord_bot_token_here
 
-## Troubleshooting
+# Optional  
+GUILD_ID=specific_guild_id_to_sync_only  # Sync single server
+LOG_LEVEL=INFO                           # DEBUG, INFO, WARNING, ERROR
+```
 
-**Permission Errors**
-- Ensure your bot has proper permissions in the Discord server
-- Check that the bot can access the channels you want to fetch from
+### Customization Options
+- **Database location**: Modify `db_path` in `fetch_messages.py`
+- **Message limits**: Adjust `limit` parameter in channel sync
+- **Emoji patterns**: Customize regex in `extract_emojis()` function
+- **Sync intervals**: Configure incremental sync behavior
 
-**Token Issues**
-- Verify your Discord bot token is correct in `.env`
-- Make sure the token hasn't expired or been regenerated
+## 🔧 Troubleshooting
 
-**Database Issues**
-- Delete `discord_messages.db` to start fresh if needed
-- Check file permissions in the project directory
+### Common Issues
 
-## Contributing
+**🚫 Permission Errors**
+- Verify bot has required permissions in Discord server
+- Check that bot can access target channels
+- Ensure bot is still in the server (not kicked)
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+**🔑 Token Issues**  
+- Confirm Discord bot token is correct in `.env`
+- Check if token has expired or been regenerated
+- Verify `.env` file is in the project root directory
 
-## License
+**🗄️ Database Issues**
+- Delete `data/discord_messages.db` to start fresh
+- Check file/directory permissions
+- Ensure sufficient disk space available
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+**📡 Network/API Issues**
+- Discord API rate limits (automatically handled)
+- Check internet connection stability
+- Verify Discord service status
 
-## Security Notes
+### Getting Help
+- Check the logs for detailed error messages
+- Enable DEBUG logging: `LOG_LEVEL=DEBUG` in `.env`
+- Review Discord bot permissions in server settings
 
-- Never commit your `.env` file or Discord tokens to version control
-- Keep your bot token secure and regenerate if compromised
-- The SQLite database may contain sensitive conversation data - handle appropriately
+## 🤝 Contributing
+
+1. **Fork** the repository
+2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
+3. **Commit** your changes: `git commit -m 'Add amazing feature'`
+4. **Push** to branch: `git push origin feature/amazing-feature`
+5. **Open** a Pull Request
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+## 🔒 Security & Privacy
+
+### Important Notes
+- 🚨 **Never commit** your `.env` file or Discord tokens to version control
+- 🔐 **Keep bot tokens secure** and regenerate if compromised  
+- 💾 **Database contains sensitive data** - handle Discord message data appropriately
+- 🛡️ **Follow Discord ToS** - ensure compliance with Discord's Terms of Service
+- 🔒 **Local storage only** - messages are stored locally, not transmitted elsewhere
+
+### Data Handling
+- Messages are stored locally in SQLite database
+- No data is sent to external services
+- Database should be treated as sensitive/private data
+- Consider encryption for additional security if needed

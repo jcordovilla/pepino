@@ -36,6 +36,7 @@ temp/
 tmp/
 output/
 exports/
+src/logs/
 
 # Chart and visualization files (may contain sensitive data)
 *.png
