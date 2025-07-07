@@ -79,7 +79,7 @@ python bot.py
 ```
 📊 Top 10 Human User Activity
 
-1. Oscar Sanchez
+1. Jo Sanchez
    • Messages: 663 • Channels: 58
    • Most Active: #general (187 messages)
    • Main Topics: session, linkedin, onboarding
