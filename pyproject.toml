@@ -39,6 +39,8 @@ hdbscan = "^0.8.33"
 # Enhanced embeddings and transformers
 transformers = "^4.36.0"
 torch = "^2.1.0"
+pandas = "^2.3.0"
+openpyxl = "^3.1.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.0"

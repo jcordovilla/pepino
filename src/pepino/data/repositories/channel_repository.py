@@ -1,12 +1,11 @@
 """
-Channel repository for data access operations.
-Provides centralized data access for channel-related operations following the persistence facade pattern.
+Channel repository for channels data access operations.
 """
 
 import json
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pepino.config import settings
 from ..database.manager import DatabaseManager
@@ -34,6 +33,71 @@ class ChannelRepository:
         self.db_manager = db_manager
         self.base_filter = settings.base_filter.strip()
 
+    def _build_base_conditions(
+        self, 
+        channel_name: Optional[str] = None, 
+        days: Optional[int] = None,
+        exclude_bots: bool = False,
+        include_content_check: bool = True
+    ) -> Tuple[str, List[Any]]:
+        """
+        Build common WHERE conditions for channel queries.
+        
+        Args:
+            channel_name: Optional channel name filter
+            days: Optional days back filter
+            exclude_bots: Whether to exclude bot messages
+            include_content_check: Whether to include content IS NOT NULL check
+            
+        Returns:
+            Tuple of (WHERE clause, parameters list)
+        """
+        conditions = [self.base_filter]
+        params = []
+        
+        if channel_name:
+            conditions.append("channel_name = ?")
+            params.append(channel_name)
+            
+        if days:
+            conditions.append("timestamp >= datetime('now', '-' || ? || ' days')")
+            params.append(days)
+            
+        if exclude_bots:
+            conditions.append("(author_is_bot = 0 OR author_is_bot IS NULL)")
+            
+        if include_content_check:
+            conditions.append("content IS NOT NULL")
+            
+        return " AND ".join(conditions), params
+
+    def _build_channel_stats_select(self, include_bot_stats: bool = False) -> str:
+        """
+        Build common SELECT clause for channel statistics.
+        
+        Args:
+            include_bot_stats: Whether to include bot-specific statistics
+            
+        Returns:
+            SELECT clause string
+        """
+        base_select = """
+            COUNT(*) as total_messages,
+            COUNT(DISTINCT author_name) as unique_users,
+            MIN(timestamp) as first_message,
+            MAX(timestamp) as last_message,
+            AVG(LENGTH(content)) as avg_message_length
+        """
+        
+        if include_bot_stats:
+            base_select += """,
+            COUNT(CASE WHEN author_is_bot = 1 THEN 1 END) as bot_messages,
+            COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
+            COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users
+        """
+            
+        return base_select
+
     # Sync methods for the new architecture
 
     def get_channel_message_statistics(
@@ -51,27 +115,18 @@ class ChannelRepository:
         Returns:
             Dictionary with channel message statistics
         """
+        select_clause = self._build_channel_stats_select(include_bot_stats=True)
+        where_clause, params = self._build_base_conditions(
+            channel_name=channel_name, 
+            days=days, 
+            include_content_check=True
+        )
+        
         query = f"""
-        SELECT 
-            COUNT(*) as total_messages,
-            COUNT(DISTINCT author_name) as unique_users,
-            MIN(timestamp) as first_message,
-            MAX(timestamp) as last_message,
-            AVG(LENGTH(content)) as avg_message_length,
-            COUNT(CASE WHEN author_is_bot = 1 THEN 1 END) as bot_messages,
-            COUNT(CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN 1 END) as human_messages,
-            COUNT(DISTINCT CASE WHEN author_is_bot = 0 OR author_is_bot IS NULL THEN author_name END) as unique_human_users
+        SELECT {select_clause}
         FROM messages 
-        WHERE channel_name = ? AND {self.base_filter}
+        WHERE {where_clause}
         """
-        
-        params = [channel_name]
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += " AND content IS NOT NULL"
         
         result = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
         
@@ -106,6 +161,13 @@ class ChannelRepository:
         Returns:
             List of user activity dictionaries
         """
+        where_clause, params = self._build_base_conditions(
+            channel_name=channel_name, 
+            days=days, 
+            exclude_bots=True,
+            include_content_check=True
+        )
+        
         query = f"""
         SELECT 
             author_name,
@@ -115,18 +177,7 @@ class ChannelRepository:
             MAX(timestamp) as last_message,
             AVG(LENGTH(content)) as avg_message_length
         FROM messages 
-        WHERE channel_name = ? AND {self.base_filter}
-        AND (author_is_bot = 0 OR author_is_bot IS NULL)
-        """
-        
-        params = [channel_name]
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += """
-        AND content IS NOT NULL
+        WHERE {where_clause}
         GROUP BY author_name, author_display_name
         ORDER BY message_count DESC 
         LIMIT ?
@@ -162,24 +213,20 @@ class ChannelRepository:
         Returns:
             List of hourly activity data
         """
+        where_clause, params = self._build_base_conditions(
+            channel_name=channel_name, 
+            days=days, 
+            exclude_bots=True,
+            include_content_check=True
+        )
+        
         query = f"""
         SELECT 
             strftime('%H', timestamp) as hour,
             COUNT(*) as message_count
         FROM messages 
-        WHERE channel_name = ? AND {self.base_filter}
-        AND (author_is_bot = 0 OR author_is_bot IS NULL)
-        """
-        
-        params = [channel_name]
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += """
+        WHERE {where_clause}
         AND timestamp IS NOT NULL
-        AND content IS NOT NULL
         GROUP BY strftime('%H', timestamp)
         ORDER BY hour
         """
@@ -204,15 +251,18 @@ class ChannelRepository:
         Returns:
             List of channel names sorted alphabetically
         """
+        where_clause, params = self._build_base_conditions(include_content_check=True)
+        
         query = f"""
         SELECT DISTINCT channel_name
         FROM messages 
-        WHERE {self.base_filter} AND content IS NOT NULL
+        WHERE {where_clause}
         ORDER BY channel_name
         LIMIT ?
         """
+        params.append(limit)
         
-        results = self.db_manager.execute_query(query, (limit,))
+        results = self.db_manager.execute_query(query, tuple(params))
         
         return [row['channel_name'] for row in results] if results else []
 
@@ -231,26 +281,17 @@ class ChannelRepository:
         Returns:
             List of channel statistics dictionaries
         """
+        select_clause = self._build_channel_stats_select(include_bot_stats=False)
+        where_clause, params = self._build_base_conditions(days=days, include_content_check=True)
+        
         query = f"""
         SELECT 
             channel_name,
-            COUNT(*) as message_count,
-            COUNT(DISTINCT author_name) as unique_users,
-            MIN(timestamp) as first_message,
-            MAX(timestamp) as last_message
+            {select_clause}
         FROM messages 
-        WHERE {self.base_filter} AND content IS NOT NULL
-        """
-        
-        params = []
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += """
+        WHERE {where_clause}
         GROUP BY channel_name
-        ORDER BY message_count DESC
+        ORDER BY total_messages DESC
         LIMIT ?
         """
         params.append(limit)
@@ -260,7 +301,7 @@ class ChannelRepository:
         return [
             {
                 'channel_name': row['channel_name'],
-                'message_count': row['message_count'],
+                'message_count': row['total_messages'],
                 'unique_users': row['unique_users'],
                 'first_message': row['first_message'],
                 'last_message': row['last_message']
@@ -283,23 +324,19 @@ class ChannelRepository:
         Returns:
             List of daily activity data
         """
+        where_clause, params = self._build_base_conditions(
+            channel_name=channel_name, 
+            days=days, 
+            include_content_check=True
+        )
+        
         query = f"""
         SELECT 
             DATE(timestamp) as date,
             COUNT(*) as message_count
         FROM messages 
-        WHERE channel_name = ? AND {self.base_filter}
-        """
-        
-        params = [channel_name]
-        
-        if days:
-            query += " AND timestamp >= datetime('now', '-' || ? || ' days')"
-            params.append(days)
-        
-        query += """
+        WHERE {where_clause}
         AND timestamp IS NOT NULL
-        AND content IS NOT NULL
         GROUP BY DATE(timestamp)
         ORDER BY date
         """
@@ -316,34 +353,53 @@ class ChannelRepository:
 
     # Existing async methods (keep for compatibility)
 
-    async def get_all_channels(self) -> List[Channel]:
+    def get_all_channels(self) -> List[Channel]:
         """Get all channels from the database."""
+        where_clause, params = self._build_base_conditions()
+        
         query = f"""
             SELECT DISTINCT channel_id, channel_name
             FROM messages 
-            WHERE {self.base_filter}
+            WHERE {where_clause}
             ORDER BY channel_name
         """
 
-        rows = await self.db_manager.execute_query(query)
+        rows = self.db_manager.execute_query(query, tuple(params))
         return [Channel.from_db_row(row) for row in rows]
 
-    async def get_channel_by_name(self, channel_name: str) -> Optional[Channel]:
+    def get_channel_by_name(self, channel_name: str) -> Optional[Channel]:
         """Get a specific channel by name."""
+        where_clause, params = self._build_base_conditions(channel_name=channel_name)
+        
         query = f"""
             SELECT DISTINCT channel_id, channel_name
             FROM messages 
-            WHERE channel_name = ? AND {self.base_filter}
+            WHERE {where_clause}
             LIMIT 1
         """
 
-        rows = await self.db_manager.execute_query(query, (channel_name,))
+        rows = self.db_manager.execute_query(query, tuple(params))
         return Channel.from_db_row(rows[0]) if rows else None
 
-    async def get_channel_statistics(
+    def get_channel_statistics_by_name(
         self, channel_name: str, days_back: int = 30
     ) -> Dict[str, Any]:
-        """Get detailed statistics for a channel."""
+        """
+        Get detailed statistics for a specific channel by name.
+        
+        Args:
+            channel_name: Channel name to analyze
+            days_back: Number of days to look back
+            
+        Returns:
+            Dictionary with channel statistics
+        """
+        where_clause, params = self._build_base_conditions(
+            channel_name=channel_name, 
+            days=days_back, 
+            include_content_check=True
+        )
+        
         query = f"""
             SELECT 
                 COUNT(*) as total_messages,
@@ -353,12 +409,10 @@ class ChannelRepository:
                 MIN(timestamp) as first_message,
                 MAX(timestamp) as last_message
             FROM messages 
-            WHERE channel_name = ? AND {self.base_filter}
-            AND timestamp >= datetime('now', '-{days_back} days')
-            AND content IS NOT NULL
+            WHERE {where_clause}
         """
 
-        row = await self.db_manager.execute_single(query, (channel_name,))
+        row = self.db_manager.execute_single(query, tuple(params))
 
         if not row:
             return {}
@@ -372,7 +426,7 @@ class ChannelRepository:
             "last_message": row[5],
         }
 
-    async def get_channel_daily_activity(
+    def get_channel_daily_activity(
         self, channel_name: str, days_back: int = 30
     ) -> List[tuple]:
         """Get daily activity data for a channel."""
@@ -392,13 +446,15 @@ class ChannelRepository:
             ORDER BY date
         """
 
-        rows = await self.db_manager.execute_query(query, (channel_name, threshold_date))
+        rows = self.db_manager.execute_query(query, (channel_name, threshold_date))
         return [(row["date"], row["message_count"]) for row in rows]
 
-    async def get_top_channels(
+    def get_top_channels(
         self, limit: int = 10, days_back: int = 30
     ) -> List[Dict[str, Any]]:
         """Get top channels by message count."""
+        where_clause, params = self._build_base_conditions(days=days_back, include_content_check=True)
+        
         query = f"""
             SELECT 
                 channel_name,
@@ -408,15 +464,14 @@ class ChannelRepository:
                 MIN(timestamp) as first_message,
                 MAX(timestamp) as last_message
             FROM messages 
-            WHERE {self.base_filter}
-            AND timestamp >= datetime('now', '-{days_back} days')
-            AND content IS NOT NULL
+            WHERE {where_clause}
             GROUP BY channel_name
             ORDER BY message_count DESC
             LIMIT ?
         """
+        params.append(limit)
 
-        rows = await self.db_manager.execute_query(query, (limit,))
+        rows = self.db_manager.execute_query(query, tuple(params))
         return [
             {
                 "channel_name": row["channel_name"],
@@ -429,13 +484,13 @@ class ChannelRepository:
             for row in rows
         ]
 
-    async def save_channel_members(self, messages_data: Dict[str, Any]) -> None:
+    def save_channel_members(self, messages_data: Dict[str, Any]) -> None:
         """Save channel members data to database"""
         if not messages_data:
             return
 
         # Clear existing channel members data to avoid stale data
-        await self.db_manager.execute_query("DELETE FROM channel_members")
+        self.db_manager.execute_query("DELETE FROM channel_members", fetch_one=False, fetch_all=False)
         logger.info("Cleared existing channel members data")
 
         # Extract all channel members from the data
@@ -483,15 +538,17 @@ class ChannelRepository:
                     for member in batch
                 ]
 
-                await self.db_manager.execute_many(query, values)
+                self.db_manager.execute_many(query, values)
                 logger.info(f"✅ Saved batch of {len(batch)} channel member records")
 
             except Exception as e:
                 logger.error(f"Error saving channel members batch: {str(e)}")
                 raise
 
-    async def get_channel_statistics(self, limit: int = 10) -> List[Channel]:
+    def get_channel_statistics_by_limit(self, limit: int = 10) -> List[Channel]:
         """Get channel statistics ordered by message count."""
+        where_clause, params = self._build_base_conditions()
+        
         query = f"""
             SELECT 
                 channel_id,
@@ -502,13 +559,14 @@ class ChannelRepository:
                 MIN(timestamp) as first_message,
                 MAX(timestamp) as last_message
             FROM messages
-            WHERE {self.base_filter}
+            WHERE {where_clause}
             GROUP BY channel_id, channel_name
             ORDER BY message_count DESC
             LIMIT ?
         """
+        params.append(limit)
 
-        rows = await self.db_manager.execute_query(query, (limit,))
+        rows = self.db_manager.execute_query(query, tuple(params))
         return [
             Channel(
                 channel_id=row[0],
@@ -522,7 +580,7 @@ class ChannelRepository:
             for row in rows
         ]
 
-    async def get_channel_list(self, base_filter: str = None) -> list:
+    def get_channel_list(self, base_filter: str = None) -> list:
         """Get list of all channel names, ordered by activity."""
         filter_clause = base_filter or self.base_filter
         query = f"""
@@ -536,27 +594,29 @@ class ChannelRepository:
             GROUP BY channel_name
             ORDER BY message_count DESC, channel_name
         """
-        rows = await self.db_manager.execute_query(query)
+        rows = self.db_manager.execute_query(query)
         return [row["channel_name"] for row in rows if row["channel_name"]]
 
     def get_channel_id_by_name(self, channel_name: str) -> Optional[str]:
         """Get channel_id by channel_name."""
+        where_clause, params = self._build_base_conditions(channel_name=channel_name)
+        
         query = f"""
             SELECT DISTINCT channel_id 
             FROM messages 
-            WHERE channel_name = ? AND {self.base_filter}
+            WHERE {where_clause}
             LIMIT 1
         """
 
-        result = self.db_manager.execute_query(query, (channel_name,), fetch_one=True)
+        result = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
         return result["channel_id"] if result else None
 
     def get_distinct_channel_count(self) -> int:
         """Get count of distinct channels."""
-        query = (
-            f"SELECT COUNT(DISTINCT channel_id) FROM messages WHERE {self.base_filter}"
-        )
-        result = self.db_manager.execute_query(query, fetch_one=True)
+        where_clause, params = self._build_base_conditions()
+        
+        query = f"SELECT COUNT(DISTINCT channel_id) FROM messages WHERE {where_clause}"
+        result = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
         return result[0] if result else 0
 
     def get_channel_human_member_count(self, channel_name: str) -> int:
@@ -569,14 +629,92 @@ class ChannelRepository:
         Returns:
             Total number of unique human members
         """
-        query = """
+        where_clause, params = self._build_base_conditions(
+            channel_name=channel_name, 
+            exclude_bots=True,
+            include_content_check=True
+        )
+        
+        query = f"""
         SELECT COUNT(DISTINCT author_name) as total_human_members
         FROM messages 
-        WHERE channel_name = ?
-        AND (author_is_bot = 0 OR author_is_bot IS NULL)
-        AND content IS NOT NULL
+        WHERE {where_clause}
         """
         
-        result = self.db_manager.execute_query(query, (channel_name,), fetch_one=True)
+        result = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
         
         return result['total_human_members'] if result else 0
+
+    def get_total_human_member_count(self) -> int:
+        """
+        Get the total number of unique human members across all channels.
+        
+        Returns:
+            Total number of unique human members across all channels
+        """
+        where_clause, params = self._build_base_conditions(
+            exclude_bots=True,
+            include_content_check=True
+        )
+        
+        query = f"""
+        SELECT COUNT(DISTINCT author_name) as total_human_members
+        FROM messages 
+        WHERE {where_clause}
+        """
+        
+        result = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
+        
+        return result['total_human_members'] if result else 0
+
+    def clear_all_channels(self):
+        """Delete all channel-related data from the database."""
+        # If there is a channels table, clear it. Otherwise, clear channel data from messages.
+        try:
+            # Try to delete from a channels table if it exists
+            self.db_manager.execute_query("DELETE FROM channels", fetch_one=False, fetch_all=False)
+        except Exception:
+            # If no channels table, clear channel data from messages table
+            self.db_manager.execute_query("UPDATE messages SET channel_id=NULL, channel_name=NULL WHERE channel_id IS NOT NULL", fetch_one=False, fetch_all=False)
+        # Optionally clear channel_members if present
+        try:
+            self.db_manager.execute_query("DELETE FROM channel_members", fetch_one=False, fetch_all=False)
+        except Exception:
+            pass
+
+    def get_all_channels_with_activity(self, days: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get all channels with their message counts for a specific period.
+        Includes channels with 0 messages.
+        
+        Args:
+            days: Number of days to look back (None = all time)
+            
+        Returns:
+            List of channel statistics dictionaries
+        """
+        select_clause = self._build_channel_stats_select(include_bot_stats=False)
+        where_clause, params = self._build_base_conditions(days=days, include_content_check=True)
+        
+        query = f"""
+        SELECT 
+            channel_name,
+            {select_clause}
+        FROM messages 
+        WHERE {where_clause}
+        GROUP BY channel_name
+        ORDER BY total_messages DESC
+        """
+        
+        results = self.db_manager.execute_query(query, tuple(params))
+        
+        return [
+            {
+                'channel_name': row['channel_name'],
+                'message_count': row['total_messages'],
+                'unique_users': row['unique_users'],
+                'first_message': row['first_message'],
+                'last_message': row['last_message']
+            }
+            for row in results
+        ] if results else []

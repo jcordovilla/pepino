@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from collections import Counter, defaultdict
+import math
 
 from pepino.analysis.helpers.data_facade import AnalysisDataFacade
 
@@ -78,19 +79,12 @@ class WeeklyUserAnalyzer:
             # Get messages for the previous week period
             # We need to get messages from a wider range to ensure we capture the previous week
             max_days_back = max(days_back + 7, 14)  # At least 14 days to ensure we get previous week
-            prev_messages = self.data_facade.message_repository.get_channel_messages(
-                channel_name, days_back=max_days_back, limit=10000
+            prev_messages = self.data_facade.message_repository.get_messages_by_date_range(
+                channel_name, prev_week_start, prev_week_end, limit=10000
             )
             
-            # Filter to just the previous week period
-            prev_period_messages = []
-            for m in prev_messages:
-                timestamp = to_utc(m['timestamp'])
-                if prev_week_start <= timestamp < prev_week_end:
-                    prev_period_messages.append(m)
-            
             # Analyze user patterns
-            user_stats = self._analyze_user_statistics(current_messages, prev_period_messages)
+            user_stats = self._analyze_user_statistics(current_messages, prev_messages)
             top_contributors = self._get_top_contributors(current_messages)
             participation_distribution = self._analyze_participation_distribution(current_messages)
             lost_interest_users = self._get_lost_interest_users(channel_name, days_back, end_date)
@@ -155,19 +149,12 @@ class WeeklyUserAnalyzer:
             
             # Get messages for the previous week period across all channels
             max_days_back = max(days_back + 7, 14)  # At least 14 days to ensure we get previous week
-            prev_messages = self.data_facade.message_repository.get_recent_messages(
-                limit=10000, days_back=max_days_back
+            prev_messages = self.data_facade.message_repository.get_messages_by_date_range(
+                None, prev_week_start, prev_week_end, limit=10000
             )
             
-            # Filter to just the previous week period
-            prev_period_messages = []
-            for m in prev_messages:
-                timestamp = to_utc(m['timestamp'])
-                if prev_week_start <= timestamp < prev_week_end:
-                    prev_period_messages.append(m)
-            
             # Analyze user patterns
-            user_stats = self._analyze_user_statistics(current_messages, prev_period_messages)
+            user_stats = self._analyze_user_statistics(current_messages, prev_messages)
             top_contributors = self._get_top_contributors(current_messages)
             participation_distribution = self._analyze_participation_distribution(current_messages)
             lost_interest_users = self._get_lost_interest_users_all_channels(days_back, end_date)
@@ -213,10 +200,10 @@ class WeeklyUserAnalyzer:
                 trend_direction = "unchanged"
         else:
             human_user_change_pct = (human_user_change / len(prev_human_users) * 100)
-            # Determine trend direction
-            if human_user_change_pct > 10:
+            # Determine trend direction - any change should be reflected
+            if human_user_change_pct > 0:
                 trend_direction = "increasing"
-            elif human_user_change_pct < -10:
+            elif human_user_change_pct < 0:
                 trend_direction = "decreasing"
             else:
                 trend_direction = "unchanged"
@@ -278,25 +265,28 @@ class WeeklyUserAnalyzer:
                 user_message_counts[user_id] += 1
         
         total_messages = len(human_messages)
+        total_contributors = len(user_message_counts)
         
-        # Get top 5 contributors
-        top_5_contributors = user_message_counts.most_common(5)
-        top_5_message_count = sum(count for _, count in top_5_contributors)
-        top_5_percentage = (top_5_message_count / total_messages * 100) if total_messages > 0 else 0
+        # Calculate top 5% contributors (rounded up, at least 1)
+        top_percent = 0.05
+        top_n = max(1, math.ceil(total_contributors * top_percent))
+        top_contributors = user_message_counts.most_common(top_n)
+        top_contributors_message_count = sum(count for _, count in top_contributors)
+        top_contributors_percentage = (top_contributors_message_count / total_messages * 100) if total_messages > 0 else 0
         
-        # Determine distribution type
-        if top_5_percentage > 70:
+        # Determine distribution type based on top 5% share
+        if top_contributors_percentage > 25:
             distribution = "Poorly"
-        elif top_5_percentage > 50:
-            distribution = "Evenly"
+        elif top_contributors_percentage > 10:
+            distribution = "Moderately"
         else:
             distribution = "Well"
         
         return {
             'distribution': distribution,
-            'top_contributors_percentage': top_5_percentage,
-            'top_contributors_count': len(top_5_contributors),
-            'total_contributors': len(user_message_counts)
+            'top_contributors_percentage': top_contributors_percentage,
+            'top_contributors_count': top_n,
+            'total_contributors': total_contributors
         }
     
     def _get_lost_interest_users(self, channel_name: str, days_back: int = 7, end_date: Optional[datetime] = None) -> List[Dict]:

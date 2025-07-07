@@ -21,6 +21,7 @@ A powerful Discord analytics system that extracts deep insights from server acti
 - **Repository Pattern**: Clean architecture with 95%+ test coverage
 - **Async Performance**: Built for scale with asyncio throughout
 - **Professional Logging**: Structured logs with rotation and monitoring
+- **Data Operations**: Separate sync and export operations with multiple formats
 
 ## 🚀 Quick Start
 
@@ -98,6 +99,13 @@ make run
 # Data management
 pepino sync status              # Check data freshness
 pepino sync run                 # Smart sync (only if needed)
+pepino sync clear --confirm     # Clear database for fresh start
+
+# Data export
+pepino export-data --table messages --format csv --output data.csv
+pepino data tables              # List available tables
+pepino data schema messages     # Show table schema
+pepino data export users --format json  # Export specific table
 
 # Analysis (automation-friendly)
 pepino analyze users --limit 20 --format json
@@ -151,6 +159,7 @@ make dev                       # Format + fast tests
 ## What's New
 
 ### Latest Updates
+- **Data Operations Package**: Separate sync and export operations with multiple formats (CSV, JSON, Excel)
 - **Smart Sync**: Only syncs when data is stale, with progress feedback
 - **Enhanced Charts**: User activity timelines and channel contributor visualizations
 - **Repository Pattern**: Clean architecture with comprehensive test coverage

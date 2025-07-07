@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Database Configuration
     database_url: str = Field(
-        default="sqlite:///data/discord_messages.db", description="Database URL"
+        default="sqlite:///discord_messages.db", description="Database URL"
     )
     db_path: str = Field(
         default="discord_messages.db", description="SQLite database path"

@@ -57,7 +57,7 @@ print(f"Syncing messages from {channel.name}")
 **After**: Professional logging infrastructure (`src/pepino/logging_config.py`)
 ```python
 # Structured logging with rotation and colored output
-logger = get_logger("pepino.discord.sync")
+logger = get_logger("pepino.data_operations.discord_sync")
 logger.info(f"Starting guild sync: {guild_name} (ID: {guild_id})")
 ```
 

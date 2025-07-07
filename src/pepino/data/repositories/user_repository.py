@@ -521,7 +521,7 @@ class UserRepository:
             if row["author_name"]
         ]
 
-    async def get_user_statistics_by_id(
+    def get_user_statistics_by_id(
         self, author_id: str
     ) -> Optional[Dict[str, Any]]:
         """Get comprehensive user statistics by author ID."""
@@ -538,7 +538,7 @@ class UserRepository:
             AND content IS NOT NULL
         """
 
-        result = await self.db_manager.execute_single(query, (author_id,))
+        result = self.db_manager.execute_single(query, (author_id,))
 
         if result and result[0] > 0:
             return {
@@ -551,7 +551,7 @@ class UserRepository:
             }
         return None
 
-    async def get_user_content_sample(
+    def get_user_content_sample(
         self, author_id: str, limit: int = 100
     ) -> List[str]:
         """Get sample content from a user for concept analysis."""
@@ -565,12 +565,12 @@ class UserRepository:
             LIMIT ?
         """
 
-        results = await self.db_manager.execute_query(query, (author_id, limit))
+        results = self.db_manager.execute_query(query, (author_id, limit))
         return [row["content"] for row in results if row["content"]]
 
-    async def find_user_by_name(self, user_name: str) -> Optional[Dict[str, Any]]:
+    def find_user_by_name(self, user_name: str) -> Optional[Dict[str, Any]]:
         """Find user by name or display name (compatibility alias)."""
-        user = await self.get_user_by_name(user_name)
+        user = self.get_user_by_name(user_name)
         if user:
             return {
                 "author_id": user.author_id,
@@ -578,3 +578,13 @@ class UserRepository:
                 "author_name": user.author_name,
             }
         return None
+
+    def clear_all_users(self):
+        """Delete all user-related data from the database."""
+        # Clear user data from messages table by setting user fields to NULL
+        self.db_manager.execute_query("UPDATE messages SET author_id=NULL, author_name=NULL, author_display_name=NULL WHERE author_id IS NOT NULL", fetch_one=False, fetch_all=False)
+        # Optionally clear any user-specific tables if they exist
+        try:
+            self.db_manager.execute_query("DELETE FROM users", fetch_one=False, fetch_all=False)
+        except Exception:
+            pass
