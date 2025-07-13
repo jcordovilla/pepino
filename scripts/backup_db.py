@@ -16,7 +16,7 @@ setup_cli_logging(verbose=True)
 logger = get_logger(__name__)
 
 def backup_database():
-    db_path = Path("data/discord_messages.db")
+    db_path = Path("discord_messages.db")
     backup_dir = Path("data/backups")
     backup_dir.mkdir(exist_ok=True)
     

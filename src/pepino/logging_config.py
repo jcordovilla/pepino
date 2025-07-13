@@ -89,7 +89,7 @@ def setup_logging(
         "handlers": {},
         "loggers": {
             "pepino": {
-                "level": settings.log_level,
+                "level": settings.logging_level,
                 "handlers": [],
                 "propagate": False,
             },
@@ -109,7 +109,7 @@ def setup_logging(
     if console_output:
         config["handlers"]["console"] = {
             "class": "logging.StreamHandler",
-            "level": settings.log_level,
+            "level": settings.logging_level,
             "formatter": "console",
             "stream": "ext://sys.stdout",
         }
@@ -161,7 +161,7 @@ def setup_logging(
 
     # Log startup message
     logger = logging.getLogger("pepino.logging")
-    logger.info(f"Logging initialized - Level: {settings.log_level}")
+    logger.info(f"Logging initialized - Level: {settings.logging_level}")
     if file_output:
         logger.info(f"Log files: {logs_dir.absolute()}")
 
@@ -229,9 +229,9 @@ def setup_cli_logging(verbose: bool = False) -> None:
     
     # Adjust log level based on verbosity
     if verbose:
-        settings.log_level = "DEBUG"
+        settings.logging_level = "DEBUG"
     else:
-        settings.log_level = "INFO"
+        settings.logging_level = "INFO"
     
     # Set up logging with console output only for CLI
     setup_logging(
@@ -275,5 +275,6 @@ def setup_bot_logging() -> None:
     logging.getLogger('discord').setLevel(logging.WARNING)
     logging.getLogger('discord.http').setLevel(logging.WARNING)
     
-    print(f"Logging initialized - Level: DEBUG")
-    print(f"Log files: {log_dir}") 
+    logger = logging.getLogger("pepino.logging")
+    logger.info(f"Logging initialized - Level: DEBUG")
+    logger.info(f"Log files: {log_dir}") 

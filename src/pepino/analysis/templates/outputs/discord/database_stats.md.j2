@@ -1,0 +1,88 @@
+# 🗄️ Database Statistics Report
+
+## 📊 Database Information
+{% if database_info %}
+{% if database_info.file_path %}
+**File Path:** {{ database_info.file_path }}
+{% endif %}
+**File Size:** {{ database_info.size_mb | round(2) }} MB
+{% if database_info.last_modified %}
+**Last Modified:** {{ database_info.last_modified | format_timestamp }}
+{% endif %}
+{% endif %}
+
+## 📋 Table Statistics
+{% if table_stats %}
+{% for table in table_stats %}
+### {{ table.table_name | title }}
+- **Row Count:** {{ table.row_count | format_number }}
+- **Size:** {{ table.size_mb | round(2) }} MB
+{% if table.last_insert %}
+- **Last Insert:** {{ table.last_insert | format_timestamp }}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+
+## 📈 Data Summary
+{% if summary %}
+{% if summary.total_messages %}
+- **Total Messages:** {{ summary.total_messages | format_number }}
+{% endif %}
+{% if summary.total_users %}
+- **Total Users:** {{ summary.total_users | format_number }}
+{% endif %}
+{% if summary.total_channels %}
+- **Total Channels:** {{ summary.total_channels | format_number }}
+{% endif %}
+{% if summary.date_range %}
+- **Date Range:** {{ summary.date_range.start | format_timestamp }} to {{ summary.date_range.end | format_timestamp }}
+{% endif %}
+{% if summary.most_active_channel %}
+- **Most Active Channel:** {{ summary.most_active_channel.name }} ({{ summary.most_active_channel.message_count | format_number }} messages)
+{% endif %}
+{% if summary.most_active_user %}
+- **Most Active User:** {{ summary.most_active_user.name }} ({{ summary.most_active_user.message_count | format_number }} messages)
+{% endif %}
+{% endif %}
+
+## 🔍 Health Metrics
+{% if summary %}
+{% if summary.avg_messages_per_day %}
+- **Average Messages per Day:** {{ summary.avg_messages_per_day | round(1) }}
+{% endif %}
+{% if summary.avg_messages_per_user %}
+- **Average Messages per User:** {{ summary.avg_messages_per_user | round(1) }}
+{% endif %}
+{% if summary.avg_messages_per_channel %}
+- **Average Messages per Channel:** {{ summary.avg_messages_per_channel | round(1) }}
+{% endif %}
+{% endif %}
+
+## 🏥 Database Health Status
+{% if database_info.size_mb > 0 %}
+✅ **Database file exists and is accessible**
+{% else %}
+❌ **Database file not found or inaccessible**
+{% endif %}
+
+{% if summary.total_messages > 0 %}
+✅ **Messages data available**
+{% else %}
+⚠️ **No messages found in database**
+{% endif %}
+
+{% if summary.total_users > 0 %}
+✅ **User data available**
+{% else %}
+⚠️ **No user data found**
+{% endif %}
+
+{% if summary.total_channels > 0 %}
+✅ **Channel data available**
+{% else %}
+⚠️ **No channel data found**
+{% endif %}
+
+---
+*Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}* 

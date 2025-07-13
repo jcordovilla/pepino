@@ -68,6 +68,9 @@ commits_since_*.json
 *_report.txt
 
 # Database backups and archives
+/data/
+/data/backups/
+/data/exports/
 archive/*.db
 archive/*.db-*
 archive/*.backup
@@ -100,13 +103,6 @@ htmlcov/
 
 # MyPy
 .mypy_cache/
-
-# sqllite dbs - DEPRECATED (covered above in Database section)
-# *.db
-# *.db-*
-
-# temp folder
-temp/
 
 # ML models and caches
 *.pkl

@@ -2,7 +2,7 @@
 Analysis response models for analyzer outputs.
 """
 
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union, Dict, Any
 
 from pydantic import BaseModel
 
@@ -326,6 +326,11 @@ class TemporalPatterns(BaseModel):
     trend_timeframe: str = "over analysis period"
     peak_user_count: int
     total_periods: int
+    # Enhanced pattern analysis fields for template compatibility
+    peak_hours: List[str] = []
+    peak_days: List[str] = []
+    quiet_periods: List[str] = []
+    trends: List[str] = []
 
 
 class TemporalAnalysisResponse(AnalysisResponseBase):
@@ -336,6 +341,95 @@ class TemporalAnalysisResponse(AnalysisResponseBase):
     temporal_data: List[TemporalDataPoint]
     patterns: TemporalPatterns
     capabilities_used: List[str] = ["temporal_analysis", "activity_patterns"]
+
+
+# Server Overview Models
+class TopChannel(BaseModel):
+    """Top channel data for server overview."""
+    
+    name: str
+    message_count: int
+
+
+class TopContributor(BaseModel):
+    """Top contributor data for server overview."""
+    
+    username: str
+    message_count: int
+
+
+class ActivityTrend(BaseModel):
+    """Activity trend data point."""
+    
+    date: str
+    message_count: int
+
+
+class ServerOverviewData(BaseModel):
+    """Server overview analysis data."""
+    
+    total_messages: int
+    total_users: int
+    total_channels: int
+    active_users: int
+    messages_per_day: float
+    messages_per_user: float
+    top_channels: List[TopChannel] = []
+    top_contributors: List[TopContributor] = []
+    activity_trends: List[ActivityTrend] = []
+    analysis_period_days: int
+
+
+class ServerOverviewResponse(AnalysisResponseBase):
+    """Response from ServerOverviewAnalyzer.analyze()."""
+
+    success: bool = True
+    plugin: str = "ServerOverviewAnalyzer"
+    data: ServerOverviewData
+    capabilities_used: List[str] = ["server_overview", "server_stats"]
+
+
+# Database Analysis Models
+class DatabaseInfo(BaseModel):
+    """Database file information."""
+    
+    file_path: str
+    size_mb: float
+    last_modified: Optional[str] = None
+
+
+class TableStatistics(BaseModel):
+    """Statistics for a database table."""
+    
+    table_name: str
+    row_count: int
+    size_mb: float
+    last_insert: Optional[str] = None
+
+
+class DatabaseSummary(BaseModel):
+    """Database summary statistics."""
+    
+    total_messages: int
+    total_users: int
+    total_channels: int
+    date_range: Optional[Dict[str, str]] = None
+    most_active_channel: Optional[Dict[str, Any]] = None
+    most_active_user: Optional[Dict[str, Any]] = None
+    avg_messages_per_day: Optional[float] = None
+    avg_messages_per_user: Optional[float] = None
+    avg_messages_per_channel: Optional[float] = None
+
+
+class DatabaseAnalysisResponse(AnalysisResponseBase):
+    """Response from DatabaseAnalyzer.analyze()."""
+
+    success: bool = True
+    plugin: str = "DatabaseAnalyzer"
+    database_info: DatabaseInfo
+    table_stats: List[TableStatistics]
+    summary: DatabaseSummary
+    capabilities_used: List[str] = ["database_analysis", "database_stats"]
 
 
 # Union type for all possible analyzer responses

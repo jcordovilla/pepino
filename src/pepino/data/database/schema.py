@@ -242,8 +242,7 @@ def init_database(db_path: str = "data/discord_messages.db") -> None:
             active_users INTEGER,
             avg_message_length FLOAT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (channel_id, date),
-            FOREIGN KEY (channel_id) REFERENCES messages(channel_id)
+            PRIMARY KEY (channel_id, date)
         )
     """
     )

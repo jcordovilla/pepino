@@ -1,0 +1,81 @@
+# 👤 User Analysis: {{ user_info.display_name }}
+
+## 📊 Statistical Summary
+- **Total Messages:** {{ statistics.total_messages | format_number }}
+- **Average Message Length:** {{ statistics.avg_message_length | round(1) }}
+- **Active Days:** {{ statistics.active_days }}
+- **Unique Channels:** {{ statistics.unique_channels }}
+{% if statistics.first_message %}- **First Message:** {{ statistics.first_message }}{% endif %}
+{% if statistics.last_message %}- **Last Message:** {{ statistics.last_message }}{% endif %}
+
+## 📈 Channel Activity
+{% for channel in channel_activity %}
+### {{ channel.channel_name }}:
+- **Messages:** {{ channel.message_count | format_number }}
+- **Percentage:** {{ (channel.message_count / statistics.total_messages * 100) | round(1) }}%
+{% if channel.first_message_date %}- **First:** {{ channel.first_message_date }}{% endif %}
+{% if channel.last_message_date %}- **Last:** {{ channel.last_message_date }}{% endif %}
+
+{% endfor %}
+
+## ⏰ Activity Patterns
+{% if time_patterns %}
+{% if time_patterns.hourly_activity %}
+**Hourly Activity:**
+{% for hour_data in time_patterns.hourly_activity %}
+- {{ hour_data.hour }}: {{ hour_data.message_count }} messages
+{% endfor %}
+{% endif %}
+{% if time_patterns.daily_activity %}
+**Daily Activity:**
+{% for day_data in time_patterns.daily_activity %}
+- {{ day_data.day }}: {{ day_data.message_count }} messages
+{% endfor %}
+{% endif %}
+{% else %}
+*No time pattern data available.*
+{% endif %}
+
+## 🧠 Content Analysis
+{% if messages %}
+**Recent Message Sentiment Analysis:**
+{% set sentiment_results = analyze_messages_sentiment(messages) %}
+{% for result in sentiment_results[:5] %}
+- **{{ result.sentiment | title }}:** "{{ result.content }}"
+{% endfor %}
+
+{% set concepts = extract_message_concepts(messages) %}
+{% if concepts %}
+**Key Concepts (from recent messages):**
+{% for concept in concepts[:10] %}
+- {{ concept.concept }} ({{ concept.frequency }} mentions)
+{% endfor %}
+{% endif %}
+{% endif %}
+
+## 📝 Summary
+{{ summary }}
+
+{% if statistics.total_messages > 0 %}
+## 🎯 User Profile:
+{% if statistics.avg_messages_per_day is defined and statistics.avg_messages_per_day > 10 %}
+- **Very Active User**
+{% elif statistics.avg_messages_per_day is defined and statistics.avg_messages_per_day > 5 %}
+- **Active User**
+{% elif statistics.avg_messages_per_day is defined and statistics.avg_messages_per_day > 2 %}
+- **Moderate User**
+{% else %}
+- **Occasional User**
+{% endif %}
+
+{% if time_patterns.peak_activity_hour %}
+- **Peak activity at {{ time_patterns.peak_activity_hour }}:00**
+{% endif %}
+
+{% if summary.activity_level %}- **Activity Level:** {{ summary.activity_level }}{% endif %}
+{% if summary.engagement_score %}- **Engagement Score:** {{ summary.engagement_score | round(1) }}{% endif %}
+{% if summary.primary_channels %}- **Primary Channels:** {{ summary.primary_channels | join(", ") }}{% endif %}
+{% endif %}
+
+---
+*Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}* 

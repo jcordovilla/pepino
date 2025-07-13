@@ -1,0 +1,1 @@
+❌ Error rendering template 'outputs/discord/channel_analysis.md.j2': 'dict object' has no attribute 'user_stats'

@@ -1,11 +1,7 @@
 """
-Sync operation models for Discord synchronization.
-
-These models are moved to the data layer to avoid circular imports
-between repositories and discord modules.
+Sync operation models for sync repository Discord synchronization operations.
 """
 
-from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field

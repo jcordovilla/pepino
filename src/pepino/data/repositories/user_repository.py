@@ -3,8 +3,6 @@ User repository for data access operations.
 Provides centralized data access for user-related operations following the persistence facade pattern.
 """
 
-import logging
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from ...config import settings
@@ -31,7 +29,7 @@ class UserRepository:
             db_manager: Database manager instance
         """
         self.db_manager = db_manager
-        self.base_filter = settings.base_filter.strip()
+        self.base_filter = settings.analysis_base_filter_sql.strip()
 
     # Sync methods for the new architecture
 
@@ -631,7 +629,7 @@ class UserRepository:
         limit: int = 10,
         days_back: Optional[int] = None,
         channel_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[User]:
         """Get top users by message count."""
         query = f"""
             SELECT 
@@ -641,11 +639,15 @@ class UserRepository:
                 COUNT(*) as message_count,
                 COUNT(DISTINCT channel_name) as channels_active,
                 AVG(LENGTH(content)) as avg_message_length,
-                MIN(timestamp) as first_message,
-                MAX(timestamp) as last_message
+                MIN(timestamp) as first_message_date,
+                MAX(timestamp) as last_message_date
             FROM messages 
             WHERE {self.base_filter}
             AND content IS NOT NULL
+            AND author_id IS NOT NULL
+            AND author_name IS NOT NULL
+            AND author_id != ''
+            AND author_name != ''
         """
 
         params = []
@@ -666,19 +668,10 @@ class UserRepository:
         params.append(limit)
 
         rows = self.db_manager.execute_query(query, tuple(params))
-        return [
-            {
-                "author_id": row["author_id"],
-                "author_name": row["author_name"],
-                "author_display_name": row["author_display_name"],
-                "message_count": row["message_count"],
-                "channels_active": row["channels_active"],
-                "avg_message_length": row["avg_message_length"] or 0.0,
-                "first_message": row["first_message"],
-                "last_message": row["last_message"],
-            }
-            for row in rows
-        ]
+        # Filter out rows with None author_id or author_name
+        filtered_rows = [row for row in rows if row['author_id'] is not None and row['author_name'] is not None]
+        # Cast author_id and author_name to strings
+        return [User.from_db_row({**dict(row), 'author_id': str(row['author_id']), 'author_name': str(row['author_name'])}) for row in filtered_rows]
 
     def get_user_daily_activity(
         self, author_id: str, days_back: int = 30
@@ -713,8 +706,8 @@ class UserRepository:
                 COUNT(*) as message_count,
                 COUNT(DISTINCT channel_name) as channels_active,
                 AVG(LENGTH(content)) as avg_message_length,
-                MIN(timestamp) as first_message,
-                MAX(timestamp) as last_message
+                MIN(timestamp) as first_message_date,
+                MAX(timestamp) as last_message_date
             FROM messages
             WHERE {self.base_filter}
             AND content IS NOT NULL
@@ -724,19 +717,7 @@ class UserRepository:
         """
 
         rows = self.db_manager.execute_query(query, (limit,))
-        return [
-            User(
-                author_id=row["author_id"],
-                author_name=row["author_name"],
-                author_display_name=row["author_display_name"],
-                message_count=row["message_count"],
-                channels_active=row["channels_active"],
-                avg_message_length=row["avg_message_length"] or 0.0,
-                first_message=row["first_message"],
-                last_message=row["last_message"],
-            )
-            for row in rows
-        ]
+        return [User.from_db_row(row) for row in rows]
 
     def get_user_by_name(self, user_name: str) -> Optional[User]:
         """Get a specific user by name (either author_name or display_name)."""
@@ -797,6 +778,7 @@ class UserRepository:
         filter_clause = base_filter or self.base_filter
         query = f"""
             SELECT 
+                author_id,
                 author_name,
                 author_display_name,
                 COUNT(*) as message_count
@@ -804,21 +786,22 @@ class UserRepository:
             WHERE author_name IS NOT NULL 
                 AND author_name != ''
                 AND {filter_clause}
-            GROUP BY author_name, author_display_name
+            GROUP BY author_id, author_name, author_display_name
             ORDER BY message_count DESC, author_name
         """
         rows = self.db_manager.execute_query(query)
         return [
             {
-                "author_name": row["author_name"],
+                "id": row["author_id"],
+                "username": row["author_name"],
                 "display_name": row["author_display_name"] or row["author_name"],
                 "message_count": str(row["message_count"]),
             }
             for row in rows
-            if row["author_name"]
+            if row["author_name"] and row["author_id"]
         ]
 
-    async def get_user_statistics_by_id(
+    def get_user_statistics_by_id(
         self, author_id: str
     ) -> Optional[Dict[str, Any]]:
         """Get comprehensive user statistics by author ID."""
@@ -835,20 +818,26 @@ class UserRepository:
             AND content IS NOT NULL
         """
 
-        result = await self.db_manager.execute_single(query, (author_id,))
+        result = self.db_manager.execute_query(query, (author_id,), fetch_one=True)
 
-        if result and result[0] > 0:
+        # Handle case where fetch_one=True returns a list with one dict
+        if isinstance(result, list) and len(result) > 0:
+            result = result[0]
+        elif not isinstance(result, dict):
+            return None
+
+        if result and result.get("total_messages", 0) > 0:
             return {
-                "total_messages": result[0],
-                "channels_active": result[1],
-                "avg_message_length": float(result[2]) if result[2] else 0.0,
-                "active_days": result[3],
-                "first_message": result[4],
-                "last_message": result[5],
+                "total_messages": result.get("total_messages", 0),
+                "channels_active": result.get("channels_active", 0),
+                "avg_message_length": float(result.get("avg_message_length", 0)) if result.get("avg_message_length") else 0.0,
+                "active_days": result.get("active_days", 0),
+                "first_message": result.get("first_message"),
+                "last_message": result.get("last_message"),
             }
         return None
 
-    async def get_user_content_sample(
+    def get_user_content_sample(
         self, author_id: str, limit: int = 100
     ) -> List[str]:
         """Get sample content from a user for concept analysis."""
@@ -862,16 +851,32 @@ class UserRepository:
             LIMIT ?
         """
 
-        results = await self.db_manager.execute_query(query, (author_id, limit))
+        results = self.db_manager.execute_query(query, (author_id, limit))
         return [row["content"] for row in results if row["content"]]
 
-    async def find_user_by_name(self, user_name: str) -> Optional[Dict[str, Any]]:
+    def find_user_by_name(self, user_name: str) -> Optional[Dict[str, Any]]:
         """Find user by name or display name (compatibility alias)."""
-        user = await self.get_user_by_name(user_name)
+        user = self.get_user_by_name(user_name)
         if user:
             return {
                 "author_id": user.author_id,
-                "display_name": user.author_display_name,
+                "author_display_name": user.author_display_name,
                 "author_name": user.author_name,
             }
         return None
+
+    def clear_all_users(self):
+        """Delete all user-related data from the database."""
+        # Clear user data from messages table by setting user fields to NULL
+        self.db_manager.execute_query("UPDATE messages SET author_id=NULL, author_name=NULL, author_display_name=NULL WHERE author_id IS NOT NULL", fetch_one=False, fetch_all=False)
+        # Optionally clear any user-specific tables if they exist
+        try:
+            self.db_manager.execute_query("DELETE FROM users", fetch_one=False, fetch_all=False)
+        except Exception:
+            pass
+
+    def get_total_user_count(self) -> int:
+        """Get total count of users."""
+        query = f"SELECT COUNT(DISTINCT author_id) FROM messages WHERE {self.base_filter}"
+        result = self.db_manager.execute_query(query, fetch_one=True)
+        return result["COUNT(DISTINCT author_id)"] if result else 0

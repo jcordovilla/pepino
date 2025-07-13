@@ -1,0 +1,39 @@
+🏠 Server Overview Analysis{% if analysis_period_days %} (Last {{ analysis_period_days }} days){% else %} (All Time){% endif %}
+{{ "=" * 60 }}
+
+📊 Server Statistics
+{{ "-" * 30 }}
+• Total Messages: {{ total_messages | format_number }}
+• Total Users: {{ total_users | format_number }}
+• Active Users: {{ active_users | format_number }}
+• Total Channels: {{ total_channels | format_number }}
+• Messages per Day: {{ messages_per_day | round(1) }}
+• Messages per User: {{ messages_per_user | round(1) }}
+
+{% if top_channels and top_channels | length > 0 %}
+📺 Top Channels
+{{ "-" * 30 }}
+{% for channel in top_channels %}
+{{ loop.index }}. #{{ channel.name }} - {{ channel.message_count | format_number }} messages
+{% endfor %}
+
+{% endif %}
+{% if top_contributors and top_contributors | length > 0 %}
+👥 Top Contributors
+{{ "-" * 30 }}
+{% for contributor in top_contributors %}
+{{ loop.index }}. {{ contributor.username }} - {{ contributor.message_count | format_number }} messages
+{% endfor %}
+
+{% endif %}
+{% if activity_trends and activity_trends | length > 0 %}
+📈 Recent Activity (Last 7 Days)
+{{ "-" * 30 }}
+{% for trend in activity_trends %}
+• {{ trend.date }}: {{ trend.message_count | format_number }} messages
+{% endfor %}
+
+{% endif %}
+{{ "=" * 60 }}
+Server analysis powered by Pepino Analytics
+Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }} 

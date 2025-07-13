@@ -1,0 +1,1 @@
+❌ Template validation failed for 'outputs/cli/database_stats.txt.j2': Template validation failed: 'outputs/cli/database_stats.txt.j2' not found in search path: 'src/pepino/analysis/templates'

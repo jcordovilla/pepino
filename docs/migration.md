@@ -57,7 +57,7 @@ print(f"Syncing messages from {channel.name}")
 **After**: Professional logging infrastructure (`src/pepino/logging_config.py`)
 ```python
 # Structured logging with rotation and colored output
-logger = get_logger("pepino.discord.sync")
+logger = get_logger("pepino.data_operations.discord_sync")
 logger.info(f"Starting guild sync: {guild_name} (ID: {guild_id})")
 ```
 
@@ -271,6 +271,32 @@ python -m pepino sync           # Data synchronization
 | **mypy** | Type checking | Strict mode |
 | **flake8** | Linting | Standard rules |
 | **pytest** | Testing | Coverage + async |
+
+## Recent OSS Documentation Improvements
+
+### Documentation Structure Standardization
+**Before**: Scattered documentation across multiple files
+**After**: Standard OSS project documentation structure
+
+#### New Documentation Files
+- **`LICENSE`** - MIT license for open source distribution
+- **`CONTRIBUTORS.md`** - Comprehensive development setup and contribution guidelines
+- **`CHANGELOG.md`** - Version history and change tracking
+- **`SECURITY.md`** - Security policy and vulnerability reporting
+- **`CODE_OF_CONDUCT.md`** - Community guidelines and standards
+- **`SUPPORT.md`** - Troubleshooting and getting help
+
+#### Consolidated Documentation
+- **`docs/development.md`** - Merged architecture, analysis services, and modularization
+- **`docs/testing.md`** - Enhanced with smoke tests and component testing
+- **`docs/migration.md`** - Historical migration reference (this document)
+
+#### Documentation Benefits
+- **Professional OSS Structure**: Standard documentation expected by contributors
+- **Clear Contribution Path**: Step-by-step development setup and guidelines
+- **Security Transparency**: Clear security policy and reporting procedures
+- **Community Standards**: Code of conduct for inclusive development
+- **Comprehensive Support**: Troubleshooting guides and help resources
 
 ## Breaking Changes
 

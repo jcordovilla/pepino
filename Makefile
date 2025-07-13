@@ -60,6 +60,16 @@ test-cov: ## Run tests with coverage report
 test-fast: ## Run tests without coverage
 	poetry run pytest --no-cov -x
 
+test-component: ## Run complete component integration tests (generates data, runs tests, validates against real DB)
+	@echo "🧪 Running complete component integration tests..."
+	@echo "📊 Step 1: Generating test data..."
+	cd tests/component && poetry run python test_data_generator.py
+	@echo "🔍 Step 2: Validating analysis service against actual database..."
+	cd tests/component && poetry run python test_analysis_validation.py
+	@echo "🧪 Step 3: Running component integration tests..."
+	cd tests/component && poetry run pytest
+	@echo "✅ Component tests completed successfully!"
+
 # Database operations
 backup-db: ## Backup the database
 	poetry run python scripts/backup_db.py

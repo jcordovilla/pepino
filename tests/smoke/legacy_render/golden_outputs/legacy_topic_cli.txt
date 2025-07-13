@@ -1,0 +1,65 @@
+🔍 Topic Analysis Report
+==================================================
+
+📊 Analysis Overview
+------------------------------
+Scope: All Channels
+Time Period: Last 30 days
+Total Messages Analyzed: 1,000
+Topics Extracted: 8
+Capabilities Used: bertopic_modeling, spacy_nlp
+
+🏷️ Top Topics
+------------------------------
+1. To & The & You
+   • Frequency: 400
+   • Relevance Score: 0.4
+
+2. And & Ai & The
+   • Frequency: 182
+   • Relevance Score: 0.182
+
+3. Welcome To & The Buddy & Welcome
+   • Frequency: 95
+   • Relevance Score: 0.095
+
+4. Passcode & Zoom & You
+   • Frequency: 45
+   • Relevance Score: 0.045
+
+5. Fair & They & That
+   • Frequency: 22
+   • Relevance Score: 0.022
+
+6. Her That & Super Same & 22 Of
+   • Frequency: 14
+   • Relevance Score: 0.014
+
+7. The & Video & Midjourney
+   • Frequency: 14
+   • Relevance Score: 0.014
+
+
+
+📈 Topic Evolution
+------------------------------
+Topic Distribution:
+  To & The & You: 40.0%
+  And & Ai & The: 18.2%
+  Welcome To & The Buddy & Welcome: 9.5%
+  Passcode & Zoom & You: 4.5%
+  Fair & They & That: 2.2%
+  Her That & Super Same & 22 Of: 1.4%
+  The & Video & Midjourney: 1.4%
+
+Most Discussed Topic: To & The & You
+Least Discussed Topic: The & Video & Midjourney
+
+🔧 Technical Details
+------------------------------
+Analysis Method: BERTopic with spaCy preprocessing
+Advanced Features:
+  • bertopic_modeling
+  • spacy_nlp
+
+Generated: TIMESTAMP

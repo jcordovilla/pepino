@@ -1,0 +1,71 @@
+🔍 Topic Analysis Report
+{{ "=" * 50 }}
+
+📊 Analysis Overview
+{{ "-" * 30 }}
+{% if channel_name %}
+Channel: {{ channel_name }}
+{% else %}
+Scope: All Channels
+{% endif %}
+{% if days_back %}
+Time Period: Last {{ days_back }} days
+{% endif %}
+Total Messages Analyzed: {{ message_count | format_number }}
+Topics Extracted: {{ n_topics }}
+Capabilities Used: {{ capabilities_used | join(', ') }}
+
+🏷️ Top Topics
+{{ "-" * 30 }}
+{% for topic in topics %}
+{{ loop.index }}. {{ topic.topic }}
+   • Frequency: {{ topic.frequency | format_number }}
+   • Relevance Score: {{ topic.relevance_score | round(3) }}
+   {% if topic.coherence_score %}
+   • Coherence Score: {{ topic.coherence_score | round(3) }}
+   {% endif %}
+   {% if topic.representative_messages %}
+   • Sample Messages:
+   {% for msg in topic.representative_messages[:3] %}
+     - "{{ msg.content[:100] }}{% if msg.content|length > 100 %}...{% endif %}"
+   {% endfor %}
+   {% endif %}
+
+{% endfor %}
+
+{% if summary.domain_analysis %}
+🎯 Domain Analysis
+{{ "-" * 30 }}
+{% for domain, info in summary.domain_analysis.items() %}
+{{ domain | title }}:
+  • Topics: {{ info.topic_count if info.topic_count else 'N/A' }}
+  • Messages: {{ info.message_count | format_number if info.message_count else 'N/A' }}
+  {% if info.key_themes %}
+  • Key Themes: {{ info.key_themes | join(', ') }}
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+📈 Topic Evolution
+{{ "-" * 30 }}
+{% if topics %}
+Topic Distribution:
+{% for topic in topics %}
+  {{ topic.topic }}: {{ (topic.frequency / message_count * 100) | round(1) }}%
+{% endfor %}
+
+Most Discussed Topic: {{ topics[0].topic if topics else 'N/A' }}
+Least Discussed Topic: {{ topics[-1].topic if topics else 'N/A' }}
+{% endif %}
+
+🔧 Technical Details
+{{ "-" * 30 }}
+Analysis Method: BERTopic with spaCy preprocessing
+{% if capabilities_used %}
+Advanced Features:
+{% for capability in capabilities_used %}
+  • {{ capability }}
+{% endfor %}
+{% endif %}
+
+Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }} 

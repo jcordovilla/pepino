@@ -1,0 +1,20 @@
+📈 Activity Trends{% if time_period %} ({{ time_period }}){% else %} (All Time){% endif %}
+{{ "=" * 50 }}
+
+📊 Overall Activity
+{{ "-" * 30 }}
+• Total Messages: {{ patterns.total_messages | format_number }}
+• Average per Day: {{ patterns.avg_messages_per_period | format_number }}
+• Peak Day: {{ patterns.max_messages_in_period }} messages
+• Trend: {{ patterns.message_trend | format_trend(patterns.trend_percentage, patterns.trend_timeframe) }}
+
+{% if cross_channel_stats %}
+🔄 Cross-Channel Summary
+{{ "-" * 30 }}
+• Total Channels: {{ cross_channel_stats.total_channels | format_number }}
+• Total Messages: {{ cross_channel_stats.total_messages | format_number }}
+• Total Users: {{ cross_channel_stats.total_users | format_number }}
+• Most Active Channel: {{ cross_channel_stats.most_active_channel }} ({{ cross_channel_stats.most_active_count | format_number }} messages)
+{% endif %}
+
+Generated: {{ now().strftime('%Y-%m-%d %H:%M:%S') }} 

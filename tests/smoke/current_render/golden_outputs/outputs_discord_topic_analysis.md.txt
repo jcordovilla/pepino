@@ -1,0 +1,1 @@
+❌ Template validation failed for 'outputs/discord/topic_analysis.md.j2': Template validation failed: 'outputs/discord/topic_analysis.md.j2' not found in search path: 'src/pepino/analysis/templates'

@@ -1,0 +1,91 @@
+📊 Database Statistics Report
+==================================================
+
+🗄️ Database Information
+------------------------------
+File Path: /test/path/discord_messages.db
+Size: 21.11 MB
+Last Modified: 2025-07-12
+
+📈 Table Statistics
+------------------------------
+Messages:
+  • Rows: 9,248
+  • Size: 9.25 MB
+  • Last Insert: 2025-07-12
+Sync_logs:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Message_embeddings:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Message_topics:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Word_frequencies:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+User_statistics:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Conversation_chains:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Message_temporal_stats:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Channel_members:
+  • Rows: 9,954
+  • Size: 9.95 MB
+  • Last Insert: N/A
+Messages_fts:
+  • Rows: 9,248
+  • Size: 9.25 MB
+  • Last Insert: N/A
+Messages_fts_data:
+  • Rows: 2
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Messages_fts_idx:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Messages_fts_docsize:
+  • Rows: 0
+  • Size: 0.0 MB
+  • Last Insert: N/A
+Messages_fts_config:
+  • Rows: 1
+  • Size: 0.0 MB
+  • Last Insert: N/A
+
+📋 Summary
+------------------------------
+Total Messages: 7,204
+Total Users: 280
+Total Channels: 75
+
+Date Range: 2025-03-27 to 2025-07-12
+
+Most Active Channel: {'name': '🏘old-general-chat', 'message_count': 971}
+
+Most Active User: {'name': 'sesh', 'message_count': 1187}
+
+🏥 Database Health
+------------------------------
+✅ Database file exists and is accessible
+
+✅ Messages data available
+
+✅ User data available
+
+✅ Channel data available
+
+Generated: TIMESTAMP
