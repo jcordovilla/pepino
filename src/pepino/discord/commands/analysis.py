@@ -611,11 +611,15 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
     def _get_server_temporal_data(self, facade, days: Optional[int]) -> Dict[str, Any]:
         """Get server-wide temporal data for graph generation (HUMAN MESSAGES ONLY)."""
         try:
-            # Default to last 30 days if no days specified
-            analysis_days = days or 30
+            # Use days parameter directly - None means all time
+            analysis_days = days
             
             # Build query for daily message counts
-            date_condition = f"timestamp >= datetime('now', '-{analysis_days} days')"
+            if analysis_days:
+                date_condition = f"timestamp >= datetime('now', '-{analysis_days} days')"
+            else:
+                # All time - no date condition
+                date_condition = "1=1"
             
             # Only count human messages for meaningful activity graphs
             query = f"""
@@ -1933,7 +1937,7 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                     temporal_data = self._get_server_temporal_data(facade, days)
                     
                     if temporal_data and temporal_data.get('activity_by_day'):
-                        analysis_params = {'days': days or 30}
+                        analysis_params = {'days': days}
                         chart_path = self._generate_server_overview_chart(temporal_data, analysis_params)
                         
                         if chart_path:
@@ -2231,7 +2235,9 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             # Formatting
             ax.set_xlabel('Date')
             ax.set_ylabel('Number of Human Messages')
-            ax.set_title(f"Server-wide Daily Human Message Activity ({analysis_params.get('days', 30)} days)")
+            days_param = analysis_params.get('days')
+            time_period = f"{days_param} days" if days_param else "all time"
+            ax.set_title(f"Server-wide Daily Human Message Activity ({time_period})")
             ax.legend()
             ax.grid(True, alpha=0.3)
             
