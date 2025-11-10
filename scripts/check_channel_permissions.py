@@ -184,13 +184,15 @@ async def main():
         try:
             settings = Settings()
             bot_token = settings.discord_token
-        except:
+        except Exception:
             pass
-    
+
     if not bot_token:
         print("❌ No Discord bot token found!")
         print("Set DISCORD_TOKEN environment variable or configure in settings.")
-        sys.exit(1)
+        # Return a non-zero exit code instead of calling sys.exit() from inside
+        # the coroutine. The caller will handle exiting the process.
+        return 1
     
     # Create and run the checker
     checker = ChannelPermissionChecker(bot_token)
@@ -201,20 +203,97 @@ async def main():
         await checker.run_check()
         await checker.bot.close()
     
+    exit_code = 0
     try:
         await checker.bot.start(bot_token)
     except discord.LoginFailure:
         print("❌ Invalid bot token!")
-        sys.exit(1)
+        exit_code = 1
     except Exception as e:
         print(f"❌ Error connecting to Discord: {e}")
-        sys.exit(1)
+        exit_code = 1
     finally:
-        # Ensure proper cleanup
+        # Ensure proper cleanup of the bot and underlying aiohttp resources.
         try:
-            await checker.bot.close()
-        except:
+            if not checker.bot.is_closed():
+                await checker.bot.close()
+        except Exception:
             pass
 
+        # Try to explicitly close any aiohttp ClientSession objects that
+        # may be reachable from the bot internals (different discord.py
+        # versions store the session in different places).
+        try:
+            import aiohttp
+
+            sessions = set()
+
+            # inspect common places
+            candidates = [checker.bot]
+            conn = getattr(checker.bot, '_connection', None)
+            if conn:
+                candidates.append(conn)
+            http = getattr(checker.bot, 'http', None)
+            if http:
+                candidates.append(http)
+
+            for obj in candidates:
+                if not obj:
+                    continue
+                for name in dir(obj):
+                    try:
+                        val = getattr(obj, name)
+                    except Exception:
+                        continue
+                    try:
+                        if isinstance(val, aiohttp.ClientSession):
+                            sessions.add(val)
+                    except Exception:
+                        # Some attributes may raise on isinstance checks; ignore
+                        continue
+
+            for s in sessions:
+                try:
+                    await s.close()
+                except Exception:
+                    pass
+        except Exception:
+            # If aiohttp isn't available or something fails, ignore and continue
+            pass
+
+        # Cancel any remaining pending tasks (except the current one) and wait
+        try:
+            current = asyncio.current_task()
+            pending = [t for t in asyncio.all_tasks() if t is not current]
+            if pending:
+                for t in pending:
+                    try:
+                        t.cancel()
+                    except Exception:
+                        pass
+
+                await asyncio.gather(*pending, return_exceptions=True)
+        except Exception:
+            pass
+
+        # Give asyncio a moment to finalize closing transports/sessions
+        try:
+            await asyncio.sleep(0)
+        except Exception:
+            pass
+
+    return exit_code
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Run the async main and handle process exit outside the event loop.
+    try:
+        exit_code = asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n❌ Interrupted by user")
+        exit_code = 1
+    except Exception as e:
+        print(f"❌ Unhandled error: {e}")
+        exit_code = 1
+
+    # Ensure we exit the process with the returned code
+    sys.exit(exit_code or 0)
