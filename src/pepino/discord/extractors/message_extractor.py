@@ -320,6 +320,10 @@ class MessageExtractor:
         message: discord.Message, get_overwrite_data
     ) -> Dict[str, Any]:
         """Extract channel data from message"""
+        parent_obj = getattr(message.channel, "parent", None)
+        parent_id = getattr(message.channel, "parent_id", None)
+        category_id = getattr(message.channel, "category_id", None)
+        parent_name = getattr(parent_obj, "name", None) if parent_obj else None
         return {
             "id": str(getattr(message.channel, "id", "")),
             "name": getattr(message.channel, "name", None),
@@ -328,9 +332,10 @@ class MessageExtractor:
             "nsfw": getattr(message.channel, "nsfw", None),
             "position": getattr(message.channel, "position", None),
             "slowmode_delay": getattr(message.channel, "slowmode_delay", None),
-            "category_id": str(getattr(message.channel, "category_id", ""))
-            if getattr(message.channel, "category_id", None)
-            else None,
+            "parent_id": str(parent_id) if parent_id else None,
+            "parent_name": parent_name,
+            "category_id": str(category_id) if category_id else None,
+            "category_name": parent_name if category_id else None,
             "overwrites": [
                 overwrite_data
                 for overwrite in getattr(message.channel, "overwrites", [])
@@ -343,6 +348,8 @@ class MessageExtractor:
         """Extract thread data from message"""
         if not hasattr(message, "thread") or not getattr(message, "thread", None):
             return None
+        parent_obj = getattr(message.thread, "parent", None)
+        parent_name = getattr(parent_obj, "name", None) if parent_obj else None
 
         return {
             "id": str(getattr(message.thread, "id", "")),
@@ -356,6 +363,7 @@ class MessageExtractor:
             "message_count": getattr(message.thread, "message_count", None),
             "owner_id": str(getattr(message.thread, "owner_id", "")),
             "parent_id": str(getattr(message.thread, "parent_id", "")),
+            "parent_name": parent_name,
             "slowmode_delay": getattr(message.thread, "slowmode_delay", None),
         }
 

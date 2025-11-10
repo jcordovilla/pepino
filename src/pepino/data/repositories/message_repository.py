@@ -5,7 +5,7 @@ Message repository for data access operations.
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ...config import Settings
 from ..database.manager import DatabaseManager
@@ -640,12 +640,31 @@ class MessageRepository:
         for i in range(0, len(all_messages), batch_size):
             batch = all_messages[i : i + batch_size]
             message_data = []
+            channel_records: Dict[str, Dict[str, Any]] = {}
 
             for msg in batch:
                 try:
                     if not isinstance(msg, dict):
                         logger.warning(f"Skipping invalid message format: {type(msg)}")
                         continue
+
+                    channel_data = msg.get("channel") or {}
+                    thread_data = msg.get("thread") or {}
+                    guild_id = str(msg.get("guild", {}).get("id", "")) or None
+
+                    channel_category_id = (
+                        channel_data.get("category_id") or channel_data.get("parent_id")
+                    )
+                    if channel_category_id:
+                        channel_category_id = str(channel_category_id)
+                    else:
+                        channel_category_id = None
+
+                    thread_parent_id = thread_data.get("parent_id")
+                    if thread_parent_id:
+                        thread_parent_id = str(thread_parent_id)
+                    else:
+                        thread_parent_id = None
 
                     # Extract basic message data
                     message_data.append(
@@ -654,6 +673,8 @@ class MessageRepository:
                             "channel_id": str(msg.get("channel", {}).get("id", "")),
                             "channel_name": msg.get("channel", {}).get("name", ""),
                             "channel_type": str(msg.get("channel", {}).get("type", "")),
+                            "channel_category_id": channel_category_id,
+                            "thread_parent_id": thread_parent_id,
                             "guild_id": str(msg.get("guild", {}).get("id", "")),
                             "guild_name": msg.get("guild", {}).get("name", ""),
                             "author_id": str(msg.get("author", {}).get("id", "")),
@@ -677,6 +698,27 @@ class MessageRepository:
                             else None,
                         }
                     )
+
+                    self._merge_channel_record(
+                        channel_records,
+                        channel_data.get("id"),
+                        channel_data.get("name"),
+                        guild_id,
+                        fallback_display_name=channel_data.get("display_name"),
+                    )
+                    self._merge_channel_record(
+                        channel_records,
+                        channel_data.get("category_id"),
+                        channel_data.get("category_name")
+                        or channel_data.get("parent_name"),
+                        guild_id,
+                    )
+                    self._merge_channel_record(
+                        channel_records,
+                        thread_data.get("parent_id"),
+                        thread_data.get("parent_name"),
+                        guild_id,
+                    )
                 except Exception as e:
                     logger.error(
                         f"Error processing message {msg.get('id', 'unknown')}: {str(e)}"
@@ -690,13 +732,13 @@ class MessageRepository:
                         INSERT OR REPLACE INTO messages (
                             id, content, timestamp, edited_timestamp, jump_url,
                             author_id, author_name, author_display_name, author_is_bot,
-                            channel_id, channel_name, channel_type,
+                            channel_id, channel_name, channel_type, channel_category_id, thread_parent_id,
                             guild_id, guild_name,
                             mentions, mention_everyone, mention_roles,
                             referenced_message_id, attachments, embeds, reactions,
                             emoji_stats, pinned, flags, nonce, type, is_system,
                             mentions_everyone, has_reactions
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
 
                     values = [
@@ -713,6 +755,8 @@ class MessageRepository:
                             msg.get("channel_id", ""),
                             msg.get("channel_name", ""),
                             msg.get("channel_type", ""),
+                            msg.get("channel_category_id"),
+                            msg.get("thread_parent_id"),
                             msg.get("guild_id", ""),
                             msg.get("guild_name", ""),
                             json.dumps([]),  # mentions - placeholder
@@ -736,6 +780,8 @@ class MessageRepository:
 
                     self.db_manager.execute_many(query, values)
                     logger.info(f"✅ Saved batch of {len(message_data)} messages")
+
+                    self._upsert_channels_sync(channel_records)
                 except Exception as e:
                     logger.error(f"Error saving batch: {str(e)}")
 
@@ -790,12 +836,31 @@ class MessageRepository:
         for i in range(0, len(all_messages), batch_size):
             batch = all_messages[i : i + batch_size]
             message_data = []
+            channel_records: Dict[str, Dict[str, Any]] = {}
 
             for msg in batch:
                 try:
                     if not isinstance(msg, dict):
                         logger.warning(f"Skipping invalid message format: {type(msg)}")
                         continue
+
+                    channel_data = msg.get("channel") or {}
+                    thread_data = msg.get("thread") or {}
+                    guild_id = str(msg.get("guild", {}).get("id", "")) or None
+
+                    channel_category_id = (
+                        channel_data.get("category_id") or channel_data.get("parent_id")
+                    )
+                    if channel_category_id:
+                        channel_category_id = str(channel_category_id)
+                    else:
+                        channel_category_id = None
+
+                    thread_parent_id = thread_data.get("parent_id")
+                    if thread_parent_id:
+                        thread_parent_id = str(thread_parent_id)
+                    else:
+                        thread_parent_id = None
 
                     # Extract basic message data
                     message_data.append(
@@ -804,6 +869,8 @@ class MessageRepository:
                             "channel_id": str(msg.get("channel", {}).get("id", "")),
                             "channel_name": msg.get("channel", {}).get("name", ""),
                             "channel_type": str(msg.get("channel", {}).get("type", "")),
+                            "channel_category_id": channel_category_id,
+                            "thread_parent_id": thread_parent_id,
                             "guild_id": str(msg.get("guild", {}).get("id", "")),
                             "guild_name": msg.get("guild", {}).get("name", ""),
                             "author_id": str(msg.get("author", {}).get("id", "")),
@@ -827,6 +894,27 @@ class MessageRepository:
                             else None,
                         }
                     )
+
+                    self._merge_channel_record(
+                        channel_records,
+                        channel_data.get("id"),
+                        channel_data.get("name"),
+                        guild_id,
+                        fallback_display_name=channel_data.get("display_name"),
+                    )
+                    self._merge_channel_record(
+                        channel_records,
+                        channel_data.get("category_id"),
+                        channel_data.get("category_name")
+                        or channel_data.get("parent_name"),
+                        guild_id,
+                    )
+                    self._merge_channel_record(
+                        channel_records,
+                        thread_data.get("parent_id"),
+                        thread_data.get("parent_name"),
+                        guild_id,
+                    )
                 except Exception as e:
                     logger.error(
                         f"Error processing message {msg.get('id', 'unknown')}: {str(e)}"
@@ -840,13 +928,13 @@ class MessageRepository:
                         INSERT OR REPLACE INTO messages (
                             id, content, timestamp, edited_timestamp, jump_url,
                             author_id, author_name, author_display_name, author_is_bot,
-                            channel_id, channel_name, channel_type,
+                            channel_id, channel_name, channel_type, channel_category_id, thread_parent_id,
                             guild_id, guild_name,
                             mentions, mention_everyone, mention_roles,
                             referenced_message_id, attachments, embeds, reactions,
                             emoji_stats, pinned, flags, nonce, type, is_system,
                             mentions_everyone, has_reactions
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
 
                     values = [
@@ -863,6 +951,8 @@ class MessageRepository:
                             msg.get("channel_id", ""),
                             msg.get("channel_name", ""),
                             msg.get("channel_type", ""),
+                            msg.get("channel_category_id"),
+                            msg.get("thread_parent_id"),
                             msg.get("guild_id", ""),
                             msg.get("guild_name", ""),
                             json.dumps([]),  # mentions - placeholder
@@ -886,6 +976,8 @@ class MessageRepository:
 
                     await self.db_manager.execute_many(query, values)
                     logger.info(f"✅ Saved batch of {len(message_data)} messages")
+
+                    await self._upsert_channels_async(channel_records)
                 except Exception as e:
                     logger.error(f"Error saving batch: {str(e)}")
 
@@ -955,6 +1047,90 @@ class MessageRepository:
         result = self.db_manager.execute_query(query, fetch_one=True)
         return result[0] if result else 0
 
+    def _merge_channel_record(
+        self,
+        records: Dict[str, Dict[str, Any]],
+        channel_id: Optional[Any],
+        channel_name: Optional[str],
+        guild_id: Optional[str],
+        *,
+        fallback_display_name: Optional[str] = None,
+    ) -> None:
+        """Merge channel metadata into accumulator dict."""
+        if not channel_id or not channel_name:
+            return
+
+        channel_id = str(channel_id)
+        channel_name = str(channel_name).strip()
+        if not channel_name:
+            return
+
+        display_name = (
+            str(fallback_display_name).strip()
+            if fallback_display_name
+            else channel_name
+        )
+
+        existing = records.get(channel_id)
+        if existing:
+            if not existing.get("channel_name"):
+                existing["channel_name"] = channel_name
+            if not existing.get("display_name"):
+                existing["display_name"] = display_name
+            if guild_id and not existing.get("guild_id"):
+                existing["guild_id"] = guild_id
+        else:
+            records[channel_id] = {
+                "channel_name": channel_name,
+                "display_name": display_name,
+                "guild_id": guild_id,
+            }
+
+    def _prepare_channel_upsert_values(
+        self, records: Dict[str, Dict[str, Any]]
+    ) -> List[Tuple[str, str, str, str]]:
+        values: List[Tuple[str, str, str, str]] = []
+        for channel_id, data in records.items():
+            name = (data.get("channel_name") or "").strip()
+            if not name:
+                continue
+            display = (data.get("display_name") or name).strip() or name
+            guild_id = (data.get("guild_id") or "").strip()
+            values.append((channel_id, name, display, guild_id))
+        return values
+
+    def _upsert_channels_sync(self, records: Dict[str, Dict[str, Any]]) -> None:
+        values = self._prepare_channel_upsert_values(records)
+        if not values:
+            return
+
+        query = """
+            INSERT INTO channels (channel_id, channel_name, display_name, guild_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(channel_id) DO UPDATE SET
+                channel_name=excluded.channel_name,
+                display_name=excluded.display_name,
+                guild_id=excluded.guild_id,
+                updated_at=CURRENT_TIMESTAMP
+        """
+        self.db_manager.execute_many(query, values)
+
+    async def _upsert_channels_async(self, records: Dict[str, Dict[str, Any]]) -> None:
+        values = self._prepare_channel_upsert_values(records)
+        if not values:
+            return
+
+        query = """
+            INSERT INTO channels (channel_id, channel_name, display_name, guild_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(channel_id) DO UPDATE SET
+                channel_name=excluded.channel_name,
+                display_name=excluded.display_name,
+                guild_id=excluded.guild_id,
+                updated_at=CURRENT_TIMESTAMP
+        """
+        await self.db_manager.execute_many(query, values)
+
     def get_user_messages(self, user_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get messages from a specific user."""
         from datetime import datetime, timedelta
@@ -989,20 +1165,31 @@ class MessageRepository:
             for row in rows
         ]
 
-    def get_channel_messages(self, channel_name: str, days_back: Optional[int] = None, limit: int = 1000) -> List[Dict[str, Any]]:
+    def get_channel_messages(
+        self,
+        channel_name: str,
+        days_back: Optional[int] = None,
+        limit: int = 1000,
+        channel_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get messages from a specific channel."""
         from datetime import datetime, timedelta
         
+        channel_conditions = ["channel_name = ?"]
+        params = [channel_name]
+        if channel_id:
+            channel_conditions.append("channel_id = ?")
+            params.append(channel_id)
+        channel_filter = " AND ".join(channel_conditions)
+
         query = f"""
             SELECT id as message_id, content, author_name, channel_name, timestamp
             FROM messages 
-            WHERE channel_name = ?
+            WHERE {channel_filter}
             AND content IS NOT NULL AND content != ''
             AND {self.base_filter}
         """
-        
-        params = [channel_name]
-        
+
         if days_back is not None:
             threshold_date = (datetime.now() - timedelta(days=days_back)).isoformat()
             query += " AND timestamp >= ?"

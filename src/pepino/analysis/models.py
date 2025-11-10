@@ -172,6 +172,9 @@ class ChannelInfo(BaseModel):
     """Channel information from analysis."""
 
     channel_name: str
+    channel_id: Optional[str] = None
+    parent_id: Optional[str] = None
+    parent_name: Optional[str] = None
 
 
 class ChannelStatistics(BaseModel):

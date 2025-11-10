@@ -7,7 +7,7 @@ import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import click
 
@@ -107,9 +107,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                 settings = Settings()
                 db_path = ctx_obj.get("db_path") or settings.db_path
 
-                aggregated_results = []
-                errors = []
-                channel_names: list[str] = []
+                aggregated_results: List[Dict[str, Any]] = []
+                errors: List[Dict[str, Any]] = []
+                channel_metadata_list: List[Dict[str, Any]] = []
 
                 try:
                     with get_database_manager(db_path) as db_manager:
@@ -121,28 +121,39 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                             topic_analyzer = None
                             logger.warning(f"Topic analyzer unavailable for channel aggregation: {e}")
 
-                        channel_names = channel_analyzer.get_available_channels()
+                        channel_metadata_list = channel_analyzer.get_available_channels_metadata()
+                        parent_name_lookup = {
+                            meta.get("channel_id"): meta.get("channel_name")
+                            for meta in channel_metadata_list
+                            if meta.get("channel_id")
+                        }
 
-                        if not channel_names:
+                        if not channel_metadata_list:
                             self.show_template_error("Channel analysis", "No channels available for analysis")
                             return
 
-                        for channel_name in channel_names:
+                        for channel_meta in channel_metadata_list:
+                            channel_name = channel_meta.get("channel_name")
+                            channel_id = channel_meta.get("channel_id")
                             if not channel_name:
                                 errors.append(
                                     {
                                         "channel_name": channel_name,
+                                        "channel_id": channel_id,
                                         "error": "Channel name is empty",
                                     }
                                 )
                                 continue
 
                             try:
-                                analysis_model = channel_analyzer.analyze(channel_name, include_patterns=True)
+                                analysis_model = channel_analyzer.analyze(
+                                    channel_name, include_patterns=True, channel_id=channel_id
+                                )
                                 if not analysis_model:
                                     errors.append(
                                         {
                                             "channel_name": channel_name,
+                                            "channel_id": channel_id,
                                             "error": "No analysis data returned",
                                         }
                                     )
@@ -161,11 +172,13 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
 
                                 total_human_members = 0
                                 try:
-                                    total_human_members = (
-                                        data_facade.channel_repository.get_channel_human_member_count(channel_name)
+                                    total_human_members = data_facade.channel_repository.get_channel_human_member_count(
+                                        channel_name, channel_id=channel_id
                                     )
                                 except Exception as e:
-                                    logger.warning(f"Could not get total human members for channel {channel_name}: {e}")
+                                    logger.warning(
+                                        f"Could not get total human members for channel {channel_name}: {e}"
+                                    )
 
                                 top_users = result_dict.get("top_users") or []
                                 participation_summary = None
@@ -188,13 +201,13 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                             )
 
                                 lost_interest_summary = None
-                                lost_interest_users = []
+                                lost_interest_users: List[Dict[str, Any]] = []
                                 try:
                                     all_users = data_facade.channel_repository.get_channel_user_activity(
-                                        channel_name, days=None, limit=100
+                                        channel_name, days=None, limit=100, channel_id=channel_id
                                     )
                                     recent_users = data_facade.channel_repository.get_channel_user_activity(
-                                        channel_name, days=30, limit=100
+                                        channel_name, days=30, limit=100, channel_id=channel_id
                                     )
 
                                     recent_usernames = {user["author_name"] for user in recent_users}
@@ -249,12 +262,13 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 trend_summary = None
                                 try:
                                     current_messages = data_facade.message_repository.get_channel_messages(
-                                        channel_name, days_back=7
+                                        channel_name, days_back=7, channel_id=channel_id
                                     )
                                     previous_messages = data_facade.message_repository.get_channel_messages(
                                         channel_name,
                                         days_back=14,
                                         limit=len(current_messages) * 2 if current_messages else None,
+                                        channel_id=channel_id,
                                     )
 
                                     if current_messages and previous_messages:
@@ -300,7 +314,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 recent_activity_summary = None
                                 try:
                                     recent_messages = data_facade.message_repository.get_channel_messages(
-                                        channel_name, days_back=7
+                                        channel_name, days_back=7, channel_id=channel_id
                                     )
                                     if recent_messages:
                                         human_recent = len(
@@ -310,6 +324,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                             channel_name,
                                             days_back=14,
                                             limit=len(recent_messages) * 2,
+                                            channel_id=channel_id,
                                         )
                                         if previous_messages:
                                             human_previous = len(
@@ -358,9 +373,32 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 result_dict["recent_activity_summary"] = recent_activity_summary
                                 result_dict["channel_health"] = True
 
+                                parent_id = channel_meta.get("parent_id")
+                                parent_name = channel_meta.get("parent_name") if channel_meta else None
+                                if not parent_name and parent_id:
+                                    parent_name = parent_name_lookup.get(parent_id)
+
+                                metadata_payload = {
+                                    "channel_id": channel_id,
+                                    "channel_name": channel_name,
+                                    "parent_id": parent_id,
+                                }
+                                if parent_name:
+                                    metadata_payload["parent_name"] = parent_name
+
+                                channel_info = result_dict.get("channel_info") or {}
+                                channel_info["channel_id"] = channel_id
+                                channel_info["parent_id"] = parent_id
+                                if parent_name:
+                                    channel_info["parent_name"] = parent_name
+                                result_dict["channel_info"] = channel_info
+                                result_dict["metadata"] = metadata_payload.copy()
+
                                 aggregated_results.append(
                                     {
+                                        "channel_id": channel_id,
                                         "channel_name": channel_name,
+                                        "metadata": metadata_payload,
                                         "message_statistics": result_dict.get("statistics"),
                                         "user_activity": {
                                             "top_users": result_dict.get("top_users"),
@@ -393,6 +431,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 errors.append(
                                     {
                                         "channel_name": channel_name,
+                                        "channel_id": channel_id,
                                         "error": f"Unexpected error: {e}",
                                     }
                                 )
@@ -401,8 +440,8 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                     return
 
                 aggregated_payload = {
-                    "generated_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
-                    "total_channels": len(channel_names),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "total_channels": len(channel_metadata_list),
                     "analyzed_channels": sum(1 for result in aggregated_results if result.get("full_analysis")),
                     "channels": aggregated_results,
                 }
@@ -421,7 +460,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
 
                 target_output = output
                 if not target_output:
-                    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
                     target_output = f"stats/channel_analysis_all_{timestamp}.json"
 
                 self.handle_output(

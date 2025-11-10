@@ -18,15 +18,18 @@ Usage examples:
 from __future__ import annotations
 
 import json
+import sqlite3
 import os
 import random
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Set
 
 import click
 
 import requests
+
+from pepino.config import Settings
 
 
 DEFAULT_MODEL = "deepseek-r1:8b"
@@ -40,6 +43,44 @@ SYSTEM_PROMPT = (
 )
 
 
+def _resolve_parent_names(parent_ids: Set[str]) -> Dict[str, str]:
+    """Resolve parent IDs to names using the channels table."""
+    if not parent_ids:
+        return {}
+
+    try:
+        settings = Settings()
+        db_path = settings.db_path
+    except Exception:
+        db_path = "data/discord_messages.db"
+
+    if not Path(db_path).exists():
+        return {}
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        placeholders = ",".join("?" for _ in parent_ids)
+        query = f"""
+            SELECT channel_id, COALESCE(display_name, channel_name) AS name
+            FROM channels
+            WHERE channel_id IN ({placeholders})
+        """
+        rows = conn.execute(query, tuple(parent_ids)).fetchall()
+        return {
+            row["channel_id"]: row["name"]
+            for row in rows
+            if row["channel_id"] and row["name"]
+        }
+    except Exception:
+        return {}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _load_channel_data(input_path: Path) -> Dict[str, Dict]:
     """Load the aggregated channel analysis JSON and index by channel name."""
     if not input_path.is_file():
@@ -49,18 +90,75 @@ def _load_channel_data(input_path: Path) -> Dict[str, Dict]:
         payload = json.load(f)
 
     channels = payload.get("channels", [])
-    indexed = {}
+    indexed: Dict[str, Dict] = {}
+    missing_parent_ids: Set[str] = set()
     for entry in channels:
-        name = entry.get("channel_name") or entry.get("full_analysis", {}).get("channel_info", {}).get("channel_name")
-        if not name:
+        metadata = entry.get("metadata") or {}
+        entry.setdefault("metadata", metadata)
+
+        channel_id = metadata.get("channel_id") or entry.get("channel_id")
+        channel_name = (
+            metadata.get("channel_name")
+            or entry.get("channel_name")
+            or entry.get("full_analysis", {}).get("channel_info", {}).get("channel_name")
+        )
+        parent_id = (
+            metadata.get("parent_id")
+            or entry.get("full_analysis", {}).get("channel_info", {}).get("parent_id")
+        )
+        parent_name = (
+            metadata.get("parent_name")
+            or entry.get("full_analysis", {}).get("channel_info", {}).get("parent_name")
+        )
+
+        if channel_name and not metadata.get("channel_name"):
+            metadata["channel_name"] = channel_name
+        if channel_id and not metadata.get("channel_id"):
+            metadata["channel_id"] = channel_id
+        if parent_id and not metadata.get("parent_id"):
+            metadata["parent_id"] = parent_id
+        if parent_name and not metadata.get("parent_name"):
+            metadata["parent_name"] = parent_name
+
+        key = channel_id or channel_name
+        if not key:
             continue
-        indexed[name] = entry
+
+        aliases: Set[str] = set()
+        if channel_name:
+            aliases.add(channel_name)
+        if channel_id:
+            aliases.add(channel_id)
+        if parent_id and channel_name:
+            aliases.add(f"{parent_id}:{channel_name}")
+        if parent_name and channel_name:
+            aliases.add(f"{parent_name}:{channel_name}")
+
+        entry["_key"] = key
+        entry["_parent_id"] = parent_id
+        entry["_parent_name"] = parent_name
+        entry["_aliases"] = sorted(alias for alias in aliases if alias)
+        if parent_id and not parent_name:
+            missing_parent_ids.add(parent_id)
+        indexed[key] = entry
+
+    if missing_parent_ids:
+        parent_name_map = _resolve_parent_names(missing_parent_ids)
+        if parent_name_map:
+            for entry in indexed.values():
+                pid = entry.get("_parent_id")
+                if pid and not entry.get("_parent_name"):
+                    resolved = parent_name_map.get(pid)
+                    if resolved:
+                        entry["_parent_name"] = resolved
+                        entry.setdefault("metadata", {})["parent_name"] = resolved
     return indexed
 
 
 def _prepare_channel_context(channel_name: str, channel_entry: Dict) -> str:
     """Build a context string summarizing the relevant analytics for LLM input."""
     analysis = channel_entry.get("full_analysis", {})
+    metadata = channel_entry.get("metadata") or {}
 
     statistics = analysis.get("statistics")
     engagement_metrics = analysis.get("engagement_metrics")
@@ -71,6 +169,14 @@ def _prepare_channel_context(channel_name: str, channel_entry: Dict) -> str:
     }
 
     lines: List[str] = [f"Channel: {channel_name}"]
+    channel_id = metadata.get("channel_id") or channel_entry.get("channel_id")
+    if channel_id:
+        lines.append(f"Channel ID: {channel_id}")
+    parent_id = metadata.get("parent_id") or channel_entry.get("_parent_id")
+    parent_name = metadata.get("parent_name") or channel_entry.get("_parent_name")
+    if parent_id:
+        descriptor = parent_name or parent_id
+        lines.append(f"Parent: {descriptor} (ID: {parent_id})")
 
     if statistics:
         lines.append("Statistics:")
@@ -172,11 +278,30 @@ def _select_channels(
     available: Dict[str, Dict],
 ) -> List[str]:
     """Determine which channels to summarize."""
+    alias_map: Dict[str, Set[str]] = {}
+    for key, entry in available.items():
+        aliases = set(entry.get("_aliases", []))
+        aliases.add(key)
+        for alias in aliases:
+            alias_map.setdefault(alias, set()).add(key)
+
     if requested:
-        missing = [name for name in requested if name not in available]
+        resolved_keys: List[str] = []
+        missing: List[str] = []
+        for name in requested:
+            matches = alias_map.get(name)
+            if not matches:
+                missing.append(name)
+                continue
+            if len(matches) > 1:
+                raise ValueError(
+                    f"Channel '{name}' is ambiguous. "
+                    f"Please specify the channel_id instead (options: {', '.join(sorted(matches))})."
+                )
+            resolved_keys.append(next(iter(matches)))
         if missing:
             raise ValueError(f"Requested channels not present in analysis JSON: {', '.join(missing)}")
-        return list(dict.fromkeys(requested))
+        return list(dict.fromkeys(resolved_keys))
 
     names = list(available.keys())
     if sample is not None:
@@ -248,21 +373,35 @@ def main(
     selected_channels = _select_channels(channels, sample, channel_data)
 
     summaries = []
-    for channel_name in selected_channels:
-        entry = channel_data[channel_name]
-        context = _prepare_channel_context(channel_name, entry)
-        summary = _call_llm(model, channel_name, context, base_url, max_words=max_words)
+    for channel_key in selected_channels:
+        entry = channel_data[channel_key]
+        metadata = entry.get("metadata") or {}
+        display_name = metadata.get("channel_name") or entry.get("channel_name") or channel_key
+        parent_id = metadata.get("parent_id") or entry.get("_parent_id")
+        parent_name = metadata.get("parent_name") or entry.get("_parent_name")
+        if parent_name or parent_id:
+            descriptor = parent_name or parent_id
+            header_name = f"{descriptor} / {display_name}"
+        else:
+            header_name = display_name
+
+        context = _prepare_channel_context(display_name, entry)
+        summary = _call_llm(model, display_name, context, base_url, max_words=max_words)
 
         summaries.append(
             {
-                "channel_name": channel_name,
+                "channel_key": channel_key,
+                "channel_id": metadata.get("channel_id"),
+                "channel_name": display_name,
+                "parent_id": parent_id,
+                "parent_name": parent_name,
                 "summary": summary,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "model": model,
             }
         )
 
-        click.echo(f"\n# {channel_name}\n{summary}\n")
+        click.echo(f"\n# {header_name}\n{summary}\n")
 
     if output_path:
         target_path = output_path

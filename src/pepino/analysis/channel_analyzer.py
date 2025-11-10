@@ -7,7 +7,7 @@ Provides comprehensive channel activity analysis with proper separation of conce
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import ChannelAnalysisResponse
@@ -46,10 +46,11 @@ class ChannelAnalyzer:
         logger.info("ChannelAnalyzer initialized with data facade pattern")
     
     def analyze(
-        self, 
+        self,
         channel_name: str,
         days: Optional[int] = None,
-        include_patterns: bool = True
+        include_patterns: bool = True,
+        channel_id: Optional[str] = None,
     ) -> Optional[ChannelAnalysisResponse]:
         """
         Analyze a channel comprehensively using repository layer.
@@ -64,38 +65,54 @@ class ChannelAnalyzer:
         """
         
         try:
-            logger.info(f"Starting channel analysis for: {channel_name}")
-            
+            metadata = self.data_facade.channel_repository.get_channel_metadata(
+                channel_id=channel_id, channel_name=channel_name
+            )
+            actual_channel_id = metadata.get("channel_id") if metadata else channel_id
+            parent_id = metadata.get("parent_id") if metadata else None
+            parent_name = metadata.get("parent_name") if metadata else None
+
+            logger.info(
+                f"Starting channel analysis for: {channel_name} "
+                f"({actual_channel_id or 'no-id'})"
+            )
+
             # Get basic statistics through repository
-            statistics = self._get_channel_statistics_via_repository(channel_name, days)
+            statistics = self._get_channel_statistics_via_repository(channel_name, days, actual_channel_id)
             if not statistics or statistics.total_messages == 0:
-                logger.warning(f"No messages found for channel: {channel_name}")
+                logger.warning(f"No messages found for channel: {channel_name} ({actual_channel_id or 'no-id'})")
                 return None
             
             # Get top users in channel through repository
-            top_users = self._get_top_users_in_channel_via_repository(channel_name, days)
+            top_users = self._get_top_users_in_channel_via_repository(channel_name, days, actual_channel_id)
             
             # Get engagement metrics
-            engagement_metrics = self._get_engagement_metrics(channel_name, days)
+            engagement_metrics = self._get_engagement_metrics(channel_name, days, actual_channel_id)
             
             # Get health metrics
-            health_metrics = self._get_health_metrics(channel_name)
+            health_metrics = self._get_health_metrics(channel_name, actual_channel_id)
             
             # Get recent activity
-            recent_activity = self._get_recent_activity(channel_name, days=7)
+            recent_activity = self._get_recent_activity(channel_name, days=7, channel_id=actual_channel_id)
             
             # Get time patterns if requested
             time_patterns = {}
             weekly_breakdown = {}
             if include_patterns:
-                time_patterns = self._analyze_time_patterns_via_repository(channel_name, days)
-                weekly_breakdown = self._get_weekly_breakdown(channel_name, days)
+                time_patterns = self._analyze_time_patterns_via_repository(channel_name, days, actual_channel_id)
+                weekly_breakdown = self._get_weekly_breakdown(channel_name, days, actual_channel_id)
             
             # Build result
             from .models import ChannelInfo
-            
+            channel_info_kwargs = {
+                "channel_name": channel_name,
+                "channel_id": actual_channel_id,
+                "parent_id": parent_id,
+                "parent_name": parent_name,
+            }
+
             analysis = ChannelAnalysisResponse(
-                channel_info=ChannelInfo(channel_name=channel_name),
+                channel_info=ChannelInfo(**channel_info_kwargs),
                 statistics=self._convert_to_channel_statistics_model(statistics),
                 top_users=self._convert_top_users_to_model(top_users),
                 engagement_metrics=engagement_metrics,
@@ -106,7 +123,10 @@ class ChannelAnalyzer:
                 # Other fields will use defaults
             )
             
-            logger.info(f"Channel analysis completed for: {channel_name}")
+            logger.info(
+                f"Channel analysis completed for: {channel_name} "
+                f"({actual_channel_id or 'no-id'})"
+            )
             return analysis
             
         except Exception as e:
@@ -180,7 +200,12 @@ class ChannelAnalyzer:
             peak_days=peak_days
         )
     
-    def _get_channel_statistics_via_repository(self, channel_name: str, days: Optional[int]) -> Optional[LocalChannelStatistics]:
+    def _get_channel_statistics_via_repository(
+        self,
+        channel_name: str,
+        days: Optional[int],
+        channel_id: Optional[str],
+    ) -> Optional[LocalChannelStatistics]:
         """Get basic channel statistics using data facade pattern."""
         
         try:
@@ -190,7 +215,9 @@ class ChannelAnalyzer:
                 return None
             
             # Use data facade for repository access
-            stats_data = self.data_facade.channel_repository.get_channel_message_statistics(channel_name, days)
+            stats_data = self.data_facade.channel_repository.get_channel_message_statistics(
+                channel_name, days, channel_id=channel_id
+            )
             
             if not stats_data or stats_data.get('total_messages', 0) == 0:
                 logger.info(f"No messages found for channel: {channel_name}")
@@ -228,10 +255,11 @@ class ChannelAnalyzer:
             return None
     
     def _get_top_users_in_channel_via_repository(
-        self, 
-        channel_name: str, 
+        self,
+        channel_name: str,
         days: Optional[int],
-        limit: int = 10
+        channel_id: Optional[str],
+        limit: int = 10,
     ) -> List[UserActivity]:
         """Get top users by message count in this channel using data facade."""
         
@@ -246,7 +274,9 @@ class ChannelAnalyzer:
                 limit = 10
             
             # Use data facade for repository access
-            user_data = self.data_facade.channel_repository.get_channel_user_activity(channel_name, days, limit)
+            user_data = self.data_facade.channel_repository.get_channel_user_activity(
+                channel_name, days, limit, channel_id=channel_id
+            )
             
             user_activities = []
             for data in user_data:
@@ -270,12 +300,19 @@ class ChannelAnalyzer:
             logger.error(f"Failed to get top users in channel via repository for {channel_name}: {e}")
             return []
     
-    def _analyze_time_patterns_via_repository(self, channel_name: str, days: Optional[int]) -> Dict[str, any]:
+    def _analyze_time_patterns_via_repository(
+        self,
+        channel_name: str,
+        days: Optional[int],
+        channel_id: Optional[str],
+    ) -> Dict[str, any]:
         """Analyze channel time patterns using data facade."""
         
         try:
             # Get hourly patterns through data facade
-            hourly_data = self.data_facade.channel_repository.get_channel_hourly_patterns(channel_name, days)
+            hourly_data = self.data_facade.channel_repository.get_channel_hourly_patterns(
+                channel_name, days, channel_id=channel_id
+            )
             
             # Process hourly data
             hourly_activity = {}
@@ -292,7 +329,9 @@ class ChannelAnalyzer:
                     peak_hour = hour
             
             # Get daily patterns for trends
-            daily_data = self.data_facade.channel_repository.get_channel_daily_patterns(channel_name, days)
+            daily_data = self.data_facade.channel_repository.get_channel_daily_patterns(
+                channel_name, days, channel_id=channel_id
+            )
             daily_activity = {}
             for entry in daily_data:
                 daily_activity[entry['date']] = entry['message_count']
@@ -375,6 +414,14 @@ class ChannelAnalyzer:
             return self.data_facade.channel_repository.get_available_channels()
         except Exception as e:
             logger.error(f"Failed to get available channels: {e}")
+            return []
+
+    def get_available_channels_metadata(self) -> List[Dict[str, Any]]:
+        """Get channel metadata (ids, guilds, categories) using data facade."""
+        try:
+            return self.data_facade.channel_repository.get_available_channels_metadata()
+        except Exception as e:
+            logger.error(f"Failed to get channel metadata: {e}")
             return []
 
     def get_top_channels(self, limit: int = 10, days: Optional[int] = None) -> List[Dict[str, any]]:
@@ -476,12 +523,19 @@ class ChannelAnalyzer:
                 'recommendations': [f'Error analyzing channel: {e}']
             }
 
-    def _get_engagement_metrics(self, channel_name: str, days: Optional[int]) -> Optional['EngagementMetrics']:
+    def _get_engagement_metrics(
+        self,
+        channel_name: str,
+        days: Optional[int],
+        channel_id: Optional[str],
+    ) -> Optional['EngagementMetrics']:
         """Get engagement metrics for the channel."""
         try:
             from .models import EngagementMetrics
             
-            metrics_data = self.data_facade.channel_repository.get_channel_engagement_metrics(channel_name, days)
+            metrics_data = self.data_facade.channel_repository.get_channel_engagement_metrics(
+                channel_name, days, channel_id=channel_id
+            )
             if not metrics_data:
                 return None
             
@@ -501,12 +555,18 @@ class ChannelAnalyzer:
             logger.error(f"Failed to get engagement metrics: {e}")
             return None
 
-    def _get_health_metrics(self, channel_name: str) -> Optional['HealthMetrics']:
+    def _get_health_metrics(
+        self,
+        channel_name: str,
+        channel_id: Optional[str],
+    ) -> Optional['HealthMetrics']:
         """Get health metrics for the channel."""
         try:
             from .models import HealthMetrics
             
-            health_data = self.data_facade.channel_repository.get_channel_health_metrics(channel_name)
+            health_data = self.data_facade.channel_repository.get_channel_health_metrics(
+                channel_name, channel_id=channel_id
+            )
             if not health_data:
                 return None
             
@@ -525,12 +585,19 @@ class ChannelAnalyzer:
             logger.error(f"Failed to get health metrics: {e}")
             return None
 
-    def _get_recent_activity(self, channel_name: str, days: int = 7) -> List['RecentActivityItem']:
+    def _get_recent_activity(
+        self,
+        channel_name: str,
+        days: int = 7,
+        channel_id: Optional[str] = None,
+    ) -> List['RecentActivityItem']:
         """Get recent activity for the channel."""
         try:
             from .models import RecentActivityItem
             
-            activity_data = self.data_facade.channel_repository.get_channel_recent_activity(channel_name, days)
+            activity_data = self.data_facade.channel_repository.get_channel_recent_activity(
+                channel_name, days, channel_id=channel_id
+            )
             
             return [
                 RecentActivityItem(
@@ -544,10 +611,17 @@ class ChannelAnalyzer:
             logger.error(f"Failed to get recent activity: {e}")
             return []
 
-    def _get_weekly_breakdown(self, channel_name: str, days: Optional[int]) -> Dict[str, int]:
+    def _get_weekly_breakdown(
+        self,
+        channel_name: str,
+        days: Optional[int],
+        channel_id: Optional[str],
+    ) -> Dict[str, int]:
         """Get weekly breakdown for the channel."""
         try:
-            return self.data_facade.channel_repository.get_channel_weekly_breakdown(channel_name, days)
+            return self.data_facade.channel_repository.get_channel_weekly_breakdown(
+                channel_name, days, channel_id=channel_id
+            )
         except Exception as e:
             logger.error(f"Failed to get weekly breakdown: {e}")
             return {}
