@@ -5,6 +5,7 @@ CLI commands for Discord analytics.
 import asyncio
 import csv
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -95,10 +96,340 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
         limit: int,
         output: Optional[str],
         output_format: str,
+        analyze_all: bool = False,
     ):
         """Analyze channel activity with template integration."""
         try:
-            from .persistence import analyze_channel
+            from .persistence import analyze_channel, get_database_manager
+            from pepino.analysis.data_facade import get_analysis_data_facade
+
+            if analyze_all:
+                settings = Settings()
+                db_path = ctx_obj.get("db_path") or settings.db_path
+
+                aggregated_results = []
+                errors = []
+                channel_names: list[str] = []
+
+                try:
+                    with get_database_manager(db_path) as db_manager:
+                        data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+                        channel_analyzer = ChannelAnalyzer(data_facade)
+                        try:
+                            topic_analyzer = TopicAnalyzer(data_facade)
+                        except Exception as e:
+                            topic_analyzer = None
+                            logger.warning(f"Topic analyzer unavailable for channel aggregation: {e}")
+
+                        channel_names = channel_analyzer.get_available_channels()
+
+                        if not channel_names:
+                            self.show_template_error("Channel analysis", "No channels available for analysis")
+                            return
+
+                        for channel_name in channel_names:
+                            if not channel_name:
+                                errors.append(
+                                    {
+                                        "channel_name": channel_name,
+                                        "error": "Channel name is empty",
+                                    }
+                                )
+                                continue
+
+                            try:
+                                analysis_model = channel_analyzer.analyze(channel_name, include_patterns=True)
+                                if not analysis_model:
+                                    errors.append(
+                                        {
+                                            "channel_name": channel_name,
+                                            "error": "No analysis data returned",
+                                        }
+                                    )
+                                    continue
+
+                                if hasattr(analysis_model, "model_dump"):
+                                    result_dict = analysis_model.model_dump()
+                                elif hasattr(analysis_model, "dict"):
+                                    result_dict = analysis_model.dict()
+                                elif isinstance(analysis_model, dict):
+                                    result_dict = analysis_model
+                                else:
+                                    raise RuntimeError(
+                                        f"Channel analysis result for {channel_name} is not serializable: {type(analysis_model)}"
+                                    )
+
+                                total_human_members = 0
+                                try:
+                                    total_human_members = (
+                                        data_facade.channel_repository.get_channel_human_member_count(channel_name)
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Could not get total human members for channel {channel_name}: {e}")
+
+                                top_users = result_dict.get("top_users") or []
+                                participation_summary = None
+                                if top_users:
+                                    top_5_messages = sum(user.get("message_count", 0) for user in top_users[:5])
+                                    total_messages = result_dict.get("statistics", {}).get("total_messages", 0)
+                                    if total_messages > 0:
+                                        concentration = (top_5_messages / total_messages) * 100
+                                        if concentration > 70:
+                                            participation_summary = (
+                                                f"5 top contributors posted {concentration:.0f}% of all messages (highly concentrated)"
+                                            )
+                                        elif concentration > 50:
+                                            participation_summary = (
+                                                f"5 top contributors posted {concentration:.0f}% of all messages"
+                                            )
+                                        else:
+                                            participation_summary = (
+                                                f"5 top contributors posted {concentration:.0f}% of all messages (well distributed)"
+                                            )
+
+                                lost_interest_summary = None
+                                lost_interest_users = []
+                                try:
+                                    all_users = data_facade.channel_repository.get_channel_user_activity(
+                                        channel_name, days=None, limit=100
+                                    )
+                                    recent_users = data_facade.channel_repository.get_channel_user_activity(
+                                        channel_name, days=30, limit=100
+                                    )
+
+                                    recent_usernames = {user["author_name"] for user in recent_users}
+                                    inactive_users = [
+                                        user for user in all_users if user["author_name"] not in recent_usernames
+                                    ]
+
+                                    if inactive_users:
+                                        now = datetime.now(timezone.utc)
+                                        for user in inactive_users[:5]:
+                                            last_message_ts = user.get("last_message")
+                                            if not last_message_ts:
+                                                continue
+                                            try:
+                                                last_msg_date = datetime.fromisoformat(last_message_ts.replace("Z", "+00:00"))
+                                            except Exception:
+                                                continue
+                                            days_inactive = (now - last_msg_date).days
+                                            lost_interest_users.append(
+                                                {
+                                                    "display_name": user.get("author_display_name"),
+                                                    "author_name": user["author_name"],
+                                                    "days_inactive": days_inactive,
+                                                    "message_count": user.get("message_count", 0),
+                                                }
+                                            )
+
+                                        if lost_interest_users:
+                                            lost_interest_users.sort(
+                                                key=lambda x: (x["days_inactive"], x["message_count"]), reverse=True
+                                            )
+                                            inactive_count = len(lost_interest_users)
+                                            if inactive_count > 0:
+                                                lost_interest_summary = (
+                                                    f"{inactive_count} former contributors inactive for at least 30 days"
+                                                )
+                                except Exception as e:
+                                    logger.warning(f"Could not calculate lost interest for channel {channel_name}: {e}")
+
+                                engagement_summary = None
+                                engagement_metrics = result_dict.get("engagement_metrics")
+                                if engagement_metrics:
+                                    reaction_rate = engagement_metrics.get("reaction_rate")
+                                    if reaction_rate is not None:
+                                        if reaction_rate > 80:
+                                            engagement_summary = f"High engagement ({reaction_rate:.0f}% reaction rate)"
+                                        elif reaction_rate > 50:
+                                            engagement_summary = f"Moderate engagement ({reaction_rate:.0f}% reaction rate)"
+                                        else:
+                                            engagement_summary = f"Low engagement ({reaction_rate:.0f}% reaction rate)"
+
+                                trend_summary = None
+                                try:
+                                    current_messages = data_facade.message_repository.get_channel_messages(
+                                        channel_name, days_back=7
+                                    )
+                                    previous_messages = data_facade.message_repository.get_channel_messages(
+                                        channel_name,
+                                        days_back=14,
+                                        limit=len(current_messages) * 2 if current_messages else None,
+                                    )
+
+                                    if current_messages and previous_messages:
+                                        current_count = len(
+                                            [m for m in current_messages if not m.get("author_is_bot", False)]
+                                        )
+                                        previous_count = len(
+                                            [m for m in previous_messages if not m.get("author_is_bot", False)]
+                                        )
+                                        if previous_count > 0:
+                                            change_percent = ((current_count - previous_count) / previous_count) * 100
+                                            if change_percent > 20:
+                                                trend_summary = (
+                                                    f"Activity increasing (+{change_percent:.0f}% compared to previous 7 days)"
+                                                )
+                                            elif change_percent < -20:
+                                                trend_summary = (
+                                                    f"Activity decreasing ({change_percent:.0f}% compared to previous 7 days)"
+                                                )
+                                            else:
+                                                trend_summary = (
+                                                    f"Activity stable ({change_percent:+.0f}% compared to previous 7 days)"
+                                                )
+                                except Exception as e:
+                                    logger.warning(f"Could not calculate trend for channel {channel_name}: {e}")
+
+                                bot_activity_summary = None
+                                statistics = result_dict.get("statistics") or {}
+                                bot_messages = statistics.get("bot_messages", 0)
+                                total_messages = statistics.get("total_messages", 0)
+                                human_messages = statistics.get("human_messages", 0)
+                                if total_messages > 0 and bot_messages:
+                                    bot_percentage = (bot_messages / total_messages) * 100
+                                    if bot_messages > human_messages:
+                                        bot_activity_summary = (
+                                            f"Bots posted {bot_percentage:.0f}% of messages (more than humans)"
+                                        )
+                                    elif bot_percentage > 10:
+                                        bot_activity_summary = (
+                                            f"Bots posted {bot_percentage:.0f}% of messages (less than humans)"
+                                        )
+
+                                recent_activity_summary = None
+                                try:
+                                    recent_messages = data_facade.message_repository.get_channel_messages(
+                                        channel_name, days_back=7
+                                    )
+                                    if recent_messages:
+                                        human_recent = len(
+                                            [m for m in recent_messages if not m.get("author_is_bot", False)]
+                                        )
+                                        previous_messages = data_facade.message_repository.get_channel_messages(
+                                            channel_name,
+                                            days_back=14,
+                                            limit=len(recent_messages) * 2,
+                                        )
+                                        if previous_messages:
+                                            human_previous = len(
+                                                [m for m in previous_messages if not m.get("author_is_bot", False)]
+                                            )
+                                            if human_previous > 0:
+                                                change_percent = ((human_recent - human_previous) / human_previous) * 100
+                                                if change_percent >= 0:
+                                                    recent_activity_summary = (
+                                                        f"{human_recent} messages in last 7 days (up {change_percent:.0f}% vs previous 7 days)"
+                                                    )
+                                                else:
+                                                    recent_activity_summary = (
+                                                        f"{human_recent} messages in last 7 days (down {abs(change_percent):.0f}% vs previous 7 days)"
+                                                    )
+                                        if recent_activity_summary is None:
+                                            recent_activity_summary = f"{human_recent} messages in last 7 days"
+                                except Exception as e:
+                                    logger.warning(f"Could not calculate recent activity for channel {channel_name}: {e}")
+
+                                if topic_analyzer and not result_dict.get("top_topics"):
+                                    try:
+                                        topic_result = topic_analyzer.analyze(
+                                            channel_name=channel_name, top_n=5, days_back=None
+                                        )
+                                        if topic_result:
+                                            if hasattr(topic_result, "model_dump"):
+                                                topic_payload = topic_result.model_dump()
+                                            elif hasattr(topic_result, "dict"):
+                                                topic_payload = topic_result.dict()
+                                            elif isinstance(topic_result, dict):
+                                                topic_payload = topic_result
+                                            else:
+                                                topic_payload = {}
+                                            result_dict["top_topics"] = topic_payload.get("topics", [])
+                                    except Exception as e:
+                                        logger.warning(f"Topic analysis failed for channel {channel_name}: {e}")
+
+                                result_dict["total_human_members"] = total_human_members
+                                result_dict["participation_summary"] = participation_summary
+                                result_dict["lost_interest_summary"] = lost_interest_summary
+                                result_dict["lost_interest_users"] = lost_interest_users
+                                result_dict["engagement_summary"] = engagement_summary
+                                result_dict["trend_summary"] = trend_summary
+                                result_dict["bot_activity_summary"] = bot_activity_summary
+                                result_dict["recent_activity_summary"] = recent_activity_summary
+                                result_dict["channel_health"] = True
+
+                                aggregated_results.append(
+                                    {
+                                        "channel_name": channel_name,
+                                        "message_statistics": result_dict.get("statistics"),
+                                        "user_activity": {
+                                            "top_users": result_dict.get("top_users"),
+                                            "lost_interest_users": lost_interest_users,
+                                        },
+                                        "time_patterns": {
+                                            "peak_activity": result_dict.get("peak_activity"),
+                                            "recent_activity": result_dict.get("recent_activity"),
+                                            "daily_activity": result_dict.get("daily_activity_data"),
+                                        },
+                                        "content_analysis": {
+                                            "top_topics": result_dict.get("top_topics"),
+                                            "content_clusters": result_dict.get("content_clusters"),
+                                            "keywords": result_dict.get("keywords"),
+                                        },
+                                        "engagement_metrics": result_dict.get("engagement_metrics"),
+                                        "health_metrics": result_dict.get("health_metrics"),
+                                        "summaries": {
+                                            "participation": participation_summary,
+                                            "trend": trend_summary,
+                                            "recent_activity": recent_activity_summary,
+                                            "bot_activity": bot_activity_summary,
+                                            "lost_interest": lost_interest_summary,
+                                            "engagement": engagement_summary,
+                                        },
+                                        "full_analysis": result_dict,
+                                    }
+                                )
+                            except Exception as e:
+                                errors.append(
+                                    {
+                                        "channel_name": channel_name,
+                                        "error": f"Unexpected error: {e}",
+                                    }
+                                )
+                except Exception as e:
+                    self.show_template_error("Channel analysis", f"Failed to analyze channels: {e}")
+                    return
+
+                aggregated_payload = {
+                    "generated_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+                    "total_channels": len(channel_names),
+                    "analyzed_channels": sum(1 for result in aggregated_results if result.get("full_analysis")),
+                    "channels": aggregated_results,
+                }
+
+                if errors:
+                    aggregated_payload["errors"] = errors
+
+                final_format = output_format
+                if final_format != "json":
+                    final_format = "json"
+                    if ctx_obj.get("verbose"):
+                        click.echo(
+                            "ℹ️  --format text/csv is not supported with --all. Forcing JSON output.",
+                            err=True,
+                        )
+
+                target_output = output
+                if not target_output:
+                    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                    target_output = f"stats/channel_analysis_all_{timestamp}.json"
+
+                self.handle_output(
+                    aggregated_payload,
+                    target_output,
+                    final_format,
+                )
+                return
 
             data = analyze_channel(channel, limit, ctx_obj.get("db_path"))
 
@@ -516,12 +847,27 @@ def analyze_users(
     type=click.Choice(["text", "json", "csv"]),
     help="Output format",
 )
+@click.option(
+    "--all",
+    "analyze_all",
+    is_flag=True,
+    help="Analyze every channel and aggregate the results",
+)
 @click.pass_context
 def analyze_channels(
-    ctx, channel: Optional[str], limit: int, output: Optional[str], output_format: str
+    ctx,
+    channel: Optional[str],
+    limit: int,
+    output: Optional[str],
+    output_format: str,
+    analyze_all: bool,
 ):
     """Analyze channel activity and statistics."""
-    _cli_analysis.analyze_channels(ctx.obj, channel, limit, output, output_format)
+    if channel and analyze_all:
+        click.echo("❌ Please specify either --channel or --all, not both.", err=True)
+        ctx.exit(1)
+
+    _cli_analysis.analyze_channels(ctx.obj, channel, limit, output, output_format, analyze_all)
 
 
 @analyze.command(name="topics")

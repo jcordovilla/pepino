@@ -84,6 +84,7 @@ archive/
 temp/
 tmp/
 output/
+stats/
 
 # OS files
 .DS_Store
