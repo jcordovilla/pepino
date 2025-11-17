@@ -40,11 +40,12 @@ def create_activity_graph(
     for date_str in dates:
         try:
             date_objects.append(datetime.fromisoformat(date_str))
-        except:
+        except (ValueError, TypeError, AttributeError):
             # Fallback for different date formats
             try:
                 date_objects.append(datetime.strptime(date_str, "%Y-%m-%d"))
-            except:
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse date string: {date_str}, using current date as fallback")
                 date_objects.append(datetime.now())
 
     # Plot the data

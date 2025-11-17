@@ -388,7 +388,8 @@ class TopicAnalyzer:
                             if token.pos_ in ["NOUN", "PROPN"] and not token.is_stop and len(token.text) > 3
                         ]
                         temporal_trends[week_key].extend(main_concepts[:3])
-                except:
+                except (AttributeError, KeyError, ValueError) as e:
+                    logger.debug(f"Failed to extract temporal concepts: {e}")
                     pass
                     
             except Exception as e:

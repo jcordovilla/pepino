@@ -130,10 +130,34 @@ class AnalysisResponseBase(BaseModel):
 
 
 class AnalysisErrorResponse(AnalysisResponseBase):
-    """Error response for failed analysis."""
+    """
+    Enhanced error response for failed analysis.
+
+    Provides structured error information to help clients handle failures appropriately.
+
+    Attributes:
+        success: Always False for error responses
+        error: Human-readable error message
+        error_type: Category of error (validation_error, database_error, etc.)
+        error_code: Optional machine-readable error code
+        retry_recommended: Whether the client should retry the operation
+        context: Additional error context for debugging
+    """
 
     success: bool = False
     error: str
+    error_type: Literal[
+        "validation_error",
+        "database_error",
+        "not_found",
+        "insufficient_data",
+        "processing_error",
+        "timeout_error",
+        "dependency_error"
+    ] = "processing_error"
+    error_code: Optional[str] = None
+    retry_recommended: bool = False
+    context: Optional[dict] = None
 
 
 # User Analysis Models

@@ -219,7 +219,8 @@ class ConversationService:
             end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
             duration = end - start
             return round(duration.total_seconds() / 3600, 2)
-        except:
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.warning(f"Failed to calculate duration between {start_time} and {end_time}: {e}")
             return 0.0
 
     def _analyze_conversation_turns(self, messages: List[Tuple]) -> Dict[str, Any]:
@@ -246,7 +247,8 @@ class ConversationService:
                         )
                         duration = (end_time - start_time).total_seconds()
                         turn_durations.append(duration)
-                    except:
+                    except (ValueError, AttributeError, TypeError) as e:
+                        logger.debug(f"Failed to calculate turn duration: {e}")
                         pass
 
                 current_speaker = author
@@ -291,7 +293,8 @@ class ConversationService:
                             response_time = (resp_time - ref_time).total_seconds()
                             if 0 < response_time < 3600:  # Between 0 and 1 hour
                                 response_times.append(response_time)
-                        except:
+                        except (ValueError, AttributeError, TypeError, IndexError) as e:
+                            logger.debug(f"Failed to calculate response time: {e}")
                             pass
                         break
 
