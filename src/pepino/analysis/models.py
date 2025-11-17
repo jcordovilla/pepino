@@ -4,7 +4,7 @@ Analysis response models for analyzer outputs.
 
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # Base activity models for V2 analyzers
@@ -142,6 +142,14 @@ class UserInfo(BaseModel):
 
     author_id: str
     display_name: str
+    username: Optional[str] = None
+    is_bot: Optional[bool] = None
+    first_message_at: Optional[str] = None
+    last_message_at: Optional[str] = None
+    account_created_at: Optional[str] = None
+    guilds: List[str] = Field(default_factory=list)
+    total_messages: Optional[int] = None
+    unique_channels: Optional[int] = None
 
 
 class UserStatistics(BaseModel):

@@ -190,6 +190,151 @@ class UserRepository:
             for row in results
         ] if results else []
 
+    def _normalize_user_metadata_row(self, row: Any) -> Dict[str, Any]:
+        """Convert a metadata row into a normalized dictionary."""
+        row_dict = dict(row)
+        guilds_raw = row_dict.get("guilds")
+        guilds: List[str] = []
+        if guilds_raw:
+            guilds = sorted(
+                {guild.strip() for guild in guilds_raw.split(",") if guild and guild.strip()}
+            )
+
+        return {
+            "author_name": row_dict.get("author_name"),
+            "author_id": row_dict.get("author_id"),
+            "display_name": row_dict.get("display_name") or row_dict.get("author_name"),
+            "is_bot": bool(row_dict.get("is_bot", 0)),
+            "first_message_at": row_dict.get("first_message_at"),
+            "last_message_at": row_dict.get("last_message_at"),
+            "account_created_at": row_dict.get("account_created_at"),
+            "guilds": guilds,
+            "total_messages": row_dict.get("total_messages", 0) or 0,
+            "unique_channels": row_dict.get("unique_channels", 0) or 0,
+        }
+
+    def get_user_metadata(
+        self,
+        username: Optional[str] = None,
+        author_id: Optional[str] = None,
+        include_bots: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Get enriched metadata for a specific user.
+
+        Args:
+            username: Discord username to filter by.
+            author_id: Discord author ID to filter by.
+            include_bots: Whether to include bot accounts.
+
+        Returns:
+            Dictionary of user metadata or empty dict if not found.
+        """
+        conditions = [
+            "content IS NOT NULL",
+            "author_name IS NOT NULL",
+            "author_name != ''",
+        ]
+        params: List[Any] = []
+
+        if not include_bots:
+            conditions.append("(author_is_bot = 0 OR author_is_bot IS NULL)")
+
+        if username:
+            conditions.append("author_name = ?")
+            params.append(username)
+
+        if author_id:
+            conditions.append("author_id = ?")
+            params.append(author_id)
+
+        if not params:
+            # Require at least one identifier to avoid scanning entire table.
+            logger.warning("get_user_metadata called without username or author_id")
+            return {}
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"""
+        SELECT 
+            author_name,
+            MAX(author_id) AS author_id,
+            MAX(COALESCE(author_display_name, author_name)) AS display_name,
+            MAX(CASE WHEN author_is_bot IN (1, '1', 'true', 'True') THEN 1 ELSE 0 END) AS is_bot,
+            MIN(timestamp) AS first_message_at,
+            MAX(timestamp) AS last_message_at,
+            MAX(author_created_at) AS account_created_at,
+            GROUP_CONCAT(DISTINCT guild_name) AS guilds,
+            COUNT(*) AS total_messages,
+            COUNT(DISTINCT channel_name) AS unique_channels
+        FROM messages
+        WHERE {where_clause}
+        GROUP BY author_name
+        ORDER BY last_message_at DESC
+        LIMIT 1
+        """
+
+        row = self.db_manager.execute_query(query, tuple(params), fetch_one=True)
+        if not row:
+            return {}
+
+        return self._normalize_user_metadata_row(row)
+
+    def get_available_users_metadata(
+        self,
+        limit: Optional[int] = None,
+        include_bots: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get enriched metadata for available users.
+
+        Args:
+            limit: Optional maximum number of users to return.
+            include_bots: Whether to include bot accounts.
+
+        Returns:
+            List of user metadata dictionaries.
+        """
+        conditions = [
+            "content IS NOT NULL",
+            "author_name IS NOT NULL",
+            "author_name != ''",
+        ]
+        params: List[Any] = []
+
+        if not include_bots:
+            conditions.append("(author_is_bot = 0 OR author_is_bot IS NULL)")
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"""
+        SELECT 
+            author_name,
+            MAX(author_id) AS author_id,
+            MAX(COALESCE(author_display_name, author_name)) AS display_name,
+            MAX(CASE WHEN author_is_bot IN (1, '1', 'true', 'True') THEN 1 ELSE 0 END) AS is_bot,
+            MIN(timestamp) AS first_message_at,
+            MAX(timestamp) AS last_message_at,
+            MAX(author_created_at) AS account_created_at,
+            GROUP_CONCAT(DISTINCT guild_name) AS guilds,
+            COUNT(*) AS total_messages,
+            COUNT(DISTINCT channel_name) AS unique_channels
+        FROM messages
+        WHERE {where_clause}
+        GROUP BY author_name
+        ORDER BY display_name
+        """
+
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        rows = self.db_manager.execute_query(query, tuple(params) if params else ())
+        if not rows:
+            return []
+
+        return [self._normalize_user_metadata_row(row) for row in rows]
+
     def get_available_users(self, limit: Optional[int] = None) -> List[str]:
         """
         Get list of available users (humans only) with display names.

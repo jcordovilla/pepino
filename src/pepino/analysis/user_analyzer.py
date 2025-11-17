@@ -7,11 +7,14 @@ Provides comprehensive user activity analysis with proper separation of concerns
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
 from .models import UserAnalysisResponse, LocalUserStatistics, ChannelActivity
 from .models import EnhancedUserAnalysisResponse, EnhancedUserStatistics, EnhancedChannelActivity, TimeOfDayActivity, SemanticAnalysisResult
+
+if TYPE_CHECKING:
+    from .models import TopicItem
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +88,28 @@ class UserAnalyzer:
             
             # Build result
             from .models import UserInfo
-            
+
+            metadata = self._get_user_metadata(username)
+            author_id = metadata.get("author_id") or username
+            display_name = metadata.get("display_name") or username
+            user_info = UserInfo(
+                author_id=author_id,
+                display_name=display_name,
+                username=metadata.get("author_name") or username,
+                is_bot=metadata.get("is_bot"),
+                first_message_at=metadata.get("first_message_at") or statistics.first_message_date,
+                last_message_at=metadata.get("last_message_at") or statistics.last_message_date,
+                account_created_at=metadata.get("account_created_at"),
+                guilds=metadata.get("guilds", []),
+                total_messages=metadata.get("total_messages") or statistics.total_messages,
+                unique_channels=metadata.get("unique_channels") or statistics.unique_channels,
+            )
+
             analysis = UserAnalysisResponse(
-                user_info=UserInfo(
-                    author_id=username,  # Use username as ID for now
-                    display_name=username
+                user_info=user_info,
+                statistics=self._convert_to_user_statistics_model(
+                    statistics, username, author_id=author_id
                 ),
-                statistics=self._convert_to_user_statistics_model(statistics, username)
             )
             
             logger.info(f"User analysis completed for: {username}")
@@ -145,11 +163,31 @@ class UserAnalyzer:
             # Build result
             from .models import UserInfo
             
+            metadata = self._get_user_metadata(username)
+            author_id = metadata.get("author_id") or statistics.author_id or username
+            display_name = metadata.get("display_name") or statistics.display_name or username
+            username_value = metadata.get("author_name") or statistics.author_name or username
+
+            # Align statistics identifiers with enriched metadata
+            statistics.author_id = author_id
+            statistics.author_name = username_value
+            statistics.display_name = display_name
+
+            user_info = UserInfo(
+                author_id=author_id,
+                display_name=display_name,
+                username=username_value,
+                is_bot=metadata.get("is_bot"),
+                first_message_at=metadata.get("first_message_at") or statistics.first_message_date,
+                last_message_at=metadata.get("last_message_at") or statistics.last_message_date,
+                account_created_at=metadata.get("account_created_at"),
+                guilds=metadata.get("guilds", []),
+                total_messages=metadata.get("total_messages") or statistics.message_count,
+                unique_channels=metadata.get("unique_channels") or statistics.channels_active,
+            )
+
             analysis = EnhancedUserAnalysisResponse(
-                user_info=UserInfo(
-                    author_id=username,  # Use username as ID for now
-                    display_name=statistics.display_name or username
-                ),
+                user_info=user_info,
                 statistics=statistics,
                 channel_activity=channel_activity,
                 time_patterns=time_patterns,
@@ -164,12 +202,17 @@ class UserAnalyzer:
             logger.error(f"Enhanced user analysis failed for {username}: {e}")
             return None
     
-    def _convert_to_user_statistics_model(self, stats: LocalUserStatistics, username: str):
+    def _convert_to_user_statistics_model(
+        self,
+        stats: LocalUserStatistics,
+        username: str,
+        author_id: Optional[str] = None,
+    ):
         """Convert our LocalUserStatistics to the model expected by UserAnalysisResponse."""
         from .models import UserStatistics as ModelUserStatistics
         
         return ModelUserStatistics(
-            author_id=username,
+            author_id=author_id or username,
             author_name=username,
             message_count=stats.total_messages,
             channels_active=stats.unique_channels,
@@ -325,6 +368,17 @@ class UserAnalyzer:
             'avg_daily_messages': statistics.messages_per_day
         }
 
+    def _get_user_metadata(self, username: str) -> Dict[str, Any]:
+        """Fetch enriched metadata for a user if available."""
+        try:
+            if not hasattr(self.data_facade, "user_repository") or self.data_facade.user_repository is None:
+                return {}
+            metadata = self.data_facade.user_repository.get_user_metadata(username=username)
+            return metadata or {}
+        except Exception as e:
+            logger.warning(f"Could not retrieve metadata for user {username}: {e}")
+            return {}
+
     def get_available_users(self) -> List[str]:
         """Get list of available users using data facade."""
         try:
@@ -339,6 +393,18 @@ class UserAnalyzer:
             return self.data_facade.user_repository.get_top_users_by_message_count(limit, days)
         except Exception as e:
             logger.error(f"Failed to get top users: {e}")
+            return []
+
+    def get_available_users_metadata(
+        self, limit: Optional[int] = None, include_bots: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Get enriched metadata for available users."""
+        try:
+            return self.data_facade.user_repository.get_available_users_metadata(
+                limit=limit, include_bots=include_bots
+            )
+        except Exception as e:
+            logger.error(f"Failed to get user metadata list: {e}")
             return []
 
     def get_user_health(self, username: str) -> Dict[str, any]:

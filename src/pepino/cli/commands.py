@@ -49,10 +49,149 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
         limit: int,
         output: Optional[str],
         output_format: str,
+        analyze_all: bool = False,
     ):
         """Analyze user activity with template integration."""
         try:
-            from .persistence import analyze_user
+            from .persistence import analyze_user, get_database_manager
+
+            if user and analyze_all:
+                click.echo("❌ Please specify either --user or --all, not both.", err=True)
+                return
+
+            if analyze_all:
+                from pepino.analysis.data_facade import get_analysis_data_facade
+
+                settings = Settings()
+                db_path = ctx_obj.get("db_path") or settings.db_path
+
+                aggregated_results: List[Dict[str, Any]] = []
+                errors: List[Dict[str, Any]] = []
+
+                try:
+                    with get_database_manager(db_path) as db_manager:
+                        data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+                        user_analyzer = UserAnalyzer(data_facade)
+
+                        metadata_list = user_analyzer.get_available_users_metadata()
+                        if not metadata_list:
+                            self.show_template_error(
+                                "User analysis", "No users available for analysis"
+                            )
+                            return
+
+                        for metadata in metadata_list:
+                            username_value = metadata.get("author_name")
+                            if not username_value:
+                                errors.append(
+                                    {
+                                        "author_name": username_value,
+                                        "error": "User record missing author_name; skipped",
+                                    }
+                                )
+                                continue
+
+                            try:
+                                analysis_model = user_analyzer.analyze_enhanced(
+                                    username_value, include_semantic=False
+                                )
+                                if not analysis_model:
+                                    errors.append(
+                                        {
+                                            "author_name": username_value,
+                                            "error": "No analysis data returned",
+                                        }
+                                    )
+                                    continue
+
+                                if hasattr(analysis_model, "model_dump"):
+                                    result_dict = analysis_model.model_dump()
+                                elif hasattr(analysis_model, "dict"):
+                                    result_dict = analysis_model.dict()
+                                else:
+                                    result_dict = analysis_model
+
+                                author_id = metadata.get("author_id") or username_value
+                                display_name = metadata.get("display_name") or username_value
+
+                                stats_dict = result_dict.get("statistics") or {}
+                                curated_stats = {
+                                    "message_count": stats_dict.get("message_count"),
+                                    "channels_active": stats_dict.get("channels_active"),
+                                    "active_days": stats_dict.get("active_days"),
+                                    "avg_message_length": stats_dict.get("avg_message_length"),
+                                }
+                                curated_stats = {
+                                    key: value
+                                    for key, value in curated_stats.items()
+                                    if value is not None
+                                }
+
+                                first_message_at = metadata.get("first_message_at") or stats_dict.get(
+                                    "first_message_date"
+                                )
+                                last_message_at = metadata.get("last_message_at") or stats_dict.get(
+                                    "last_message_date"
+                                )
+
+                                user_payload: Dict[str, Any] = {
+                                    "user_id": author_id,
+                                    "username": username_value,
+                                    "display_name": display_name,
+                                    "is_bot": metadata.get("is_bot", False),
+                                    "guilds": metadata.get("guilds", []),
+                                    "account_created_at": metadata.get("account_created_at"),
+                                    "first_message_at": first_message_at,
+                                    "last_message_at": last_message_at,
+                                    "channel_activity": result_dict.get("channel_activity"),
+                                    "time_patterns": result_dict.get("time_patterns"),
+                                    "semantic_analysis": result_dict.get("semantic_analysis"),
+                                    "top_topics": result_dict.get("top_topics"),
+                                    "full_analysis": result_dict,
+                                }
+
+                                if curated_stats:
+                                    user_payload["statistics"] = curated_stats
+
+                                aggregated_results.append(user_payload)
+                            except Exception as exc:
+                                errors.append(
+                                    {
+                                        "author_name": username_value,
+                                        "error": f"Unexpected error: {exc}",
+                                    }
+                                )
+
+                except Exception as exc:
+                    self.show_template_error("User analysis", f"Failed to analyze users: {exc}")
+                    return
+
+                aggregated_payload: Dict[str, Any] = {
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "total_users": len(metadata_list),
+                    "analyzed_users": len(aggregated_results),
+                    "users": aggregated_results,
+                }
+
+                if errors:
+                    aggregated_payload["errors"] = errors
+
+                final_format = output_format
+                if final_format != "json":
+                    final_format = "json"
+                    if ctx_obj.get("verbose"):
+                        click.echo(
+                            "ℹ️  --format text/csv is not supported with --all. Forcing JSON output.",
+                            err=True,
+                        )
+
+                target_output = output
+                if not target_output:
+                    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+                    target_output = f"stats/user_analysis_all_{timestamp}.json"
+
+                self.handle_output(aggregated_payload, target_output, final_format)
+                return
 
             data = analyze_user(user, limit, ctx_obj.get("db_path"))
 
@@ -865,12 +1004,23 @@ def analyze(ctx):
     type=click.Choice(["text", "json", "csv"]),
     help="Output format",
 )
+@click.option(
+    "--all",
+    "analyze_all",
+    is_flag=True,
+    help="Analyze every user and aggregate the results",
+)
 @click.pass_context
 def analyze_users(
-    ctx, user: Optional[str], limit: int, output: Optional[str], output_format: str
+    ctx,
+    user: Optional[str],
+    limit: int,
+    output: Optional[str],
+    output_format: str,
+    analyze_all: bool,
 ):
     """Analyze user activity and statistics."""
-    _cli_analysis.analyze_users(ctx.obj, user, limit, output, output_format)
+    _cli_analysis.analyze_users(ctx.obj, user, limit, output, output_format, analyze_all)
 
 
 @analyze.command(name="channels")
