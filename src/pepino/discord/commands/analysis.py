@@ -1548,20 +1548,30 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             embed.add_field(
                 name="📊 `/pepino_channel_analytics`",
                 value="**Comprehensive channel analysis**\n"
-                      "• `overview` - Channel summary and statistics\n"
-                      "• `topics` - Topic analysis and themes\n"
-                      "Options: channel_name, days, end_date",
+                      "**Analysis Types:**\n"
+                      "• `overview` - Channel summary with statistics and activity charts (default: all time)\n"
+                      "• `topics` - Topic analysis and keyword themes (default: all time)\n\n"
+                      "**Options:**\n"
+                      "• `analysis_type` - Type: `overview` or `topics`\n"
+                      "• `channel_name` - Channel to analyze (autocomplete, optional - uses current channel if omitted)\n"
+                      "• `days` - Number of days to look back (optional, default: all time)\n"
+                      "• `end_date` - End date in YYYY-MM-DD format (optional, default: today)",
                 inline=False
             )
             
             # User Analytics
             embed.add_field(
                 name="👤 `/pepino_user_analytics`",
-                value="**Analyze user activity and behavior**\n"
+                value="**Analyze user activity and behavior patterns**\n"
+                      "**Features:**\n"
                       "• Activity patterns and statistics\n"
                       "• Content analysis and themes\n"
                       "• Engagement metrics\n"
-                      "Options: username, days, include_semantic",
+                      "• Activity timeline charts\n\n"
+                      "**Options:**\n"
+                      "• `username` - User to analyze (required, autocomplete)\n"
+                      "• `days` - Number of days to look back (optional, default: all time)\n"
+                      "• `include_semantic` - Include semantic topic analysis (default: true)",
                 inline=False
             )
             
@@ -1569,9 +1579,13 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             embed.add_field(
                 name="🏠 `/pepino_server_analytics`",
                 value="**Server-wide analysis and statistics**\n"
-                      "• `top_users` - Most active users\n"
-                      "• `overview` - Server summary stats\n"
-                      "Options: analysis_type, limit, days",
+                      "**Analysis Types:**\n"
+                      "• `top_users` - Most active users across all channels (default: all time)\n"
+                      "• `overview` - Server summary stats with activity trends and charts\n\n"
+                      "**Options:**\n"
+                      "• `analysis_type` - Type: `top_users` or `overview`\n"
+                      "• `limit` - Number of users to show for top_users (default: 10)\n"
+                      "• `days` - Number of days to look back (optional, default: all time)",
                 inline=False
             )
             
@@ -1579,9 +1593,12 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
             embed.add_field(
                 name="📋 `/pepino_lists`",
                 value="**List available data for analysis**\n"
-                      "• `channels` - Available channels\n"
-                      "• `users` - Available users\n"
-                      "Options: list_type, limit",
+                      "**List Types:**\n"
+                      "• `channels` - All available channels in the server\n"
+                      "• `users` - All available users (shows display names)\n\n"
+                      "**Options:**\n"
+                      "• `list_type` - Type: `channels` or `users` (required)\n"
+                      "• `limit` - Number of results to show (optional, shows all if omitted)",
                 inline=False
             )
             
@@ -1590,13 +1607,14 @@ class AnalysisCommands(ComprehensiveCommandMixin, commands.Cog):
                 name="❓ `/pepino_help`",
                 value="**Show this help message**\n"
                       "• Display all available commands\n"
-                      "• Command descriptions and options",
+                      "• Command descriptions and options\n"
+                      "• Usage tips and examples",
                 inline=False
             )
             
             # Footer with additional info
             embed.set_footer(
-                text="💡 Tip: Use autocomplete for channel and user names. Most commands support optional time filtering with 'days' parameter."
+                text="💡 Tip: Use autocomplete for channel and user names. Most commands support optional time filtering with 'days' parameter. Omit 'days' for all-time analysis."
             )
             
             await interaction.response.send_message(embed=embed)
