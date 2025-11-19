@@ -917,14 +917,15 @@ def help_command(ctx):
                   Options: --force, --full, --clear, --timeout
                   
   status          Check sync status and data freshness
+                  Options: None
 
 📋 LIST COMMANDS (pepino list <command>)
 ───────────────────────────────────────────────────────────────────────────────
   channels        List available channels for analysis
-                  Options: --limit, --output, --format
+                  Options: --limit (default: 0 for all), --output, --format
                   
   users           List available users for analysis
-                  Options: --limit, --output, --format
+                  Options: --limit (default: 0 for all), --output, --format
                   
   stats           Show database statistics and overview
                   Options: --output, --format
@@ -938,7 +939,7 @@ def help_command(ctx):
                   Options: --operations, --iterations, --output, --format
                   
   profile         Profile specific analysis operations
-                  Options: --operation, --args, --output
+                  Options: --operation (required), --args, --output
 
 🧪 TEST COMMANDS (pepino test <command>) [ADMIN ONLY]
 ───────────────────────────────────────────────────────────────────────────────
@@ -954,30 +955,38 @@ def help_command(ctx):
   dependencies    Test system dependencies and requirements
                   Options: --output, --format
 
-🚀 BOT COMMANDS
+🚀 TOP-LEVEL COMMANDS
 ───────────────────────────────────────────────────────────────────────────────
   start           Start the Discord bot
                   Options: --token, --prefix, --debug
                   
-  export-data     Export data to files
-                  Options: --table, --output, --format
+  export-data     Export data from database to files
+                  Options: --table (messages/users/channels), --output, --format
+                  
+  help            Show this help message
 
 ═══════════════════════════════════════════════════════════════════════════════
 
 💡 USAGE EXAMPLES:
   pepino analyze users --limit 20 --format json
+  pepino analyze users --user alice_dev
   pepino analyze topics --channel general --days 30
+  pepino analyze channels --limit 10 --output channels.csv
   pepino sync run --force
   pepino list channels --limit 10
+  pepino list users                  # Shows all users (no limit)
   pepino performance metrics
   pepino test data
+  pepino start --debug
+  pepino export-data --table messages --format json
 
 📝 NOTES:
   • Most commands support --output and --format options for custom output
-  • Available formats: text, json, csv
-  • Use --help with any command for detailed options
+  • Available formats: text, json, csv (varies by command)
+  • Use --help with any command for detailed options and defaults
   • Admin commands (sync, performance, test) require appropriate permissions
   • Time filtering: use --days for recent data, omit for all-time analysis
+  • List commands: use --limit 0 or omit --limit to show all results
 
 ═══════════════════════════════════════════════════════════════════════════════
 """

@@ -1,17 +1,29 @@
 """
-User Analyzer 
+User Analyzer
 
 Synchronous user analysis using the data facade pattern for repository management.
 Provides comprehensive user activity analysis with proper separation of concerns.
 """
 
 import logging
+import sqlite3
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from pydantic import ValidationError
 
 from .data_facade import AnalysisDataFacade, get_analysis_data_facade
-from .models import UserAnalysisResponse, LocalUserStatistics, ChannelActivity
-from .models import EnhancedUserAnalysisResponse, EnhancedUserStatistics, EnhancedChannelActivity, TimeOfDayActivity, SemanticAnalysisResult
+from .models import (
+    UserAnalysisResponse,
+    LocalUserStatistics,
+    ChannelActivity,
+    EnhancedUserAnalysisResponse,
+    EnhancedUserStatistics,
+    EnhancedChannelActivity,
+    TimeOfDayActivity,
+    SemanticAnalysisResult,
+    AnalysisErrorResponse
+)
+from .validators import UserAnalysisRequest, validate_user_analysis_input
 
 if TYPE_CHECKING:
     from .models import TopicItem
@@ -49,53 +61,84 @@ class UserAnalyzer:
         logger.info("UserAnalyzer initialized with data facade pattern")
     
     def analyze(
-        self, 
+        self,
         username: str,
         days: Optional[int] = None,
         include_patterns: bool = True
-    ) -> Optional[UserAnalysisResponse]:
+    ) -> Union[UserAnalysisResponse, AnalysisErrorResponse]:
         """
-        Analyze a user comprehensively using repository layer.
-        
+        Analyze a user comprehensively using repository layer with enhanced error handling.
+
         Args:
             username: Name of the user to analyze
             days: Number of days to look back (None = all time)
             include_patterns: Whether to include time patterns analysis
-            
+
         Returns:
-            UserAnalysisResponse object with comprehensive results
+            UserAnalysisResponse on success, AnalysisErrorResponse on failure
+
+        Example:
+            >>> analyzer = UserAnalyzer()
+            >>> result = analyzer.analyze("alice", days=30)
+            >>> if result.success:
+            ...     print(f"User has {result.statistics.message_count} messages")
+            ... else:
+            ...     print(f"Error: {result.error}")
         """
-        
+
         try:
-            logger.info(f"Starting user analysis for: {username}")
-            
+            # Validate input
+            try:
+                request = validate_user_analysis_input(
+                    username=username,
+                    days=days,
+                    include_patterns=include_patterns
+                )
+            except ValidationError as e:
+                logger.warning(f"Invalid input for user analysis: {e}")
+                return AnalysisErrorResponse(
+                    error=f"Invalid input: {str(e)}",
+                    error_type="validation_error",
+                    error_code="INVALID_INPUT",
+                    retry_recommended=False,
+                    context={"username": username, "days": days}
+                )
+
+            logger.info(f"Starting user analysis for: {request.username}")
+
             # Get basic statistics through repository
-            statistics = self._get_user_statistics_via_repository(username, days)
+            statistics = self._get_user_statistics_via_repository(request.username, request.days)
             if not statistics or statistics.total_messages == 0:
-                logger.warning(f"No messages found for user: {username}")
-                return None
-            
+                logger.warning(f"No messages found for user: {request.username}")
+                return AnalysisErrorResponse(
+                    error=f"No messages found for user '{request.username}'",
+                    error_type="not_found",
+                    error_code="USER_NO_MESSAGES",
+                    retry_recommended=False,
+                    context={"username": request.username, "days": request.days}
+                )
+
             # Get channel activity through repository
-            channel_activity = self._get_user_channel_activity_via_repository(username, days)
-            
+            channel_activity = self._get_user_channel_activity_via_repository(request.username, request.days)
+
             # Get time patterns if requested
             time_patterns = {}
-            if include_patterns:
-                time_patterns = self._analyze_time_patterns_via_repository(username, days)
-            
+            if request.include_patterns:
+                time_patterns = self._analyze_time_patterns_via_repository(request.username, request.days)
+
             # Create summary
             summary = self._create_user_summary(statistics, channel_activity, time_patterns)
-            
+
             # Build result
             from .models import UserInfo
 
-            metadata = self._get_user_metadata(username)
-            author_id = metadata.get("author_id") or username
-            display_name = metadata.get("display_name") or username
+            metadata = self._get_user_metadata(request.username)
+            author_id = metadata.get("author_id") or request.username
+            display_name = metadata.get("display_name") or request.username
             user_info = UserInfo(
                 author_id=author_id,
                 display_name=display_name,
-                username=metadata.get("author_name") or username,
+                username=metadata.get("author_name") or request.username,
                 is_bot=metadata.get("is_bot"),
                 first_message_at=metadata.get("first_message_at") or statistics.first_message_date,
                 last_message_at=metadata.get("last_message_at") or statistics.last_message_date,
@@ -108,16 +151,31 @@ class UserAnalyzer:
             analysis = UserAnalysisResponse(
                 user_info=user_info,
                 statistics=self._convert_to_user_statistics_model(
-                    statistics, username, author_id=author_id
-                ),
+                    statistics, request.username, author_id=author_id
+                )
             )
-            
-            logger.info(f"User analysis completed for: {username}")
+
+            logger.info(f"User analysis completed for: {request.username}")
             return analysis
-            
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error analyzing user {username}: {e}")
+            return AnalysisErrorResponse(
+                error=f"Database error: {str(e)}",
+                error_type="database_error",
+                error_code="DB_ERROR",
+                retry_recommended=True,
+                context={"username": username, "error_details": str(e)}
+            )
         except Exception as e:
-            logger.error(f"User analysis failed for {username}: {e}")
-            return None
+            logger.error(f"User analysis failed for {username}: {e}", exc_info=True)
+            return AnalysisErrorResponse(
+                error=f"Analysis failed: {str(e)}",
+                error_type="processing_error",
+                error_code="ANALYSIS_FAILED",
+                retry_recommended=False,
+                context={"username": username, "error_type": type(e).__name__}
+            )
     
     def analyze_enhanced(
         self, 

@@ -1,5 +1,5 @@
 """
-Synchronous Database Manager 
+Synchronous Database Manager
 
 This is the future sync database manager that will replace the async version.
 Provides clean, simple database operations without async complexity.
@@ -10,6 +10,7 @@ Key benefits:
 - Thread-safe operation
 - Context manager support
 - Comprehensive error handling
+- Retry logic for transient failures
 """
 
 import logging
@@ -20,6 +21,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .schema import SCHEMA_QUERIES
+
+# Import retry utilities if available
+try:
+    from ...utils.retry import retry_on_error
+except ImportError:
+    # Fallback if retry module not available
+    def retry_on_error(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 logger = logging.getLogger(__name__)
 
@@ -155,63 +166,71 @@ class DatabaseManager:
             # Connection stays open for thread reuse
             pass
     
+    @retry_on_error(max_attempts=3, backoff_factor=2.0, initial_delay=0.5)
     def execute_query(
-        self, 
-        query: str, 
+        self,
+        query: str,
         params: Optional[Tuple] = None,
         fetch_one: bool = False,
         fetch_all: bool = True
     ) -> Optional[Union[sqlite3.Row, List[sqlite3.Row]]]:
         """
-        Execute a database query.
-        
+        Execute a database query with automatic retry on transient failures.
+
         Args:
             query: SQL query to execute
             params: Query parameters
             fetch_one: Return only one row
             fetch_all: Return all rows (default)
-            
+
         Returns:
             Query results or None
+
+        Raises:
+            sqlite3.Error: If query execution fails after all retries
         """
-        
+
         with self.get_connection() as conn:
             try:
                 cursor = conn.execute(query, params or ())
-                
+
                 if fetch_one:
                     return cursor.fetchone()
                 elif fetch_all:
                     return cursor.fetchall()
                 else:
                     return None
-                    
+
             except Exception as e:
                 logger.error(f"Query execution failed: {query[:100]}... Error: {e}")
                 raise
     
+    @retry_on_error(max_attempts=3, backoff_factor=2.0, initial_delay=0.5)
     def execute_many(
-        self, 
-        query: str, 
+        self,
+        query: str,
         params_list: List[Tuple]
     ) -> int:
         """
-        Execute query with multiple parameter sets.
-        
+        Execute query with multiple parameter sets with automatic retry.
+
         Args:
             query: SQL query to execute
             params_list: List of parameter tuples
-            
+
         Returns:
             Number of affected rows
+
+        Raises:
+            sqlite3.Error: If batch execution fails after all retries
         """
-        
+
         with self.get_connection() as conn:
             try:
                 cursor = conn.executemany(query, params_list)
                 conn.commit()
                 return cursor.rowcount
-                
+
             except Exception as e:
                 logger.error(f"Batch execution failed: {query[:100]}... Error: {e}")
                 raise

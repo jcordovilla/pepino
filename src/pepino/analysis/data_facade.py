@@ -107,19 +107,31 @@ class AnalysisDataFacade:
     @contextmanager
     def transaction(self):
         """
-        Context manager for database transactions.
-        
+        Context manager for database transactions with improved error handling.
+
         Provides transaction isolation for analysis operations that
         require consistency across multiple repository calls.
+
+        Features:
+        - Automatic BEGIN/COMMIT/ROLLBACK handling
+        - Safe rollback with exception handling
+        - Proper error logging and propagation
         """
         with self.db_manager.get_connection() as conn:
             try:
                 conn.execute("BEGIN")
                 yield self
                 conn.execute("COMMIT")
+                logger.debug("Transaction committed successfully")
             except Exception as e:
-                conn.execute("ROLLBACK")
-                logger.error(f"Transaction rolled back due to error: {e}")
+                # Attempt rollback with error handling
+                try:
+                    conn.execute("ROLLBACK")
+                    logger.info("Transaction rolled back successfully")
+                except Exception as rollback_error:
+                    logger.error(f"ROLLBACK failed: {rollback_error}")
+                    # Original exception takes precedence
+                logger.error(f"Transaction failed: {e}")
                 raise
     
     def get_cross_channel_summary(self, days_back: int = 7, limit: int = 10) -> List[Dict]:
