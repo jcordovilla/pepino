@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional
 
 import click
 
-from pepino.logging_config import get_logger, setup_cli_logging
-
 from pepino.analysis.channel_analyzer import ChannelAnalyzer
 from pepino.analysis.conversation_analyzer import ConversationService
 from pepino.analysis.embedding_analyzer import EmbeddingService
@@ -24,6 +22,7 @@ from pepino.analysis.user_analyzer import UserAnalyzer
 from pepino.config import Settings
 from pepino.data.database.manager import DatabaseManager
 from pepino.data.repositories import ChannelRepository, MessageRepository
+from pepino.logging_config import get_logger, setup_cli_logging
 
 from . import persistence
 from .mixins import CLIAnalysisMixin
@@ -34,14 +33,14 @@ logger = get_logger(__name__)
 class CLIAnalysisCommands(CLIAnalysisMixin):
     """
     CLI Analysis Commands with template integration.
-    
+
     Uses mixin pattern for consistent template rendering and output formatting.
     """
-    
+
     def __init__(self):
         super().__init__()
         logger.info("CLI Analysis Commands initialized with template support")
-    
+
     def analyze_users(
         self,
         ctx_obj: Dict[str, Any],
@@ -56,7 +55,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             from .persistence import analyze_user, get_database_manager
 
             if user and analyze_all:
-                click.echo("❌ Please specify either --user or --all, not both.", err=True)
+                click.echo(
+                    "❌ Please specify either --user or --all, not both.", err=True
+                )
                 return
 
             if analyze_all:
@@ -70,7 +71,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
 
                 try:
                     with get_database_manager(db_path) as db_manager:
-                        data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+                        data_facade = get_analysis_data_facade(
+                            db_manager, settings.base_filter
+                        )
                         user_analyzer = UserAnalyzer(data_facade)
 
                         metadata_list = user_analyzer.get_available_users_metadata()
@@ -112,14 +115,20 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                     result_dict = analysis_model
 
                                 author_id = metadata.get("author_id") or username_value
-                                display_name = metadata.get("display_name") or username_value
+                                display_name = (
+                                    metadata.get("display_name") or username_value
+                                )
 
                                 stats_dict = result_dict.get("statistics") or {}
                                 curated_stats = {
                                     "message_count": stats_dict.get("message_count"),
-                                    "channels_active": stats_dict.get("channels_active"),
+                                    "channels_active": stats_dict.get(
+                                        "channels_active"
+                                    ),
                                     "active_days": stats_dict.get("active_days"),
-                                    "avg_message_length": stats_dict.get("avg_message_length"),
+                                    "avg_message_length": stats_dict.get(
+                                        "avg_message_length"
+                                    ),
                                 }
                                 curated_stats = {
                                     key: value
@@ -127,12 +136,12 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                     if value is not None
                                 }
 
-                                first_message_at = metadata.get("first_message_at") or stats_dict.get(
-                                    "first_message_date"
-                                )
-                                last_message_at = metadata.get("last_message_at") or stats_dict.get(
-                                    "last_message_date"
-                                )
+                                first_message_at = metadata.get(
+                                    "first_message_at"
+                                ) or stats_dict.get("first_message_date")
+                                last_message_at = metadata.get(
+                                    "last_message_at"
+                                ) or stats_dict.get("last_message_date")
 
                                 user_payload: Dict[str, Any] = {
                                     "user_id": author_id,
@@ -140,12 +149,18 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                     "display_name": display_name,
                                     "is_bot": metadata.get("is_bot", False),
                                     "guilds": metadata.get("guilds", []),
-                                    "account_created_at": metadata.get("account_created_at"),
+                                    "account_created_at": metadata.get(
+                                        "account_created_at"
+                                    ),
                                     "first_message_at": first_message_at,
                                     "last_message_at": last_message_at,
-                                    "channel_activity": result_dict.get("channel_activity"),
+                                    "channel_activity": result_dict.get(
+                                        "channel_activity"
+                                    ),
                                     "time_patterns": result_dict.get("time_patterns"),
-                                    "semantic_analysis": result_dict.get("semantic_analysis"),
+                                    "semantic_analysis": result_dict.get(
+                                        "semantic_analysis"
+                                    ),
                                     "top_topics": result_dict.get("top_topics"),
                                     "full_analysis": result_dict,
                                 }
@@ -163,7 +178,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 )
 
                 except Exception as exc:
-                    self.show_template_error("User analysis", f"Failed to analyze users: {exc}")
+                    self.show_template_error(
+                        "User analysis", f"Failed to analyze users: {exc}"
+                    )
                     return
 
                 aggregated_payload: Dict[str, Any] = {
@@ -199,11 +216,11 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             if user and "user_analysis" in data:
                 result = data["user_analysis"]
                 self.handle_analysis_result(
-                    result, 
-                    "User analysis", 
+                    result,
+                    "User analysis",
                     "user_analysis.txt.j2",
-                    output, 
-                    output_format
+                    output,
+                    output_format,
                 )
             else:
                 # Handle list of top users with template
@@ -211,14 +228,14 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                 enhanced_data = {
                     "top_users": result,
                     "limit": limit,
-                    "total_users": len(result)
+                    "total_users": len(result),
                 }
                 self.handle_analysis_result(
                     enhanced_data,
-                    "Top users analysis", 
+                    "Top users analysis",
                     "top_users.txt.j2",
-                    output, 
-                    output_format
+                    output,
+                    output_format,
                 )
 
         except RuntimeError as e:
@@ -227,7 +244,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             self.show_template_error("User analysis", f"Unexpected error: {e}")
             if ctx_obj.get("verbose"):
                 raise
-    
+
     def analyze_channels(
         self,
         ctx_obj: Dict[str, Any],
@@ -239,8 +256,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
     ):
         """Analyze channel activity with template integration."""
         try:
-            from .persistence import analyze_channel, get_database_manager
             from pepino.analysis.data_facade import get_analysis_data_facade
+
+            from .persistence import analyze_channel, get_database_manager
 
             if analyze_all:
                 settings = Settings()
@@ -252,15 +270,21 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
 
                 try:
                     with get_database_manager(db_path) as db_manager:
-                        data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
+                        data_facade = get_analysis_data_facade(
+                            db_manager, settings.base_filter
+                        )
                         channel_analyzer = ChannelAnalyzer(data_facade)
                         try:
                             topic_analyzer = TopicAnalyzer(data_facade)
                         except Exception as e:
                             topic_analyzer = None
-                            logger.warning(f"Topic analyzer unavailable for channel aggregation: {e}")
+                            logger.warning(
+                                f"Topic analyzer unavailable for channel aggregation: {e}"
+                            )
 
-                        channel_metadata_list = channel_analyzer.get_available_channels_metadata()
+                        channel_metadata_list = (
+                            channel_analyzer.get_available_channels_metadata()
+                        )
                         parent_name_lookup = {
                             meta.get("channel_id"): meta.get("channel_name")
                             for meta in channel_metadata_list
@@ -268,7 +292,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                         }
 
                         if not channel_metadata_list:
-                            self.show_template_error("Channel analysis", "No channels available for analysis")
+                            self.show_template_error(
+                                "Channel analysis", "No channels available for analysis"
+                            )
                             return
 
                         for channel_meta in channel_metadata_list:
@@ -286,7 +312,9 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
 
                             try:
                                 analysis_model = channel_analyzer.analyze(
-                                    channel_name, include_patterns=True, channel_id=channel_id
+                                    channel_name,
+                                    include_patterns=True,
+                                    channel_id=channel_id,
                                 )
                                 if not analysis_model:
                                     errors.append(
@@ -322,36 +350,47 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 top_users = result_dict.get("top_users") or []
                                 participation_summary = None
                                 if top_users:
-                                    top_5_messages = sum(user.get("message_count", 0) for user in top_users[:5])
-                                    total_messages = result_dict.get("statistics", {}).get("total_messages", 0)
+                                    top_5_messages = sum(
+                                        user.get("message_count", 0)
+                                        for user in top_users[:5]
+                                    )
+                                    total_messages = result_dict.get(
+                                        "statistics", {}
+                                    ).get("total_messages", 0)
                                     if total_messages > 0:
-                                        concentration = (top_5_messages / total_messages) * 100
+                                        concentration = (
+                                            top_5_messages / total_messages
+                                        ) * 100
                                         if concentration > 70:
-                                            participation_summary = (
-                                                f"5 top contributors posted {concentration:.0f}% of all messages (highly concentrated)"
-                                            )
+                                            participation_summary = f"5 top contributors posted {concentration:.0f}% of all messages (highly concentrated)"
                                         elif concentration > 50:
-                                            participation_summary = (
-                                                f"5 top contributors posted {concentration:.0f}% of all messages"
-                                            )
+                                            participation_summary = f"5 top contributors posted {concentration:.0f}% of all messages"
                                         else:
-                                            participation_summary = (
-                                                f"5 top contributors posted {concentration:.0f}% of all messages (well distributed)"
-                                            )
+                                            participation_summary = f"5 top contributors posted {concentration:.0f}% of all messages (well distributed)"
 
                                 lost_interest_summary = None
                                 lost_interest_users: List[Dict[str, Any]] = []
                                 try:
                                     all_users = data_facade.channel_repository.get_channel_user_activity(
-                                        channel_name, days=None, limit=100, channel_id=channel_id
+                                        channel_name,
+                                        days=None,
+                                        limit=100,
+                                        channel_id=channel_id,
                                     )
                                     recent_users = data_facade.channel_repository.get_channel_user_activity(
-                                        channel_name, days=30, limit=100, channel_id=channel_id
+                                        channel_name,
+                                        days=30,
+                                        limit=100,
+                                        channel_id=channel_id,
                                     )
 
-                                    recent_usernames = {user["author_name"] for user in recent_users}
+                                    recent_usernames = {
+                                        user["author_name"] for user in recent_users
+                                    }
                                     inactive_users = [
-                                        user for user in all_users if user["author_name"] not in recent_usernames
+                                        user
+                                        for user in all_users
+                                        if user["author_name"] not in recent_usernames
                                     ]
 
                                     if inactive_users:
@@ -361,35 +400,51 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                             if not last_message_ts:
                                                 continue
                                             try:
-                                                last_msg_date = datetime.fromisoformat(last_message_ts.replace("Z", "+00:00"))
+                                                last_msg_date = datetime.fromisoformat(
+                                                    last_message_ts.replace(
+                                                        "Z", "+00:00"
+                                                    )
+                                                )
                                             except Exception:
                                                 continue
                                             days_inactive = (now - last_msg_date).days
                                             lost_interest_users.append(
                                                 {
-                                                    "display_name": user.get("author_display_name"),
+                                                    "display_name": user.get(
+                                                        "author_display_name"
+                                                    ),
                                                     "author_name": user["author_name"],
                                                     "days_inactive": days_inactive,
-                                                    "message_count": user.get("message_count", 0),
+                                                    "message_count": user.get(
+                                                        "message_count", 0
+                                                    ),
                                                 }
                                             )
 
                                         if lost_interest_users:
                                             lost_interest_users.sort(
-                                                key=lambda x: (x["days_inactive"], x["message_count"]), reverse=True
+                                                key=lambda x: (
+                                                    x["days_inactive"],
+                                                    x["message_count"],
+                                                ),
+                                                reverse=True,
                                             )
                                             inactive_count = len(lost_interest_users)
                                             if inactive_count > 0:
-                                                lost_interest_summary = (
-                                                    f"{inactive_count} former contributors inactive for at least 30 days"
-                                                )
+                                                lost_interest_summary = f"{inactive_count} former contributors inactive for at least 30 days"
                                 except Exception as e:
-                                    logger.warning(f"Could not calculate lost interest for channel {channel_name}: {e}")
+                                    logger.warning(
+                                        f"Could not calculate lost interest for channel {channel_name}: {e}"
+                                    )
 
                                 engagement_summary = None
-                                engagement_metrics = result_dict.get("engagement_metrics")
+                                engagement_metrics = result_dict.get(
+                                    "engagement_metrics"
+                                )
                                 if engagement_metrics:
-                                    reaction_rate = engagement_metrics.get("reaction_rate")
+                                    reaction_rate = engagement_metrics.get(
+                                        "reaction_rate"
+                                    )
                                     if reaction_rate is not None:
                                         if reaction_rate > 80:
                                             engagement_summary = f"High engagement ({reaction_rate:.0f}% reaction rate)"
@@ -406,33 +461,42 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                     previous_messages = data_facade.message_repository.get_channel_messages(
                                         channel_name,
                                         days_back=14,
-                                        limit=len(current_messages) * 2 if current_messages else None,
+                                        limit=len(current_messages) * 2
+                                        if current_messages
+                                        else None,
                                         channel_id=channel_id,
                                     )
 
                                     if current_messages and previous_messages:
                                         current_count = len(
-                                            [m for m in current_messages if not m.get("author_is_bot", False)]
+                                            [
+                                                m
+                                                for m in current_messages
+                                                if not m.get("author_is_bot", False)
+                                            ]
                                         )
                                         previous_count = len(
-                                            [m for m in previous_messages if not m.get("author_is_bot", False)]
+                                            [
+                                                m
+                                                for m in previous_messages
+                                                if not m.get("author_is_bot", False)
+                                            ]
                                         )
                                         if previous_count > 0:
-                                            change_percent = ((current_count - previous_count) / previous_count) * 100
+                                            change_percent = (
+                                                (current_count - previous_count)
+                                                / previous_count
+                                            ) * 100
                                             if change_percent > 20:
-                                                trend_summary = (
-                                                    f"Activity increasing (+{change_percent:.0f}% compared to previous 7 days)"
-                                                )
+                                                trend_summary = f"Activity increasing (+{change_percent:.0f}% compared to previous 7 days)"
                                             elif change_percent < -20:
-                                                trend_summary = (
-                                                    f"Activity decreasing ({change_percent:.0f}% compared to previous 7 days)"
-                                                )
+                                                trend_summary = f"Activity decreasing ({change_percent:.0f}% compared to previous 7 days)"
                                             else:
-                                                trend_summary = (
-                                                    f"Activity stable ({change_percent:+.0f}% compared to previous 7 days)"
-                                                )
+                                                trend_summary = f"Activity stable ({change_percent:+.0f}% compared to previous 7 days)"
                                 except Exception as e:
-                                    logger.warning(f"Could not calculate trend for channel {channel_name}: {e}")
+                                    logger.warning(
+                                        f"Could not calculate trend for channel {channel_name}: {e}"
+                                    )
 
                                 bot_activity_summary = None
                                 statistics = result_dict.get("statistics") or {}
@@ -440,15 +504,13 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                 total_messages = statistics.get("total_messages", 0)
                                 human_messages = statistics.get("human_messages", 0)
                                 if total_messages > 0 and bot_messages:
-                                    bot_percentage = (bot_messages / total_messages) * 100
+                                    bot_percentage = (
+                                        bot_messages / total_messages
+                                    ) * 100
                                     if bot_messages > human_messages:
-                                        bot_activity_summary = (
-                                            f"Bots posted {bot_percentage:.0f}% of messages (more than humans)"
-                                        )
+                                        bot_activity_summary = f"Bots posted {bot_percentage:.0f}% of messages (more than humans)"
                                     elif bot_percentage > 10:
-                                        bot_activity_summary = (
-                                            f"Bots posted {bot_percentage:.0f}% of messages (less than humans)"
-                                        )
+                                        bot_activity_summary = f"Bots posted {bot_percentage:.0f}% of messages (less than humans)"
 
                                 recent_activity_summary = None
                                 try:
@@ -457,7 +519,11 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                     )
                                     if recent_messages:
                                         human_recent = len(
-                                            [m for m in recent_messages if not m.get("author_is_bot", False)]
+                                            [
+                                                m
+                                                for m in recent_messages
+                                                if not m.get("author_is_bot", False)
+                                            ]
                                         )
                                         previous_messages = data_facade.message_repository.get_channel_messages(
                                             channel_name,
@@ -467,53 +533,78 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                         )
                                         if previous_messages:
                                             human_previous = len(
-                                                [m for m in previous_messages if not m.get("author_is_bot", False)]
+                                                [
+                                                    m
+                                                    for m in previous_messages
+                                                    if not m.get("author_is_bot", False)
+                                                ]
                                             )
                                             if human_previous > 0:
-                                                change_percent = ((human_recent - human_previous) / human_previous) * 100
+                                                change_percent = (
+                                                    (human_recent - human_previous)
+                                                    / human_previous
+                                                ) * 100
                                                 if change_percent >= 0:
-                                                    recent_activity_summary = (
-                                                        f"{human_recent} messages in last 7 days (up {change_percent:.0f}% vs previous 7 days)"
-                                                    )
+                                                    recent_activity_summary = f"{human_recent} messages in last 7 days (up {change_percent:.0f}% vs previous 7 days)"
                                                 else:
-                                                    recent_activity_summary = (
-                                                        f"{human_recent} messages in last 7 days (down {abs(change_percent):.0f}% vs previous 7 days)"
-                                                    )
+                                                    recent_activity_summary = f"{human_recent} messages in last 7 days (down {abs(change_percent):.0f}% vs previous 7 days)"
                                         if recent_activity_summary is None:
                                             recent_activity_summary = f"{human_recent} messages in last 7 days"
                                 except Exception as e:
-                                    logger.warning(f"Could not calculate recent activity for channel {channel_name}: {e}")
+                                    logger.warning(
+                                        f"Could not calculate recent activity for channel {channel_name}: {e}"
+                                    )
 
                                 if topic_analyzer and not result_dict.get("top_topics"):
                                     try:
                                         topic_result = topic_analyzer.analyze(
-                                            channel_name=channel_name, top_n=5, days_back=None
+                                            channel_name=channel_name,
+                                            top_n=5,
+                                            days_back=None,
                                         )
                                         if topic_result:
                                             if hasattr(topic_result, "model_dump"):
-                                                topic_payload = topic_result.model_dump()
+                                                topic_payload = (
+                                                    topic_result.model_dump()
+                                                )
                                             elif hasattr(topic_result, "dict"):
                                                 topic_payload = topic_result.dict()
                                             elif isinstance(topic_result, dict):
                                                 topic_payload = topic_result
                                             else:
                                                 topic_payload = {}
-                                            result_dict["top_topics"] = topic_payload.get("topics", [])
+                                            result_dict[
+                                                "top_topics"
+                                            ] = topic_payload.get("topics", [])
                                     except Exception as e:
-                                        logger.warning(f"Topic analysis failed for channel {channel_name}: {e}")
+                                        logger.warning(
+                                            f"Topic analysis failed for channel {channel_name}: {e}"
+                                        )
 
                                 result_dict["total_human_members"] = total_human_members
-                                result_dict["participation_summary"] = participation_summary
-                                result_dict["lost_interest_summary"] = lost_interest_summary
+                                result_dict[
+                                    "participation_summary"
+                                ] = participation_summary
+                                result_dict[
+                                    "lost_interest_summary"
+                                ] = lost_interest_summary
                                 result_dict["lost_interest_users"] = lost_interest_users
                                 result_dict["engagement_summary"] = engagement_summary
                                 result_dict["trend_summary"] = trend_summary
-                                result_dict["bot_activity_summary"] = bot_activity_summary
-                                result_dict["recent_activity_summary"] = recent_activity_summary
+                                result_dict[
+                                    "bot_activity_summary"
+                                ] = bot_activity_summary
+                                result_dict[
+                                    "recent_activity_summary"
+                                ] = recent_activity_summary
                                 result_dict["channel_health"] = True
 
                                 parent_id = channel_meta.get("parent_id")
-                                parent_name = channel_meta.get("parent_name") if channel_meta else None
+                                parent_name = (
+                                    channel_meta.get("parent_name")
+                                    if channel_meta
+                                    else None
+                                )
                                 if not parent_name and parent_id:
                                     parent_name = parent_name_lookup.get(parent_id)
 
@@ -538,23 +629,37 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                         "channel_id": channel_id,
                                         "channel_name": channel_name,
                                         "metadata": metadata_payload,
-                                        "message_statistics": result_dict.get("statistics"),
+                                        "message_statistics": result_dict.get(
+                                            "statistics"
+                                        ),
                                         "user_activity": {
                                             "top_users": result_dict.get("top_users"),
                                             "lost_interest_users": lost_interest_users,
                                         },
                                         "time_patterns": {
-                                            "peak_activity": result_dict.get("peak_activity"),
-                                            "recent_activity": result_dict.get("recent_activity"),
-                                            "daily_activity": result_dict.get("daily_activity_data"),
+                                            "peak_activity": result_dict.get(
+                                                "peak_activity"
+                                            ),
+                                            "recent_activity": result_dict.get(
+                                                "recent_activity"
+                                            ),
+                                            "daily_activity": result_dict.get(
+                                                "daily_activity_data"
+                                            ),
                                         },
                                         "content_analysis": {
                                             "top_topics": result_dict.get("top_topics"),
-                                            "content_clusters": result_dict.get("content_clusters"),
+                                            "content_clusters": result_dict.get(
+                                                "content_clusters"
+                                            ),
                                             "keywords": result_dict.get("keywords"),
                                         },
-                                        "engagement_metrics": result_dict.get("engagement_metrics"),
-                                        "health_metrics": result_dict.get("health_metrics"),
+                                        "engagement_metrics": result_dict.get(
+                                            "engagement_metrics"
+                                        ),
+                                        "health_metrics": result_dict.get(
+                                            "health_metrics"
+                                        ),
                                         "summaries": {
                                             "participation": participation_summary,
                                             "trend": trend_summary,
@@ -575,13 +680,19 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                                     }
                                 )
                 except Exception as e:
-                    self.show_template_error("Channel analysis", f"Failed to analyze channels: {e}")
+                    self.show_template_error(
+                        "Channel analysis", f"Failed to analyze channels: {e}"
+                    )
                     return
 
                 aggregated_payload = {
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "total_channels": len(channel_metadata_list),
-                    "analyzed_channels": sum(1 for result in aggregated_results if result.get("full_analysis")),
+                    "analyzed_channels": sum(
+                        1
+                        for result in aggregated_results
+                        if result.get("full_analysis")
+                    ),
                     "channels": aggregated_results,
                 }
 
@@ -615,11 +726,11 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             if channel and "channel_analysis" in data:
                 result = data["channel_analysis"]
                 self.handle_analysis_result(
-                    result, 
-                    "Channel analysis", 
+                    result,
+                    "Channel analysis",
                     "channel_analysis.txt.j2",
-                    output, 
-                    output_format
+                    output,
+                    output_format,
                 )
             else:
                 # Handle list of top channels with template
@@ -627,14 +738,14 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
                 enhanced_data = {
                     "top_channels": result,
                     "limit": limit,
-                    "total_channels": len(result)
+                    "total_channels": len(result),
                 }
                 self.handle_analysis_result(
                     enhanced_data,
-                    "Top channels analysis", 
+                    "Top channels analysis",
                     "top_channels.txt.j2",
-                    output, 
-                    output_format
+                    output,
+                    output_format,
                 )
 
         except RuntimeError as e:
@@ -643,7 +754,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             self.show_template_error("Channel analysis", f"Unexpected error: {e}")
             if ctx_obj.get("verbose"):
                 raise
-    
+
     def analyze_topics(
         self,
         ctx_obj: Dict[str, Any],
@@ -655,10 +766,10 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
     ):
         """Analyze topics with template integration and NLP capabilities."""
         try:
-            from .persistence import get_database_manager
             from ..analysis.data_facade import get_analysis_data_facade
             from ..analysis.topic_analyzer import TopicAnalyzer
             from ..config import Settings
+            from .persistence import get_database_manager
 
             # Enhanced topic analysis with NLP capabilities
             settings = Settings()
@@ -667,82 +778,101 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             with get_database_manager(db_path) as db_manager:
                 # Create data facade with proper base filter
                 data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
-                
+
                 # Create topic analyzer
                 topic_analyzer = TopicAnalyzer(data_facade)
-                
+
                 # Perform analysis
                 analysis_result = topic_analyzer.analyze(
-                    channel_name=channel, 
-                    top_n=n_topics, 
-                    days_back=days_back
+                    channel_name=channel, top_n=n_topics, days_back=days_back
                 )
-                
+
                 if not analysis_result:
-                    self.show_template_error("Topic analysis", "No analysis result returned")
+                    self.show_template_error(
+                        "Topic analysis", "No analysis result returned"
+                    )
                     return
-                
+
                 # Check if we got an error response
-                if hasattr(analysis_result, 'error') and analysis_result.error:
+                if hasattr(analysis_result, "error") and analysis_result.error:
                     self.show_template_error("Topic analysis", analysis_result.error)
                     return
-                
+
                 # Check if we have topics
-                if not hasattr(analysis_result, 'topics') or not analysis_result.topics:
-                    self.show_template_error("Topic analysis", "No topics found for the specified criteria")
+                if not hasattr(analysis_result, "topics") or not analysis_result.topics:
+                    self.show_template_error(
+                        "Topic analysis", "No topics found for the specified criteria"
+                    )
                     return
-                
+
                 # Get recent messages for NLP analysis context (increased limit for better concept extraction)
                 recent_messages = []
                 try:
                     if channel:
-                        messages_data = data_facade.message_repository.get_messages_by_channel(channel, limit=500)
+                        messages_data = (
+                            data_facade.message_repository.get_messages_by_channel(
+                                channel, limit=500
+                            )
+                        )
                     else:
-                        messages_data = data_facade.message_repository.get_recent_messages(limit=500, days_back=days_back)
-                    
+                        messages_data = (
+                            data_facade.message_repository.get_recent_messages(
+                                limit=500, days_back=days_back
+                            )
+                        )
+
                     if messages_data:
                         recent_messages = [
                             {
-                                'id': msg.get('id'),
-                                'content': msg.get('content', ''),
-                                'author': msg.get('username') or msg.get('author', ''),
-                                'timestamp': msg.get('timestamp', ''),
-                                'channel': msg.get('channel_name', channel or 'all')
+                                "id": msg.get("id"),
+                                "content": msg.get("content", ""),
+                                "author": msg.get("username") or msg.get("author", ""),
+                                "timestamp": msg.get("timestamp", ""),
+                                "channel": msg.get("channel_name", channel or "all"),
                             }
                             for msg in messages_data
                         ]
                 except Exception as e:
                     if ctx_obj.get("verbose"):
-                        self.show_template_error("Message context loading", f"Could not fetch messages for NLP analysis: {e}")
-                
+                        self.show_template_error(
+                            "Message context loading",
+                            f"Could not fetch messages for NLP analysis: {e}",
+                        )
+
                 # Prepare enhanced template data with NLP capabilities
                 template_data = {
-                    'channel_name': channel,
-                    'days_back': days_back,
-                    'n_topics': n_topics,
-                    'analysis': analysis_result,
-                    'topics': analysis_result.topics,
-                    'message_count': analysis_result.message_count,
-                    'capabilities_used': analysis_result.capabilities_used if hasattr(analysis_result, 'capabilities_used') else ['topic_analysis']
+                    "channel_name": channel,
+                    "days_back": days_back,
+                    "n_topics": n_topics,
+                    "analysis": analysis_result,
+                    "topics": analysis_result.topics,
+                    "message_count": analysis_result.message_count,
+                    "capabilities_used": analysis_result.capabilities_used
+                    if hasattr(analysis_result, "capabilities_used")
+                    else ["topic_analysis"],
                 }
-                
+
                 # Add domain analysis data if available from hybrid approach
-                if hasattr(analysis_result, '_domain_analysis'):
-                    template_data['_domain_analysis'] = analysis_result._domain_analysis
-                
+                if hasattr(analysis_result, "_domain_analysis"):
+                    template_data["_domain_analysis"] = analysis_result._domain_analysis
+
                 # Convert Pydantic model to dict for compatibility
-                result_dict = analysis_result.model_dump() if hasattr(analysis_result, "model_dump") else analysis_result
+                result_dict = (
+                    analysis_result.model_dump()
+                    if hasattr(analysis_result, "model_dump")
+                    else analysis_result
+                )
                 final_data = {**template_data, **result_dict}
-                
+
                 # Handle template rendering with NLP context
                 self.handle_analysis_result(
                     final_data,
-                    "Topic analysis", 
+                    "Topic analysis",
                     "topic_analysis.txt.j2",
-                    output, 
+                    output,
                     output_format,
                     data_facade=data_facade,
-                    messages=recent_messages
+                    messages=recent_messages,
                 )
 
         except RuntimeError as e:
@@ -751,7 +881,7 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             self.show_template_error("Topic analysis", f"Unexpected error: {e}")
             if ctx_obj.get("verbose"):
                 raise
-    
+
     def analyze_temporal(
         self,
         ctx_obj: Dict[str, Any],
@@ -773,11 +903,11 @@ class CLIAnalysisCommands(CLIAnalysisMixin):
             if "temporal_analysis" in data:
                 result = data["temporal_analysis"]
                 self.handle_analysis_result(
-                    result, 
-                    "Temporal analysis", 
+                    result,
+                    "Temporal analysis",
                     "temporal_analysis.txt.j2",
-                    output, 
-                    output_format
+                    output,
+                    output_format,
                 )
             else:
                 self.handle_output(data, output, output_format)
@@ -1029,7 +1159,9 @@ def analyze_users(
     analyze_all: bool,
 ):
     """Analyze user activity and statistics."""
-    _cli_analysis.analyze_users(ctx.obj, user, limit, output, output_format, analyze_all)
+    _cli_analysis.analyze_users(
+        ctx.obj, user, limit, output, output_format, analyze_all
+    )
 
 
 @analyze.command(name="channels")
@@ -1065,7 +1197,9 @@ def analyze_channels(
         click.echo("❌ Please specify either --channel or --all, not both.", err=True)
         ctx.exit(1)
 
-    _cli_analysis.analyze_channels(ctx.obj, channel, limit, output, output_format, analyze_all)
+    _cli_analysis.analyze_channels(
+        ctx.obj, channel, limit, output, output_format, analyze_all
+    )
 
 
 @analyze.command(name="topics")
@@ -1078,7 +1212,12 @@ def analyze_channels(
     help="Number of top topics to show (default: 20)",
 )
 @click.option(
-    "--days", "-d", "days_back", type=int, default=None, help="Days to look back (optional, default: all time)"
+    "--days",
+    "-d",
+    "days_back",
+    type=int,
+    default=None,
+    help="Days to look back (optional, default: all time)",
 )
 @click.option("--output", "-o", help="Output file (JSON or CSV)")
 @click.option(
@@ -1098,13 +1237,20 @@ def analyze_topics(
     output_format: str,
 ):
     """Analyze trending topics and keywords."""
-    _cli_analysis.analyze_topics(ctx.obj, channel, n_topics, days_back, output, output_format)
+    _cli_analysis.analyze_topics(
+        ctx.obj, channel, n_topics, days_back, output, output_format
+    )
 
 
 @analyze.command(name="temporal")
 @click.option("--channel", "-c", help="Specific channel to analyze (optional)")
 @click.option(
-    "--days", "-d", "days_back", type=int, default=None, help="Days to look back (optional, default: all time)"
+    "--days",
+    "-d",
+    "days_back",
+    type=int,
+    default=None,
+    help="Days to look back (optional, default: all time)",
 )
 @click.option(
     "--granularity",
@@ -1131,7 +1277,9 @@ def analyze_temporal(
     output_format: str,
 ):
     """Analyze temporal activity patterns."""
-    _cli_analysis.analyze_temporal(ctx.obj, channel, days_back, granularity, output, output_format)
+    _cli_analysis.analyze_temporal(
+        ctx.obj, channel, days_back, granularity, output, output_format
+    )
 
 
 @analyze.command(name="conversations")
@@ -1215,13 +1363,11 @@ def analyze_sentiment(
         from .persistence import analyze_sentiment_async
 
         data = analyze_sentiment_async(
-            channel_name=channel, 
-            days_back=30, 
-            db_path=ctx.obj.get("db_path")
+            channel_name=channel, days_back=30, db_path=ctx.obj.get("db_path")
         )
 
         _write_output(data, output, output_format)
-        
+
         if data.get("error"):
             click.echo(f"❌ {data['error']}", err=True)
         else:
@@ -1265,11 +1411,11 @@ def detect_duplicates(
         data = detect_duplicates_async(
             channel_name=channel,
             similarity_threshold=threshold,
-            db_path=ctx.obj.get("db_path")
+            db_path=ctx.obj.get("db_path"),
         )
 
         _write_output(data, output, output_format)
-        
+
         if data.get("error"):
             click.echo(f"❌ {data['error']}", err=True)
         else:
@@ -1563,7 +1709,9 @@ def _export_data(
     try:
         if table:
             # Export specific table
-            data = persistence.export_table_data_async(table, output, output_format, ctx_obj["db_path"])
+            data = persistence.export_table_data_async(
+                table, output, output_format, ctx_obj["db_path"]
+            )
         else:
             # Export all tables
             data = persistence.export_all_tables_async(ctx_obj["db_path"])
@@ -1594,29 +1742,34 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
             if not timestamp:
                 return "Unknown"
             from datetime import datetime
+
             dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             return dt.strftime("%Y-%m-%d %H:%M")
         except:
             return str(timestamp)[:16] if timestamp else "Unknown"
 
     output = f"📊 Channel Analysis: #{channel_info['channel_name']}\n\n"
-    
+
     # Basic Statistics with Human/Bot breakdown
     output += "Basic Statistics:\n"
     output += f"• Total Messages: {stats['total_messages']:,}\n"
-    if stats.get('human_messages', 0) > 0 and stats.get('bot_messages', 0) > 0:
-        human_pct = (stats['human_messages'] / stats['total_messages'] * 100)
-        bot_pct = (stats['bot_messages'] / stats['total_messages'] * 100)
+    if stats.get("human_messages", 0) > 0 and stats.get("bot_messages", 0) > 0:
+        human_pct = stats["human_messages"] / stats["total_messages"] * 100
+        bot_pct = stats["bot_messages"] / stats["total_messages"] * 100
         output += f"• Human Messages: {stats['human_messages']:,} ({human_pct:.1f}%)\n"
         output += f"• Bot Messages: {stats['bot_messages']:,} ({bot_pct:.1f}%)\n"
     output += f"• Total Unique Users: {stats['unique_users']:,}\n"
-    if stats.get('unique_human_users', 0) > 0:
+    if stats.get("unique_human_users", 0) > 0:
         percentage_str = ""
         if total_human_members and total_human_members > 0:
-            percentage = (stats['unique_human_users'] / total_human_members * 100)
+            percentage = stats["unique_human_users"] / total_human_members * 100
             percentage_str = f" ({percentage:.2f}%)"
-        output += f"• Unique Human Users: {stats['unique_human_users']:,}{percentage_str}\n"
-    output += f"• Average Message Length: {stats['avg_message_length']:.1f} characters\n"
+        output += (
+            f"• Unique Human Users: {stats['unique_human_users']:,}{percentage_str}\n"
+        )
+    output += (
+        f"• Average Message Length: {stats['avg_message_length']:.1f} characters\n"
+    )
     output += f"• First Message: {format_timestamp(stats['first_message'])}\n"
     output += f"• Last Message: {format_timestamp(stats['last_message'])}\n\n"
 
@@ -1632,21 +1785,23 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
     if top_users:
         output += "👥 Top Human Contributors:\n"
         for user in top_users[:5]:
-            display_name = user.get('display_name') or user.get('author_name', 'Unknown')
+            display_name = user.get("display_name") or user.get(
+                "author_name", "Unknown"
+            )
             output += f"• {display_name} ({user['message_count']:,} messages)\n"
         output += "\n"
 
     # Peak Activity Times
     if peak_activity:
-        if peak_activity.get('peak_hours'):
+        if peak_activity.get("peak_hours"):
             output += "Peak Activity Hours:\n"
-            for hour_data in peak_activity['peak_hours'][:3]:
+            for hour_data in peak_activity["peak_hours"][:3]:
                 output += f"• {hour_data['hour']}: {hour_data['messages']:,} messages\n"
             output += "\n"
-        
-        if peak_activity.get('peak_days'):
+
+        if peak_activity.get("peak_days"):
             output += "Peak Activity Days:\n"
-            for day_data in peak_activity['peak_days'][:3]:
+            for day_data in peak_activity["peak_days"][:3]:
                 output += f"• {day_data['day']}: {day_data['messages']:,} messages\n"
             output += "\n"
 
@@ -1662,7 +1817,7 @@ def _format_channel_analysis_for_cli(result: Dict[str, Any]) -> str:
         output += "📈 Channel Health Metrics:\n"
         output += f"• Weekly Active Users: {health_metrics['weekly_active']:,}\n"
         output += f"• Inactive Users: {health_metrics['inactive_users']:,}\n"
-        if health_metrics.get('total_channel_members', 0) > 0:
+        if health_metrics.get("total_channel_members", 0) > 0:
             output += f"• Total Channel Members: {health_metrics['total_channel_members']:,}\n"
             output += f"• Participation Rate: {(health_metrics['participation_rate'] * 100):.1f}%\n"
         output += "\n"
@@ -1934,10 +2089,11 @@ def _list_channels(
     """List all available channels for analysis."""
     try:
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
             channel_analyzer = ChannelAnalyzer(data_facade)
 
@@ -1959,15 +2115,21 @@ def _list_channels(
                 for channel in channels:
                     try:
                         # Get basic channel statistics using data facade repository
-                        stats_data = data_facade.channel_repository.get_channel_message_statistics(channel)
-                        
+                        stats_data = data_facade.channel_repository.get_channel_message_statistics(
+                            channel
+                        )
+
                         if stats_data:
                             channel_data.append(
                                 {
                                     "name": channel,
-                                    "message_count": stats_data.get("total_messages", 0),
+                                    "message_count": stats_data.get(
+                                        "total_messages", 0
+                                    ),
                                     "unique_users": stats_data.get("unique_users", 0),
-                                    "avg_message_length": round(stats_data.get("avg_message_length", 0.0), 2),
+                                    "avg_message_length": round(
+                                        stats_data.get("avg_message_length", 0.0), 2
+                                    ),
                                 }
                             )
                         else:
@@ -2002,16 +2164,22 @@ def _list_channels(
                 for channel in channels:
                     try:
                         # Get basic channel statistics using data facade repository
-                        stats_data = data_facade.channel_repository.get_channel_message_statistics(channel)
-                        
+                        stats_data = data_facade.channel_repository.get_channel_message_statistics(
+                            channel
+                        )
+
                         if stats_data:
                             channel_data.append(
                                 {
                                     "channel_name": channel,
                                     "name": channel,
-                                    "message_count": stats_data.get("total_messages", 0),
+                                    "message_count": stats_data.get(
+                                        "total_messages", 0
+                                    ),
                                     "unique_users": stats_data.get("unique_users", 0),
-                                    "avg_message_length": stats_data.get("avg_message_length", 0.0),
+                                    "avg_message_length": stats_data.get(
+                                        "avg_message_length", 0.0
+                                    ),
                                 }
                             )
                         else:
@@ -2035,18 +2203,23 @@ def _list_channels(
                                 "avg_message_length": 0.0,
                             }
                         )
-                
+
                 template_data = {
                     "items": channel_data,
-                    "total_count": len(channel_analyzer.get_available_channels()),  # Total in DB
+                    "total_count": len(
+                        channel_analyzer.get_available_channels()
+                    ),  # Total in DB
                     "showing_count": len(channels),
-                    "has_more": limit > 0 and len(channels) >= limit
+                    "has_more": limit > 0 and len(channels) >= limit,
                 }
-                
+
                 try:
                     from pepino.templates.template_engine import TemplateEngine
+
                     template_engine = TemplateEngine()
-                    result = template_engine.render_template("outputs/cli/channel_list.txt.j2", **template_data)
+                    result = template_engine.render_template(
+                        "outputs/cli/channel_list.txt.j2", **template_data
+                    )
                     click.echo(result)
                 except Exception as e:
                     # Fallback to simple output and show error if verbose
@@ -2056,7 +2229,9 @@ def _list_channels(
                     for i, channel in enumerate(channels, 1):
                         click.echo(f"{i:3d}. {channel}")
                     if limit > 0 and len(channels) == limit:
-                        click.echo(f"\n*Showing first {limit} channels. Use --limit 0 to see all.*")
+                        click.echo(
+                            f"\n*Showing first {limit} channels. Use --limit 0 to see all.*"
+                        )
             else:
                 # File output or non-text format
                 _write_output(data, output, output_format)
@@ -2075,10 +2250,11 @@ def _list_users(
     """List all available users for analysis."""
     try:
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
             user_analyzer = UserAnalyzer(data_facade)
 
@@ -2100,16 +2276,24 @@ def _list_users(
                 for user in users:
                     try:
                         # Get basic user statistics using data facade repository
-                        stats_data = data_facade.user_repository.get_user_message_statistics(user)
-                        
+                        stats_data = (
+                            data_facade.user_repository.get_user_message_statistics(
+                                user
+                            )
+                        )
+
                         if stats_data:
                             user_data.append(
                                 {
                                     "name": user,
                                     "display_name": user,
                                     "author_id": "",  # We don't have easy access to author_id in this context
-                                    "message_count": stats_data.get("total_messages", 0),
-                                    "channels_active": stats_data.get("channels_active", 0),
+                                    "message_count": stats_data.get(
+                                        "total_messages", 0
+                                    ),
+                                    "channels_active": stats_data.get(
+                                        "channels_active", 0
+                                    ),
                                 }
                             )
                         else:
@@ -2159,16 +2343,15 @@ def _list_users(
             raise
 
 
-def _list_stats(
-    ctx_obj: Dict[str, Any], output: Optional[str], output_format: str
-):
+def _list_stats(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
     """Show database statistics for automation planning."""
     try:
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
 
             # Get basic counts using data facade repository
@@ -2237,7 +2420,9 @@ def performance_metrics(ctx, output: Optional[str], output_format: str):
 
 
 @performance.command(name="benchmark")
-@click.option("--operations", "-o", multiple=True, help="Specific operations to benchmark")
+@click.option(
+    "--operations", "-o", multiple=True, help="Specific operations to benchmark"
+)
 @click.option("--iterations", "-i", default=3, help="Number of iterations (default: 3)")
 @click.option("--output", help="Output file (JSON or CSV)")
 @click.option(
@@ -2248,7 +2433,9 @@ def performance_metrics(ctx, output: Optional[str], output_format: str):
     help="Output format",
 )
 @click.pass_context
-def performance_benchmark(ctx, operations: tuple, iterations: int, output: Optional[str], output_format: str):
+def performance_benchmark(
+    ctx, operations: tuple, iterations: int, output: Optional[str], output_format: str
+):
     """Benchmark analysis operations for performance optimization."""
     _performance_benchmark(ctx.obj, operations, iterations, output, output_format)
 
@@ -2258,7 +2445,9 @@ def performance_benchmark(ctx, operations: tuple, iterations: int, output: Optio
 @click.option("--args", "-a", help="Arguments for the operation (JSON format)")
 @click.option("--output", help="Output file for profiling results")
 @click.pass_context
-def performance_profile(ctx, operation: str, args: Optional[str], output: Optional[str]):
+def performance_profile(
+    ctx, operation: str, args: Optional[str], output: Optional[str]
+):
     """Profile a specific analysis operation for detailed performance analysis."""
     _performance_profile(ctx.obj, operation, args, output)
 
@@ -2287,7 +2476,9 @@ def test_data(ctx, output: Optional[str], output_format: str):
 
 @test.command(name="analysis")
 @click.option("--operation", "-o", help="Specific analysis operation to test")
-@click.option("--sample-size", "-s", default=10, help="Sample size for testing (default: 10)")
+@click.option(
+    "--sample-size", "-s", default=10, help="Sample size for testing (default: 10)"
+)
 @click.option("--output", help="Output file (JSON or CSV)")
 @click.option(
     "--format",
@@ -2297,7 +2488,13 @@ def test_data(ctx, output: Optional[str], output_format: str):
     help="Output format",
 )
 @click.pass_context
-def test_analysis(ctx, operation: Optional[str], sample_size: int, output: Optional[str], output_format: str):
+def test_analysis(
+    ctx,
+    operation: Optional[str],
+    sample_size: int,
+    output: Optional[str],
+    output_format: str,
+):
     """Test analysis operations with sample data."""
     _test_analysis_operations(ctx.obj, operation, sample_size, output, output_format)
 
@@ -2313,7 +2510,9 @@ def test_analysis(ctx, operation: Optional[str], sample_size: int, output: Optio
     help="Output format",
 )
 @click.pass_context
-def test_templates(ctx, template: Optional[str], output: Optional[str], output_format: str):
+def test_templates(
+    ctx, template: Optional[str], output: Optional[str], output_format: str
+):
     """Test template rendering with sample data."""
     _test_template_rendering(ctx.obj, template, output, output_format)
 
@@ -2333,11 +2532,13 @@ def test_dependencies(ctx, output: Optional[str], output_format: str):
     _test_system_dependencies(ctx.obj, output, output_format)
 
 
-def _performance_metrics(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
+def _performance_metrics(
+    ctx_obj: Dict[str, Any], output: Optional[str], output_format: str
+):
     """Show performance metrics for analysis operations."""
     try:
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             # Get performance metrics from the database or in-memory tracking
             metrics_data = {
@@ -2345,22 +2546,19 @@ def _performance_metrics(ctx_obj: Dict[str, Any], output: Optional[str], output_
                 "query_performance": {
                     "avg_query_time": "N/A",
                     "slow_queries": [],
-                    "total_queries": 0
+                    "total_queries": 0,
                 },
-                "memory_usage": {
-                    "current_mb": "N/A",
-                    "peak_mb": "N/A"
-                },
+                "memory_usage": {"current_mb": "N/A", "peak_mb": "N/A"},
                 "analysis_performance": {
                     "user_analysis_avg_time": "N/A",
                     "channel_analysis_avg_time": "N/A",
-                    "topic_analysis_avg_time": "N/A"
+                    "topic_analysis_avg_time": "N/A",
                 },
-                "note": "Performance metrics tracking not yet implemented. This is a placeholder for future functionality."
+                "note": "Performance metrics tracking not yet implemented. This is a placeholder for future functionality.",
             }
-            
+
             _write_output({"performance_metrics": metrics_data}, output, output_format)
-            
+
     except Exception as e:
         logger.error(f"Error getting performance metrics: {e}")
         click.echo(f"❌ Error getting performance metrics: {e}", err=True)
@@ -2368,39 +2566,54 @@ def _performance_metrics(ctx_obj: Dict[str, Any], output: Optional[str], output_
             raise
 
 
-def _performance_benchmark(ctx_obj: Dict[str, Any], operations: tuple, iterations: int, output: Optional[str], output_format: str):
+def _performance_benchmark(
+    ctx_obj: Dict[str, Any],
+    operations: tuple,
+    iterations: int,
+    output: Optional[str],
+    output_format: str,
+):
     """Benchmark analysis operations for performance optimization."""
     try:
         import time
+
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
-            
+
             # Default operations to benchmark
-            default_operations = ["user_analysis", "channel_analysis", "topic_analysis", "temporal_analysis"]
+            default_operations = [
+                "user_analysis",
+                "channel_analysis",
+                "topic_analysis",
+                "temporal_analysis",
+            ]
             ops_to_test = list(operations) if operations else default_operations
-            
+
             benchmark_results = {
                 "benchmark_config": {
                     "iterations": iterations,
                     "operations": ops_to_test,
-                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
                 },
-                "results": {}
+                "results": {},
             }
-            
-            click.echo(f"🔍 Benchmarking {len(ops_to_test)} operations with {iterations} iterations each...")
-            
+
+            click.echo(
+                f"🔍 Benchmarking {len(ops_to_test)} operations with {iterations} iterations each..."
+            )
+
             for operation in ops_to_test:
                 click.echo(f"  Testing {operation}...")
                 times = []
-                
+
                 for i in range(iterations):
                     start_time = time.time()
-                    
+
                     try:
                         # Simplified benchmark tests
                         if operation == "user_analysis":
@@ -2409,49 +2622,57 @@ def _performance_benchmark(ctx_obj: Dict[str, Any], operations: tuple, iteration
                                 # Just get basic user stats, don't run full analysis
                                 user_count = len(users)
                         elif operation == "channel_analysis":
-                            channels = data_facade.channel_repository.get_available_channels()
+                            channels = (
+                                data_facade.channel_repository.get_available_channels()
+                            )
                             if channels:
                                 channel_count = len(channels)
                         elif operation == "topic_analysis":
                             # Simple message count for topic analysis benchmark
-                            message_count = data_facade.message_repository.get_total_message_count()
+                            message_count = (
+                                data_facade.message_repository.get_total_message_count()
+                            )
                         elif operation == "temporal_analysis":
                             # Simple temporal query benchmark
-                            message_count = data_facade.message_repository.get_total_message_count()
-                        
+                            message_count = (
+                                data_facade.message_repository.get_total_message_count()
+                            )
+
                         end_time = time.time()
                         times.append(end_time - start_time)
-                        
+
                     except Exception as e:
                         click.echo(f"    ❌ Error in iteration {i+1}: {e}")
-                        times.append(float('inf'))
-                
+                        times.append(float("inf"))
+
                 # Calculate statistics
-                valid_times = [t for t in times if t != float('inf')]
+                valid_times = [t for t in times if t != float("inf")]
                 if valid_times:
                     avg_time = sum(valid_times) / len(valid_times)
                     min_time = min(valid_times)
                     max_time = max(valid_times)
-                    
+
                     benchmark_results["results"][operation] = {
                         "avg_time_seconds": round(avg_time, 4),
                         "min_time_seconds": round(min_time, 4),
                         "max_time_seconds": round(max_time, 4),
                         "successful_iterations": len(valid_times),
-                        "failed_iterations": len(times) - len(valid_times)
+                        "failed_iterations": len(times) - len(valid_times),
                     }
-                    
-                    click.echo(f"    ✅ {operation}: {avg_time:.4f}s avg ({min_time:.4f}s - {max_time:.4f}s)")
+
+                    click.echo(
+                        f"    ✅ {operation}: {avg_time:.4f}s avg ({min_time:.4f}s - {max_time:.4f}s)"
+                    )
                 else:
                     benchmark_results["results"][operation] = {
                         "error": "All iterations failed",
                         "successful_iterations": 0,
-                        "failed_iterations": len(times)
+                        "failed_iterations": len(times),
                     }
                     click.echo(f"    ❌ {operation}: All iterations failed")
-            
+
             _write_output({"benchmark": benchmark_results}, output, output_format)
-            
+
     except Exception as e:
         logger.error(f"Error running benchmark: {e}")
         click.echo(f"❌ Error running benchmark: {e}", err=True)
@@ -2459,16 +2680,18 @@ def _performance_benchmark(ctx_obj: Dict[str, Any], operations: tuple, iteration
             raise
 
 
-def _performance_profile(ctx_obj: Dict[str, Any], operation: str, args: Optional[str], output: Optional[str]):
+def _performance_profile(
+    ctx_obj: Dict[str, Any], operation: str, args: Optional[str], output: Optional[str]
+):
     """Profile a specific analysis operation for detailed performance analysis."""
     try:
         import cProfile
-        import pstats
         import io
         import json
-        
+        import pstats
+
         click.echo(f"🔍 Profiling operation: {operation}")
-        
+
         # Parse arguments if provided
         operation_args = {}
         if args:
@@ -2477,41 +2700,41 @@ def _performance_profile(ctx_obj: Dict[str, Any], operation: str, args: Optional
             except json.JSONDecodeError:
                 click.echo(f"❌ Invalid JSON arguments: {args}", err=True)
                 return
-        
+
         # Create a profiler
         profiler = cProfile.Profile()
-        
+
         # Profile the operation
         profiler.enable()
-        
+
         # Placeholder for actual operation profiling
         # This would need to be implemented based on specific operations
         click.echo(f"⚠️  Operation profiling not yet implemented for: {operation}")
         click.echo(f"   Arguments: {operation_args}")
-        
+
         profiler.disable()
-        
+
         # Get profiling results
         stats_stream = io.StringIO()
         stats = pstats.Stats(profiler, stream=stats_stream)
-        stats.sort_stats('cumulative')
+        stats.sort_stats("cumulative")
         stats.print_stats(20)  # Top 20 functions
-        
+
         profile_results = {
             "operation": operation,
             "arguments": operation_args,
             "profile_output": stats_stream.getvalue(),
-            "note": "Detailed operation profiling not yet implemented"
+            "note": "Detailed operation profiling not yet implemented",
         }
-        
+
         if output:
-            with open(output, 'w') as f:
+            with open(output, "w") as f:
                 json.dump(profile_results, f, indent=2)
             click.echo(f"✅ Profile results written to {output}")
         else:
             click.echo("\n📊 Profile Results:")
             click.echo(profile_results["profile_output"])
-            
+
     except Exception as e:
         logger.error(f"Error profiling operation: {e}")
         click.echo(f"❌ Error profiling operation: {e}", err=True)
@@ -2519,102 +2742,111 @@ def _performance_profile(ctx_obj: Dict[str, Any], operation: str, args: Optional
             raise
 
 
-def _test_data_integrity(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
+def _test_data_integrity(
+    ctx_obj: Dict[str, Any], output: Optional[str], output_format: str
+):
     """Test data integrity and availability."""
     try:
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
-            
+
             test_results = {
                 "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
-                "tests": {}
+                "tests": {},
             }
-            
+
             click.echo("🔍 Testing data integrity...")
-            
+
             # Test 1: Database connectivity
             try:
                 message_count = data_facade.message_repository.get_total_message_count()
                 test_results["tests"]["database_connectivity"] = {
                     "status": "PASS",
-                    "message": f"Successfully connected to database with {message_count} messages"
+                    "message": f"Successfully connected to database with {message_count} messages",
                 }
                 click.echo("  ✅ Database connectivity")
             except Exception as e:
                 test_results["tests"]["database_connectivity"] = {
                     "status": "FAIL",
-                    "message": f"Database connection failed: {e}"
+                    "message": f"Database connection failed: {e}",
                 }
                 click.echo("  ❌ Database connectivity")
-            
+
             # Test 2: Data availability
             try:
                 channels = data_facade.channel_repository.get_available_channels()
                 users = data_facade.user_repository.get_available_users()
-                
+
                 if channels and users:
                     test_results["tests"]["data_availability"] = {
                         "status": "PASS",
-                        "message": f"Found {len(channels)} channels and {len(users)} users"
+                        "message": f"Found {len(channels)} channels and {len(users)} users",
                     }
                     click.echo("  ✅ Data availability")
                 else:
                     test_results["tests"]["data_availability"] = {
                         "status": "WARN",
-                        "message": f"Limited data: {len(channels)} channels, {len(users)} users"
+                        "message": f"Limited data: {len(channels)} channels, {len(users)} users",
                     }
                     click.echo("  ⚠️  Data availability (limited)")
             except Exception as e:
                 test_results["tests"]["data_availability"] = {
                     "status": "FAIL",
-                    "message": f"Data availability check failed: {e}"
+                    "message": f"Data availability check failed: {e}",
                 }
                 click.echo("  ❌ Data availability")
-            
+
             # Test 3: Data consistency
             try:
                 # Basic consistency checks
-                total_messages = data_facade.message_repository.get_total_message_count()
-                distinct_users = data_facade.message_repository.get_distinct_user_count()
-                
+                total_messages = (
+                    data_facade.message_repository.get_total_message_count()
+                )
+                distinct_users = (
+                    data_facade.message_repository.get_distinct_user_count()
+                )
+
                 if total_messages > 0 and distinct_users > 0:
                     test_results["tests"]["data_consistency"] = {
                         "status": "PASS",
-                        "message": f"Data consistency checks passed: {total_messages} messages from {distinct_users} users"
+                        "message": f"Data consistency checks passed: {total_messages} messages from {distinct_users} users",
                     }
                     click.echo("  ✅ Data consistency")
                 else:
                     test_results["tests"]["data_consistency"] = {
                         "status": "FAIL",
-                        "message": "No valid data found"
+                        "message": "No valid data found",
                     }
                     click.echo("  ❌ Data consistency")
             except Exception as e:
                 test_results["tests"]["data_consistency"] = {
                     "status": "FAIL",
-                    "message": f"Data consistency check failed: {e}"
+                    "message": f"Data consistency check failed: {e}",
                 }
                 click.echo("  ❌ Data consistency")
-            
+
             # Summary
-            passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
+            passed = sum(
+                1 for test in test_results["tests"].values() if test["status"] == "PASS"
+            )
             total = len(test_results["tests"])
-            
+
             test_results["summary"] = {
                 "total_tests": total,
                 "passed": passed,
                 "failed": total - passed,
-                "overall_status": "PASS" if passed == total else "FAIL"
+                "overall_status": "PASS" if passed == total else "FAIL",
             }
-            
+
             click.echo(f"\n📊 Test Summary: {passed}/{total} tests passed")
-            
+
             _write_output({"data_integrity": test_results}, output, output_format)
-            
+
     except Exception as e:
         logger.error(f"Error testing data integrity: {e}")
         click.echo(f"❌ Error testing data integrity: {e}", err=True)
@@ -2622,123 +2854,153 @@ def _test_data_integrity(ctx_obj: Dict[str, Any], output: Optional[str], output_
             raise
 
 
-def _test_analysis_operations(ctx_obj: Dict[str, Any], operation: Optional[str], sample_size: int, output: Optional[str], output_format: str):
+def _test_analysis_operations(
+    ctx_obj: Dict[str, Any],
+    operation: Optional[str],
+    sample_size: int,
+    output: Optional[str],
+    output_format: str,
+):
     """Test analysis operations with sample data."""
     try:
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
-            
+
             test_results = {
                 "test_config": {
                     "operation": operation or "all",
                     "sample_size": sample_size,
-                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
                 },
-                "tests": {}
+                "tests": {},
             }
-            
+
             # Operations to test
-            operations_to_test = [operation] if operation else ["user_analysis", "channel_analysis", "topic_analysis", "temporal_analysis"]
-            
+            operations_to_test = (
+                [operation]
+                if operation
+                else [
+                    "user_analysis",
+                    "channel_analysis",
+                    "topic_analysis",
+                    "temporal_analysis",
+                ]
+            )
+
             click.echo(f"🔍 Testing {len(operations_to_test)} analysis operations...")
-            
+
             for op in operations_to_test:
                 click.echo(f"  Testing {op}...")
-                
+
                 try:
                     if op == "user_analysis":
                         users = data_facade.user_repository.get_available_users()
                         if users:
                             # Test with first few users
-                            test_users = users[:min(sample_size, len(users))]
+                            test_users = users[: min(sample_size, len(users))]
                             success_count = 0
-                            
+
                             for user in test_users:
                                 try:
                                     # Basic user stats test
-                                    user_messages = data_facade.message_repository.get_user_messages(user, limit=10)
+                                    user_messages = data_facade.message_repository.get_user_messages(
+                                        user, limit=10
+                                    )
                                     if user_messages:
                                         success_count += 1
                                 except:
                                     pass
-                            
+
                             test_results["tests"][op] = {
                                 "status": "PASS" if success_count > 0 else "FAIL",
                                 "message": f"Successfully analyzed {success_count}/{len(test_users)} users",
-                                "sample_size": len(test_users)
+                                "sample_size": len(test_users),
                             }
                         else:
                             test_results["tests"][op] = {
                                 "status": "FAIL",
-                                "message": "No users available for testing"
+                                "message": "No users available for testing",
                             }
-                    
+
                     elif op == "channel_analysis":
-                        channels = data_facade.channel_repository.get_available_channels()
+                        channels = (
+                            data_facade.channel_repository.get_available_channels()
+                        )
                         if channels:
-                            test_channels = channels[:min(sample_size, len(channels))]
+                            test_channels = channels[: min(sample_size, len(channels))]
                             success_count = 0
-                            
+
                             for channel in test_channels:
                                 try:
                                     # Basic channel stats test
-                                    channel_messages = data_facade.message_repository.get_channel_messages(channel, limit=10)
+                                    channel_messages = data_facade.message_repository.get_channel_messages(
+                                        channel, limit=10
+                                    )
                                     if channel_messages:
                                         success_count += 1
                                 except:
                                     pass
-                            
+
                             test_results["tests"][op] = {
                                 "status": "PASS" if success_count > 0 else "FAIL",
                                 "message": f"Successfully analyzed {success_count}/{len(test_channels)} channels",
-                                "sample_size": len(test_channels)
+                                "sample_size": len(test_channels),
                             }
                         else:
                             test_results["tests"][op] = {
                                 "status": "FAIL",
-                                "message": "No channels available for testing"
+                                "message": "No channels available for testing",
                             }
-                    
+
                     else:
                         # Placeholder for other operations
                         test_results["tests"][op] = {
                             "status": "SKIP",
-                            "message": f"Testing for {op} not yet implemented"
+                            "message": f"Testing for {op} not yet implemented",
                         }
-                    
+
                     if test_results["tests"][op]["status"] == "PASS":
                         click.echo(f"    ✅ {op}")
                     elif test_results["tests"][op]["status"] == "FAIL":
                         click.echo(f"    ❌ {op}")
                     else:
                         click.echo(f"    ⚠️  {op} (skipped)")
-                        
+
                 except Exception as e:
                     test_results["tests"][op] = {
                         "status": "FAIL",
-                        "message": f"Test failed with error: {e}"
+                        "message": f"Test failed with error: {e}",
                     }
                     click.echo(f"    ❌ {op}")
-            
+
             # Summary
-            passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
-            total = len([test for test in test_results["tests"].values() if test["status"] != "SKIP"])
-            
+            passed = sum(
+                1 for test in test_results["tests"].values() if test["status"] == "PASS"
+            )
+            total = len(
+                [
+                    test
+                    for test in test_results["tests"].values()
+                    if test["status"] != "SKIP"
+                ]
+            )
+
             test_results["summary"] = {
                 "total_tests": total,
                 "passed": passed,
                 "failed": total - passed,
-                "overall_status": "PASS" if passed == total else "FAIL"
+                "overall_status": "PASS" if passed == total else "FAIL",
             }
-            
+
             click.echo(f"\n📊 Test Summary: {passed}/{total} analysis operations passed")
-            
+
             _write_output({"analysis_tests": test_results}, output, output_format)
-            
+
     except Exception as e:
         logger.error(f"Error testing analysis operations: {e}")
         click.echo(f"❌ Error testing analysis operations: {e}", err=True)
@@ -2746,90 +3008,110 @@ def _test_analysis_operations(ctx_obj: Dict[str, Any], operation: Optional[str],
             raise
 
 
-def _test_template_rendering(ctx_obj: Dict[str, Any], template: Optional[str], output: Optional[str], output_format: str):
+def _test_template_rendering(
+    ctx_obj: Dict[str, Any],
+    template: Optional[str],
+    output: Optional[str],
+    output_format: str,
+):
     """Test template rendering with sample data."""
     try:
         from pepino.templates.template_engine import TemplateEngine
+
         from .persistence import get_database_manager
-        
+
         with get_database_manager(ctx_obj.get("db_path")) as db_manager:
             settings = Settings()
             from pepino.analysis.data_facade import get_analysis_data_facade
+
             data_facade = get_analysis_data_facade(db_manager, settings.base_filter)
-            
+
             template_engine = TemplateEngine(data_facade)
-            
+
             test_results = {
                 "test_config": {
                     "template": template or "all",
-                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                    "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
                 },
-                "tests": {}
+                "tests": {},
             }
-            
+
             # Common templates to test
-            templates_to_test = [template] if template else [
-                "outputs/cli/user_analysis.txt.j2",
-                "outputs/cli/channel_analysis.txt.j2",
-                "outputs/cli/topic_analysis.txt.j2",
-                "outputs/discord/user_analysis.md.j2"
-            ]
-            
+            templates_to_test = (
+                [template]
+                if template
+                else [
+                    "outputs/cli/user_analysis.txt.j2",
+                    "outputs/cli/channel_analysis.txt.j2",
+                    "outputs/cli/topic_analysis.txt.j2",
+                    "outputs/discord/user_analysis.md.j2",
+                ]
+            )
+
             click.echo(f"🔍 Testing {len(templates_to_test)} templates...")
-            
+
             for template_name in templates_to_test:
                 click.echo(f"  Testing {template_name}...")
-                
+
                 try:
                     # Create sample data for template testing
                     sample_data = {
-                        "user_info": {"display_name": "Test User", "author_name": "testuser"},
+                        "user_info": {
+                            "display_name": "Test User",
+                            "author_name": "testuser",
+                        },
                         "statistics": {"message_count": 100, "channels_active": 5},
                         "channel_name": "test-channel",
                         "days": 30,
                         "analysis": {"success": True},
-                        "topics": [{"topic": "test", "frequency": 10}]
+                        "topics": [{"topic": "test", "frequency": 10}],
                     }
-                    
+
                     # Test template rendering
-                    rendered = template_engine.render_template(template_name, **sample_data)
-                    
+                    rendered = template_engine.render_template(
+                        template_name, **sample_data
+                    )
+
                     if rendered and len(rendered.strip()) > 0:
                         test_results["tests"][template_name] = {
                             "status": "PASS",
                             "message": f"Template rendered successfully ({len(rendered)} characters)",
-                            "sample_output": rendered[:200] + "..." if len(rendered) > 200 else rendered
+                            "sample_output": rendered[:200] + "..."
+                            if len(rendered) > 200
+                            else rendered,
                         }
                         click.echo(f"    ✅ {template_name}")
                     else:
                         test_results["tests"][template_name] = {
                             "status": "FAIL",
-                            "message": "Template rendered but output was empty"
+                            "message": "Template rendered but output was empty",
                         }
                         click.echo(f"    ❌ {template_name}")
-                        
+
                 except Exception as e:
                     test_results["tests"][template_name] = {
                         "status": "FAIL",
-                        "message": f"Template rendering failed: {e}"
+                        "message": f"Template rendering failed: {e}",
                     }
                     click.echo(f"    ❌ {template_name}")
-            
+
             # Summary
-            passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
+            passed = sum(
+                1 for test in test_results["tests"].values() if test["status"] == "PASS"
+            )
             total = len(test_results["tests"])
-            
+
             test_results["summary"] = {
                 "total_tests": total,
                 "passed": passed,
                 "failed": total - passed,
-                "overall_status": "PASS" if passed == total else "FAIL"
+                "overall_status": "PASS" if passed == total else "FAIL",
             }
-            
+
             click.echo(f"\n📊 Test Summary: {passed}/{total} templates passed")
-            
+
             _write_output({"template_tests": test_results}, output, output_format)
-            
+
     except Exception as e:
         logger.error(f"Error testing templates: {e}")
         click.echo(f"❌ Error testing templates: {e}", err=True)
@@ -2837,112 +3119,120 @@ def _test_template_rendering(ctx_obj: Dict[str, Any], template: Optional[str], o
             raise
 
 
-def _test_system_dependencies(ctx_obj: Dict[str, Any], output: Optional[str], output_format: str):
+def _test_system_dependencies(
+    ctx_obj: Dict[str, Any], output: Optional[str], output_format: str
+):
     """Test system dependencies and configuration."""
     try:
-        import sys
         import sqlite3
-        
+        import sys
+
         test_results = {
             "system_info": {
                 "python_version": sys.version,
                 "platform": sys.platform,
-                "database_path": ctx_obj.get("db_path", "data/discord_messages.db")
+                "database_path": ctx_obj.get("db_path", "data/discord_messages.db"),
             },
-            "tests": {}
+            "tests": {},
         }
-        
+
         click.echo("🔍 Testing system dependencies...")
-        
+
         # Test 1: Python version
         try:
             if sys.version_info >= (3, 8):
                 test_results["tests"]["python_version"] = {
                     "status": "PASS",
-                    "message": f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+                    "message": f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 }
                 click.echo("  ✅ Python version")
             else:
                 test_results["tests"]["python_version"] = {
                     "status": "FAIL",
-                    "message": f"Python {sys.version_info.major}.{sys.version_info.minor} (requires 3.8+)"
+                    "message": f"Python {sys.version_info.major}.{sys.version_info.minor} (requires 3.8+)",
                 }
                 click.echo("  ❌ Python version")
         except Exception as e:
             test_results["tests"]["python_version"] = {
                 "status": "FAIL",
-                "message": f"Python version check failed: {e}"
+                "message": f"Python version check failed: {e}",
             }
             click.echo("  ❌ Python version")
-        
+
         # Test 2: SQLite
         try:
             sqlite_version = sqlite3.sqlite_version
             test_results["tests"]["sqlite"] = {
                 "status": "PASS",
-                "message": f"SQLite {sqlite_version}"
+                "message": f"SQLite {sqlite_version}",
             }
             click.echo("  ✅ SQLite")
         except Exception as e:
             test_results["tests"]["sqlite"] = {
                 "status": "FAIL",
-                "message": f"SQLite check failed: {e}"
+                "message": f"SQLite check failed: {e}",
             }
             click.echo("  ❌ SQLite")
-        
+
         # Test 3: Required packages
         required_packages = ["click", "discord", "jinja2", "pydantic"]
-        
+
         for package in required_packages:
             try:
                 __import__(package)
                 test_results["tests"][f"package_{package}"] = {
                     "status": "PASS",
-                    "message": f"{package} imported successfully"
+                    "message": f"{package} imported successfully",
                 }
                 click.echo(f"  ✅ {package}")
             except ImportError as e:
                 test_results["tests"][f"package_{package}"] = {
                     "status": "FAIL",
-                    "message": f"{package} import failed: {e}"
+                    "message": f"{package} import failed: {e}",
                 }
                 click.echo(f"  ❌ {package}")
-        
+
         # Test 4: Optional packages
         optional_packages = ["spacy", "bertopic", "sentence_transformers"]
-        
+
         for package in optional_packages:
             try:
                 __import__(package)
                 test_results["tests"][f"optional_{package}"] = {
                     "status": "PASS",
-                    "message": f"{package} available"
+                    "message": f"{package} available",
                 }
                 click.echo(f"  ✅ {package} (optional)")
             except ImportError:
                 test_results["tests"][f"optional_{package}"] = {
                     "status": "WARN",
-                    "message": f"{package} not available (optional)"
+                    "message": f"{package} not available (optional)",
                 }
                 click.echo(f"  ⚠️  {package} (optional, not installed)")
-        
+
         # Summary
-        passed = sum(1 for test in test_results["tests"].values() if test["status"] == "PASS")
-        warned = sum(1 for test in test_results["tests"].values() if test["status"] == "WARN")
+        passed = sum(
+            1 for test in test_results["tests"].values() if test["status"] == "PASS"
+        )
+        warned = sum(
+            1 for test in test_results["tests"].values() if test["status"] == "WARN"
+        )
         total = len(test_results["tests"])
-        
+
         test_results["summary"] = {
             "total_tests": total,
             "passed": passed,
             "warned": warned,
             "failed": total - passed - warned,
-            "overall_status": "PASS" if passed + warned == total else "FAIL"
+            "overall_status": "PASS" if passed + warned == total else "FAIL",
         }
-        
-        click.echo(f"\n📊 Test Summary: {passed}/{total} dependencies passed, {warned} warnings")
-        
+
+        click.echo(
+            f"\n📊 Test Summary: {passed}/{total} dependencies passed, {warned} warnings"
+        )
+
         _write_output({"dependency_tests": test_results}, output, output_format)
-        
+
     except Exception as e:
         logger.error(f"Error testing dependencies: {e}")
         click.echo(f"❌ Error testing dependencies: {e}", err=True)

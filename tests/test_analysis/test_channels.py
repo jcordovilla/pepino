@@ -60,7 +60,9 @@ async def test_channel_analyzer_analyze():
 
         # Verify repository methods were called correctly
         mock_get_stats.assert_called_once_with("general")
-        mock_get_top_users.assert_called_once_with("general", 10, analyzer.data_facade.base_filter)
+        mock_get_top_users.assert_called_once_with(
+            "general", 10, analyzer.data_facade.base_filter
+        )
 
 
 @pytest.mark.asyncio
@@ -126,7 +128,9 @@ async def test_channel_analyzer_analyze_custom_user_limit():
         assert len(result.top_users) == 1
 
         # Verify custom limit was passed
-        mock_get_top_users.assert_called_once_with("general", 5, analyzer.data_facade.base_filter)
+        mock_get_top_users.assert_called_once_with(
+            "general", 5, analyzer.data_facade.base_filter
+        )
 
 
 @pytest.mark.asyncio
@@ -222,7 +226,9 @@ async def test_channel_analyzer_get_top_channels():
         assert channels[1]["channel_name"] == "random"
         assert channels[1]["message_count"] == 800
 
-        mock_get_top_channels.assert_called_once_with(5, analyzer.data_facade.base_filter)
+        mock_get_top_channels.assert_called_once_with(
+            5, analyzer.data_facade.base_filter
+        )
 
 
 @pytest.mark.asyncio

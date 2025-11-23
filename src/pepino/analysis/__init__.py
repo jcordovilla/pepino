@@ -13,12 +13,11 @@ providing a clean interface for analyzers without direct repository management.
 """
 
 from .channel_analyzer import ChannelAnalyzer
-from .data_facade import AnalysisDataFacade, get_analysis_data_facade, analysis_transaction
-# Removed imports with external dependencies for now
-# from .conversation_analyzer import ConversationService
-# from .nlp_analyzer import NLPService
-# from .similarity_analyzer import SimilarityService
-
+from .data_facade import (
+    AnalysisDataFacade,
+    analysis_transaction,
+    get_analysis_data_facade,
+)
 from .models import (
     AnalysisErrorResponse,
     AnalysisResponse,
@@ -40,6 +39,13 @@ from .topic_analyzer import TopicAnalyzer
 
 # Core analyzers
 from .user_analyzer import UserAnalyzer
+
+# Removed imports with external dependencies for now
+# from .conversation_analyzer import ConversationService
+# from .nlp_analyzer import NLPService
+# from .similarity_analyzer import SimilarityService
+
+
 
 __all__ = [
     # Core analyzers

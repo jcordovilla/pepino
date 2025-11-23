@@ -220,7 +220,9 @@ class ConversationService:
             duration = end - start
             return round(duration.total_seconds() / 3600, 2)
         except (ValueError, AttributeError, TypeError) as e:
-            logger.warning(f"Failed to calculate duration between {start_time} and {end_time}: {e}")
+            logger.warning(
+                f"Failed to calculate duration between {start_time} and {end_time}: {e}"
+            )
             return 0.0
 
     def _analyze_conversation_turns(self, messages: List[Tuple]) -> Dict[str, Any]:

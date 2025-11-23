@@ -121,7 +121,9 @@ class MessageExtractor:
             "channel": MessageExtractor._extract_channel_data(
                 message, get_overwrite_data
             ),
-            "channel_id": str(getattr(message.channel, "id", "")),  # Add channel_id for resilience
+            "channel_id": str(
+                getattr(message.channel, "id", "")
+            ),  # Add channel_id for resilience
             "thread": MessageExtractor._extract_thread_data(message),
             "mentions": [
                 str(getattr(user, "id", ""))

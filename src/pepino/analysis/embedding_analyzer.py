@@ -102,7 +102,9 @@ class EmbeddingService:
                 batch = messages[i : i + batch_size]
                 batch_texts = [msg["content"] for msg in batch]
 
-                logger.info(f"Processing batch {i//batch_size + 1} ({len(batch)} messages)")
+                logger.info(
+                    f"Processing batch {i//batch_size + 1} ({len(batch)} messages)"
+                )
 
                 # Generate embeddings for batch directly
                 try:

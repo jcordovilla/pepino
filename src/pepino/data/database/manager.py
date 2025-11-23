@@ -126,7 +126,7 @@ class DatabaseManager:
             
             # Only create missing tables without overwriting existing data
             from .schema import SCHEMA_QUERIES
-            
+
             # Create tables that don't exist
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
             existing_tables = {row[0] for row in cursor.fetchall()}

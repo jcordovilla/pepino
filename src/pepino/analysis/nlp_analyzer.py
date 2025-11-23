@@ -64,14 +64,24 @@ class NLPService:
             for chunk in doc.noun_chunks:
                 chunk_text = chunk.text.strip()
                 # Allow shorter chunks if they contain AI/tech keywords
-                if (len(chunk_text.split()) >= 2 and len(chunk_text) > 4) or self._is_ai_tech_term(chunk_text):
+                if (
+                    len(chunk_text.split()) >= 2 and len(chunk_text) > 4
+                ) or self._is_ai_tech_term(chunk_text):
                     clean_chunk = self._clean_concept(chunk_text)
                     if clean_chunk:
                         concepts.append(clean_chunk)
 
             # 2. Extract named entities (expanded for tech/AI entities)
             for ent in doc.ents:
-                if ent.label_ in ["PERSON", "ORG", "GPE", "PRODUCT", "EVENT", "WORK_OF_ART", "LAW"]:
+                if ent.label_ in [
+                    "PERSON",
+                    "ORG",
+                    "GPE",
+                    "PRODUCT",
+                    "EVENT",
+                    "WORK_OF_ART",
+                    "LAW",
+                ]:
                     clean_entity = self._clean_concept(ent.text)
                     if clean_entity:
                         concepts.append(clean_entity)
@@ -79,25 +89,32 @@ class NLPService:
             # 3. Enhanced technical compounds (up to 3-word compounds)
             for i, token in enumerate(doc[:-2]):
                 # Two-word compounds
-                if token.pos_ in ["NOUN", "PROPN", "ADJ"] and doc[i + 1].pos_ in ["NOUN", "PROPN"]:
+                if token.pos_ in ["NOUN", "PROPN", "ADJ"] and doc[i + 1].pos_ in [
+                    "NOUN",
+                    "PROPN",
+                ]:
                     compound = f"{token.text} {doc[i + 1].text}"
                     if len(compound) > 4 and self._is_meaningful_compound(compound):
                         concepts.append(self._clean_concept(compound))
-                
+
                 # Three-word compounds for technical terms
-                if (i < len(doc) - 2 and 
-                    token.pos_ in ["NOUN", "PROPN", "ADJ"] and 
-                    doc[i + 1].pos_ in ["NOUN", "PROPN", "ADJ"] and 
-                    doc[i + 2].pos_ in ["NOUN", "PROPN"]):
+                if (
+                    i < len(doc) - 2
+                    and token.pos_ in ["NOUN", "PROPN", "ADJ"]
+                    and doc[i + 1].pos_ in ["NOUN", "PROPN", "ADJ"]
+                    and doc[i + 2].pos_ in ["NOUN", "PROPN"]
+                ):
                     compound = f"{token.text} {doc[i + 1].text} {doc[i + 2].text}"
                     if self._is_ai_tech_term(compound):
                         concepts.append(self._clean_concept(compound))
 
             # 4. Extract domain-specific single terms that are highly relevant
             for token in doc:
-                if (token.pos_ in ["NOUN", "PROPN"] and 
-                    len(token.text) >= 4 and 
-                    self._is_high_value_single_term(token.text)):
+                if (
+                    token.pos_ in ["NOUN", "PROPN"]
+                    and len(token.text) >= 4
+                    and self._is_high_value_single_term(token.text)
+                ):
                     concepts.append(self._clean_concept(token.text))
 
             # 5. Filter and clean results
@@ -117,59 +134,178 @@ class NLPService:
     def _is_ai_tech_term(self, text: str) -> bool:
         """Check if text contains AI/tech-related terms."""
         ai_tech_keywords = {
-            'ai', 'artificial', 'intelligence', 'machine', 'learning', 'deep', 'neural',
-            'generative', 'gpt', 'llm', 'model', 'algorithm', 'data', 'science',
-            'nlp', 'computer', 'vision', 'automation', 'digital', 'transformation',
-            'cloud', 'api', 'framework', 'python', 'tensorflow', 'pytorch',
-            'openai', 'anthropic', 'huggingface', 'prompt', 'engineering',
-            'fine-tuning', 'training', 'inference', 'deployment', 'mlops',
-            'rag', 'retrieval', 'augmented', 'generation', 'embedding',
-            'vector', 'database', 'similarity', 'semantic', 'chatbot',
-            'conversational', 'assistant', 'agent', 'autonomous', 'robotics'
+            "ai",
+            "artificial",
+            "intelligence",
+            "machine",
+            "learning",
+            "deep",
+            "neural",
+            "generative",
+            "gpt",
+            "llm",
+            "model",
+            "algorithm",
+            "data",
+            "science",
+            "nlp",
+            "computer",
+            "vision",
+            "automation",
+            "digital",
+            "transformation",
+            "cloud",
+            "api",
+            "framework",
+            "python",
+            "tensorflow",
+            "pytorch",
+            "openai",
+            "anthropic",
+            "huggingface",
+            "prompt",
+            "engineering",
+            "fine-tuning",
+            "training",
+            "inference",
+            "deployment",
+            "mlops",
+            "rag",
+            "retrieval",
+            "augmented",
+            "generation",
+            "embedding",
+            "vector",
+            "database",
+            "similarity",
+            "semantic",
+            "chatbot",
+            "conversational",
+            "assistant",
+            "agent",
+            "autonomous",
+            "robotics",
         }
         return any(keyword in text.lower() for keyword in ai_tech_keywords)
 
     def _is_meaningful_compound(self, text: str) -> bool:
         """Check if compound term is meaningful."""
         # Avoid generic combinations
-        generic_patterns = {'in the', 'of the', 'to the', 'for the', 'with the', 'and the'}
+        generic_patterns = {
+            "in the",
+            "of the",
+            "to the",
+            "for the",
+            "with the",
+            "and the",
+        }
         return text.lower() not in generic_patterns and len(text) > 6
 
     def _is_high_value_single_term(self, text: str) -> bool:
         """Check if single term is high-value for AI/tech domain."""
         high_value_terms = {
-            'tensorflow', 'pytorch', 'keras', 'scikit-learn', 'pandas', 'numpy',
-            'jupyter', 'docker', 'kubernetes', 'aws', 'azure', 'gcp',
-            'openai', 'anthropic', 'huggingface', 'langchain', 'llamaindex',
-            'chatgpt', 'claude', 'gemini', 'copilot', 'automation', 'optimization',
-            'scalability', 'architecture', 'infrastructure', 'deployment',
-            'monitoring', 'analytics', 'visualization', 'dashboard', 'pipeline'
+            "tensorflow",
+            "pytorch",
+            "keras",
+            "scikit-learn",
+            "pandas",
+            "numpy",
+            "jupyter",
+            "docker",
+            "kubernetes",
+            "aws",
+            "azure",
+            "gcp",
+            "openai",
+            "anthropic",
+            "huggingface",
+            "langchain",
+            "llamaindex",
+            "chatgpt",
+            "claude",
+            "gemini",
+            "copilot",
+            "automation",
+            "optimization",
+            "scalability",
+            "architecture",
+            "infrastructure",
+            "deployment",
+            "monitoring",
+            "analytics",
+            "visualization",
+            "dashboard",
+            "pipeline",
         }
         return text.lower() in high_value_terms
 
     def _is_generic_noise(self, text: str) -> bool:
         """Filter out generic noise terms."""
         noise_patterns = {
-            'the', 'this', 'that', 'these', 'those', 'some', 'many', 'much',
-            'other', 'another', 'same', 'different', 'new', 'old', 'good', 'bad',
-            'big', 'small', 'high', 'low', 'first', 'last', 'next', 'previous',
-            'one', 'two', 'three', 'few', 'several', 'lot', 'bit', 'part'
+            "the",
+            "this",
+            "that",
+            "these",
+            "those",
+            "some",
+            "many",
+            "much",
+            "other",
+            "another",
+            "same",
+            "different",
+            "new",
+            "old",
+            "good",
+            "bad",
+            "big",
+            "small",
+            "high",
+            "low",
+            "first",
+            "last",
+            "next",
+            "previous",
+            "one",
+            "two",
+            "three",
+            "few",
+            "several",
+            "lot",
+            "bit",
+            "part",
         }
         return text.lower() in noise_patterns or len(text.strip()) < 3
 
     def _clean_concept(self, text: str) -> str:
         """Clean and standardize concept text."""
         # Remove extra whitespace and normalize
-        cleaned = ' '.join(text.split()).strip()
-        
+        cleaned = " ".join(text.split()).strip()
+
         # Capitalize AI/tech acronyms properly
         tech_acronyms = {
-            'ai': 'AI', 'ml': 'ML', 'nlp': 'NLP', 'api': 'API', 'ui': 'UI', 'ux': 'UX',
-            'gpt': 'GPT', 'llm': 'LLM', 'sql': 'SQL', 'css': 'CSS', 'html': 'HTML',
-            'json': 'JSON', 'xml': 'XML', 'rest': 'REST', 'aws': 'AWS', 'gcp': 'GCP',
-            'rag': 'RAG', 'devops': 'DevOps', 'mlops': 'MLOps', 'cicd': 'CI/CD'
+            "ai": "AI",
+            "ml": "ML",
+            "nlp": "NLP",
+            "api": "API",
+            "ui": "UI",
+            "ux": "UX",
+            "gpt": "GPT",
+            "llm": "LLM",
+            "sql": "SQL",
+            "css": "CSS",
+            "html": "HTML",
+            "json": "JSON",
+            "xml": "XML",
+            "rest": "REST",
+            "aws": "AWS",
+            "gcp": "GCP",
+            "rag": "RAG",
+            "devops": "DevOps",
+            "mlops": "MLOps",
+            "cicd": "CI/CD",
         }
-        
+
         words = cleaned.split()
         normalized_words = []
         for word in words:
@@ -178,8 +314,8 @@ class NLPService:
                 normalized_words.append(tech_acronyms[word_lower])
             else:
                 normalized_words.append(word.title())
-        
-        return ' '.join(normalized_words)
+
+        return " ".join(normalized_words)
 
     def analyze_sentiment(self, text: str) -> Dict[str, Any]:
         """Analyze sentiment of text using spaCy."""

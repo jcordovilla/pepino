@@ -112,8 +112,8 @@ async def test_autocomplete(ctx):
     """Test if autocomplete data is available"""
     try:
         from pepino.analysis.channel_analyzer import ChannelAnalyzer
-        from pepino.analysis.user_analyzer import UserAnalyzer
         from pepino.analysis.data_facade import get_analysis_data_facade
+        from pepino.analysis.user_analyzer import UserAnalyzer
 
         # Create a temporary instance to test using facade
         with get_analysis_data_facade() as facade:

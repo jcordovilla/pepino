@@ -7,10 +7,10 @@ and configuration management.
 
 import logging
 import logging.config
+import os
 import sys
 from pathlib import Path
 from typing import Optional
-import os
 
 from .config import Settings
 
@@ -20,11 +20,11 @@ class ColoredFormatter(logging.Formatter):
 
     # Color codes
     COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
 
@@ -44,7 +44,7 @@ def setup_logging(
 ) -> None:
     """
     Set up professional logging configuration.
-    
+
     Args:
         settings: Application settings (optional)
         console_output: Whether to enable console logging
@@ -59,9 +59,7 @@ def setup_logging(
 
     # Define formatters
     console_format = "%(asctime)s [%(levelname)-8s] %(name)-20s: %(message)s"
-    file_format = (
-        "%(asctime)s [%(levelname)-8s] %(name)-20s [%(module)s.%(funcName)s:%(lineno)d]: %(message)s"
-    )
+    file_format = "%(asctime)s [%(levelname)-8s] %(name)-20s [%(module)s.%(funcName)s:%(lineno)d]: %(message)s"
 
     # Configure logging
     config = {
@@ -169,17 +167,17 @@ def setup_logging(
 def get_logger(name: str) -> logging.Logger:
     """
     Get a properly configured logger for a module.
-    
+
     Args:
         name: Logger name (typically __name__)
-        
+
     Returns:
         Configured logger instance
     """
     # Ensure the logger is under the pepino hierarchy
     if not name.startswith("pepino.") and name != "pepino":
         name = f"pepino.{name}"
-    
+
     return logging.getLogger(name)
 
 
@@ -208,17 +206,17 @@ def configure_third_party_loggers(settings: Optional[Settings] = None) -> None:
 # Context managers for temporary log level changes
 class temp_log_level:
     """Context manager for temporarily changing log level."""
-    
+
     def __init__(self, logger_name: str, level: str):
         self.logger = logging.getLogger(logger_name)
         self.level = getattr(logging, level.upper())
         self.original_level = None
-    
+
     def __enter__(self):
         self.original_level = self.logger.level
         self.logger.setLevel(self.level)
         return self.logger
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.logger.setLevel(self.original_level)
 
@@ -226,20 +224,20 @@ class temp_log_level:
 def setup_cli_logging(verbose: bool = False) -> None:
     """Set up logging specifically for CLI operations."""
     settings = Settings()
-    
+
     # Adjust log level based on verbosity
     if verbose:
         settings.log_level = "DEBUG"
     else:
         settings.log_level = "INFO"
-    
+
     # Set up logging with console output only for CLI
     setup_logging(
         settings=settings,
         console_output=True,
         file_output=True,  # Still log to files for debugging
     )
-    
+
     # Configure third-party loggers
     configure_third_party_loggers(settings)
 
@@ -247,33 +245,33 @@ def setup_cli_logging(verbose: bool = False) -> None:
 def setup_bot_logging() -> None:
     """Set up logging specifically for Discord bot operations."""
     settings = Settings()
-    
+
     # Set up full logging for bot operations
     setup_logging(
         settings=settings,
         console_output=True,
         file_output=True,
     )
-    
+
     # Configure third-party loggers
     configure_third_party_loggers(settings)
 
-    log_dir = Path(os.getenv('PEPINO_LOG_DIR', 'logs'))
+    log_dir = Path(os.getenv("PEPINO_LOG_DIR", "logs"))
     log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / 'pepino.log'
-    
+    log_file = log_dir / "pepino.log"
+
     logging.basicConfig(
         level=logging.DEBUG,  # Changed from INFO to DEBUG
-        format='%(asctime)s [%(levelname)s] %(name)s [%(process)d:%(thread)d] [%(funcName)s:%(lineno)d]: %(message)s',
+        format="%(asctime)s [%(levelname)s] %(name)s [%(process)d:%(thread)d] [%(funcName)s:%(lineno)d]: %(message)s",
         handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
     )
-    
+
     # Set Discord.py logging to WARNING to reduce noise
-    logging.getLogger('discord').setLevel(logging.WARNING)
-    logging.getLogger('discord.http').setLevel(logging.WARNING)
-    
+    logging.getLogger("discord").setLevel(logging.WARNING)
+    logging.getLogger("discord.http").setLevel(logging.WARNING)
+
     print(f"Logging initialized - Level: DEBUG")
-    print(f"Log files: {log_dir}") 
+    print(f"Log files: {log_dir}")

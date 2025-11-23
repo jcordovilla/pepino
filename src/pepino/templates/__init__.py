@@ -7,4 +7,4 @@ Provides Jinja2-based template rendering with chart integration and domain-speci
 
 from .template_engine import TemplateEngine
 
-__all__ = ['TemplateEngine'] 
+__all__ = ["TemplateEngine"]

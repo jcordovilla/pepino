@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pepino.analysis.topic_analyzer import TopicAnalyzer
 from pepino.analysis.data_facade import AnalysisDataFacade
+from pepino.analysis.topic_analyzer import TopicAnalyzer
 
 
 @pytest.mark.asyncio

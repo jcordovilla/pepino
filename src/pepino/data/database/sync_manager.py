@@ -2,8 +2,8 @@
 Synchronous Database Manager
 """
 
-import sqlite3
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Optional
 

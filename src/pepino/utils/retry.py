@@ -9,19 +9,22 @@ import logging
 import sqlite3
 import time
 from functools import wraps
-from typing import Callable, Tuple, Type, TypeVar, Optional
+from typing import Callable, Optional, Tuple, Type, TypeVar
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def retry_on_error(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
     initial_delay: float = 1.0,
-    exceptions: Tuple[Type[Exception], ...] = (sqlite3.OperationalError, sqlite3.DatabaseError),
-    on_retry: Optional[Callable[[Exception, int], None]] = None
+    exceptions: Tuple[Type[Exception], ...] = (
+        sqlite3.OperationalError,
+        sqlite3.DatabaseError,
+    ),
+    on_retry: Optional[Callable[[Exception, int], None]] = None,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator to retry a function on specific exceptions with exponential backoff.
@@ -41,6 +44,7 @@ def retry_on_error(
         ... def query_database(query):
         ...     return execute_query(query)
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs) -> T:
@@ -61,7 +65,7 @@ def retry_on_error(
                         break
 
                     # Calculate delay with exponential backoff
-                    delay = initial_delay * (backoff_factor ** attempt)
+                    delay = initial_delay * (backoff_factor**attempt)
 
                     logger.warning(
                         f"Attempt {attempt + 1}/{max_attempts} failed for {func.__name__}: {e}. "
@@ -89,9 +93,12 @@ def retry_on_error(
             if last_exception:
                 raise last_exception
             else:
-                raise RuntimeError(f"Function {func.__name__} failed without raising an exception")
+                raise RuntimeError(
+                    f"Function {func.__name__} failed without raising an exception"
+                )
 
         return wrapper
+
     return decorator
 
 
@@ -99,7 +106,7 @@ def retry_async(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
     initial_delay: float = 1.0,
-    exceptions: Tuple[Type[Exception], ...] = (sqlite3.OperationalError,)
+    exceptions: Tuple[Type[Exception], ...] = (sqlite3.OperationalError,),
 ):
     """
     Async version of retry decorator.
@@ -113,6 +120,7 @@ def retry_async(
     Returns:
         Decorated async function with retry logic
     """
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -133,7 +141,7 @@ def retry_async(
                         )
                         break
 
-                    delay = initial_delay * (backoff_factor ** attempt)
+                    delay = initial_delay * (backoff_factor**attempt)
 
                     logger.warning(
                         f"Attempt {attempt + 1}/{max_attempts} failed for {func.__name__}: {e}. "
@@ -151,9 +159,12 @@ def retry_async(
             if last_exception:
                 raise last_exception
             else:
-                raise RuntimeError(f"Function {func.__name__} failed without raising an exception")
+                raise RuntimeError(
+                    f"Function {func.__name__} failed without raising an exception"
+                )
 
         return wrapper
+
     return decorator
 
 
@@ -169,7 +180,7 @@ class RetryConfig:
         max_attempts: int = 3,
         backoff_factor: float = 2.0,
         initial_delay: float = 1.0,
-        max_delay: float = 60.0
+        max_delay: float = 60.0,
     ):
         self.max_attempts = max_attempts
         self.backoff_factor = backoff_factor
@@ -178,7 +189,7 @@ class RetryConfig:
 
     def calculate_delay(self, attempt: int) -> float:
         """Calculate delay for a given attempt number."""
-        delay = self.initial_delay * (self.backoff_factor ** attempt)
+        delay = self.initial_delay * (self.backoff_factor**attempt)
         return min(delay, self.max_delay)
 
     def should_retry(self, attempt: int) -> bool:
@@ -188,19 +199,13 @@ class RetryConfig:
 
 # Default retry configuration for database operations
 DATABASE_RETRY_CONFIG = RetryConfig(
-    max_attempts=3,
-    backoff_factor=2.0,
-    initial_delay=1.0,
-    max_delay=30.0
+    max_attempts=3, backoff_factor=2.0, initial_delay=1.0, max_delay=30.0
 )
 
 
 # Default retry configuration for API calls
 API_RETRY_CONFIG = RetryConfig(
-    max_attempts=5,
-    backoff_factor=1.5,
-    initial_delay=0.5,
-    max_delay=10.0
+    max_attempts=5, backoff_factor=1.5, initial_delay=0.5, max_delay=10.0
 )
 
 
@@ -217,16 +222,16 @@ def is_retryable_error(exception: Exception) -> bool:
     # SQLite errors that are typically transient
     retryable_sqlite_errors = (
         sqlite3.OperationalError,  # Database locked, etc.
-        sqlite3.DatabaseError,      # General database errors
+        sqlite3.DatabaseError,  # General database errors
     )
 
     if isinstance(exception, retryable_sqlite_errors):
         error_msg = str(exception).lower()
         # These specific errors are retryable
         retryable_messages = [
-            'database is locked',
-            'disk i/o error',
-            'attempt to write a readonly database',
+            "database is locked",
+            "disk i/o error",
+            "attempt to write a readonly database",
         ]
         return any(msg in error_msg for msg in retryable_messages)
 
@@ -241,4 +246,6 @@ def log_retry_attempt(exception: Exception, attempt: int):
         exception: The exception that triggered the retry
         attempt: Current attempt number
     """
-    logger.info(f"Retry attempt {attempt} due to: {type(exception).__name__}: {exception}")
+    logger.info(
+        f"Retry attempt {attempt} due to: {type(exception).__name__}: {exception}"
+    )

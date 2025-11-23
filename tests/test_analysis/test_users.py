@@ -101,7 +101,9 @@ async def test_user_analyzer_analyze_by_name():
 
         # Verify repository methods were called correctly
         mock_find_user.assert_called_once_with("alice")
-        mock_get_stats.assert_called_once_with("user123", analyzer.data_facade.base_filter)
+        mock_get_stats.assert_called_once_with(
+            "user123", analyzer.data_facade.base_filter
+        )
         mock_get_concepts.assert_called_once_with("user123")
 
 
@@ -195,7 +197,9 @@ async def test_user_analyzer_analyze_no_data():
         assert "No data found for user 'charlie'" in result.error
 
         mock_find_user.assert_called_once_with("charlie")
-        mock_get_stats.assert_called_once_with("user789", analyzer.data_facade.base_filter)
+        mock_get_stats.assert_called_once_with(
+            "user789", analyzer.data_facade.base_filter
+        )
 
 
 @pytest.mark.asyncio

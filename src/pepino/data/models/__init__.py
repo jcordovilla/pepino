@@ -12,12 +12,7 @@ from .analysis import (
 )
 from .channel import Channel
 from .message import Message
-from .sync import (
-    ChannelSkipInfo,
-    GuildSyncInfo,
-    SyncError,
-    SyncLogEntry,
-)
+from .sync import ChannelSkipInfo, GuildSyncInfo, SyncError, SyncLogEntry
 from .user import User
 
 __all__ = [

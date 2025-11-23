@@ -6,7 +6,6 @@ import json
 from typing import Any, Dict, Optional
 
 from ...logging_config import get_logger
-
 from ..database.manager import DatabaseManager
 from ..models.sync import SyncLogEntry
 

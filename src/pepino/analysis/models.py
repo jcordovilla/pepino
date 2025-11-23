@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 # Base activity models for V2 analyzers
 class UserActivity(BaseModel):
     """User activity data for channel analysis."""
-    
+
     username: str
     display_name: Optional[str] = None
     message_count: int
@@ -21,7 +21,7 @@ class UserActivity(BaseModel):
 
 class ChannelActivity(BaseModel):
     """Channel activity data for user analysis."""
-    
+
     channel_name: str
     message_count: int
     first_message_date: Optional[str] = None
@@ -30,7 +30,7 @@ class ChannelActivity(BaseModel):
 
 class EnhancedChannelActivity(BaseModel):
     """Enhanced channel activity data for user analysis."""
-    
+
     channel_name: str
     message_count: int
     avg_message_length: float = 0.0
@@ -40,14 +40,14 @@ class EnhancedChannelActivity(BaseModel):
 
 class TimeOfDayActivity(BaseModel):
     """Time of day activity patterns."""
-    
+
     period: str  # e.g., "Morning (06-11)"
     message_count: int
 
 
 class SemanticAnalysisResult(BaseModel):
     """Semantic analysis results for user content."""
-    
+
     key_entities: List[str] = []
     technology_terms: List[str] = []
     key_concepts: List[str] = []
@@ -63,7 +63,7 @@ class TopicItem(BaseModel):
 
 class EnhancedUserStatistics(BaseModel):
     """Enhanced user statistics with additional metrics."""
-    
+
     author_id: str
     author_name: str
     display_name: Optional[str] = None
@@ -77,24 +77,24 @@ class EnhancedUserStatistics(BaseModel):
 
 class EnhancedUserAnalysisResponse(BaseModel):
     """Enhanced response model for comprehensive user analysis."""
-    
-    user_info: 'UserInfo'
+
+    user_info: "UserInfo"
     statistics: EnhancedUserStatistics
     channel_activity: List[EnhancedChannelActivity] = []
     time_patterns: List[TimeOfDayActivity] = []
     semantic_analysis: Optional[SemanticAnalysisResult] = None
     top_topics: List[TopicItem] = []
-    
+
     # Legacy fields for compatibility
     concepts: List[str] = []
     activity_patterns: List[str] = []
     recommendations: List[str] = []
 
 
-# V2 Local statistics models  
+# V2 Local statistics models
 class LocalChannelStatistics(BaseModel):
     """Basic channel statistics for V2 analyzers."""
-    
+
     total_messages: int
     unique_users: int
     messages_per_day: float
@@ -109,7 +109,7 @@ class LocalChannelStatistics(BaseModel):
 
 class LocalUserStatistics(BaseModel):
     """Basic user statistics for V2 analyzers."""
-    
+
     total_messages: int
     unique_channels: int
     messages_per_day: float
@@ -153,7 +153,7 @@ class AnalysisErrorResponse(AnalysisResponseBase):
         "insufficient_data",
         "processing_error",
         "timeout_error",
-        "dependency_error"
+        "dependency_error",
     ] = "processing_error"
     error_code: Optional[str] = None
     retry_recommended: bool = False
@@ -225,7 +225,7 @@ class ChannelStatistics(BaseModel):
 
 class EngagementMetrics(BaseModel):
     """Channel engagement metrics."""
-    
+
     total_replies: int
     original_posts: int
     posts_with_reactions: int
@@ -240,28 +240,28 @@ class EngagementMetrics(BaseModel):
 
 class PeakActivityHour(BaseModel):
     """Peak activity hour data."""
-    
+
     hour: str
     messages: int
 
 
 class PeakActivityDay(BaseModel):
     """Peak activity day data."""
-    
+
     day: str
     messages: int
 
 
 class PeakActivity(BaseModel):
     """Peak activity analysis."""
-    
+
     peak_hours: List[PeakActivityHour]
     peak_days: List[PeakActivityDay]
 
 
 class RecentActivityItem(BaseModel):
     """Recent activity data point."""
-    
+
     date: str
     message_count: int
     unique_users: int = 0
@@ -269,7 +269,7 @@ class RecentActivityItem(BaseModel):
 
 class DailyActivityData(BaseModel):
     """Daily activity breakdown."""
-    
+
     activity_by_day: List[RecentActivityItem]
     peak_day: Optional[str] = None
     peak_day_messages: int = 0
@@ -277,7 +277,7 @@ class DailyActivityData(BaseModel):
 
 class WeeklyActivityBreakdown(BaseModel):
     """Weekly activity breakdown by day of week."""
-    
+
     monday: int = 0
     tuesday: int = 0
     wednesday: int = 0
@@ -289,7 +289,7 @@ class WeeklyActivityBreakdown(BaseModel):
 
 class HealthMetrics(BaseModel):
     """Channel health metrics."""
-    
+
     weekly_active: int
     inactive_users: int
     total_channel_members: int = 0
@@ -325,7 +325,13 @@ class ChannelAnalysisResponse(AnalysisResponseBase):
     health_metrics: Optional[HealthMetrics] = None
     top_topics: List[str] = []
     daily_activity_data: Optional[DailyActivityData] = None
-    capabilities_used: List[str] = ["channel_analysis", "channel_stats", "engagement_analysis", "peak_activity", "health_metrics"]
+    capabilities_used: List[str] = [
+        "channel_analysis",
+        "channel_stats",
+        "engagement_analysis",
+        "peak_activity",
+        "health_metrics",
+    ]
 
 
 # Topic Analysis Models

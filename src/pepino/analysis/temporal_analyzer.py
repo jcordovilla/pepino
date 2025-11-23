@@ -20,10 +20,10 @@ logger = get_logger(__name__)
 class TemporalAnalyzer:
     """
     Temporal analysis plugin.
-    
+
     Analyzes temporal patterns in message data using the data facade pattern
     for centralized repository management and proper separation of concerns.
-    
+
     All database operations are abstracted through the data facade for proper
     dependency injection support and testability.
     """
@@ -36,7 +36,7 @@ class TemporalAnalyzer:
         else:
             self.data_facade = data_facade
             self._owns_facade = False
-            
+
         logger.info("TemporalAnalyzer initialized with data facade pattern")
 
     def analyze(
@@ -53,16 +53,20 @@ class TemporalAnalyzer:
         """
         try:
             logger.info(f"Starting temporal analysis with kwargs: {kwargs}")
-            
+
             # Get temporal data using data facade (now synchronous)
-            temporal_data = self.data_facade.message_repository.get_temporal_analysis_data(
-                channel_name=kwargs.get("channel_name"),
-                user_name=kwargs.get("user_name"),
-                days_back=kwargs.get("days_back"),
-                granularity=kwargs.get("granularity", "day"),
+            temporal_data = (
+                self.data_facade.message_repository.get_temporal_analysis_data(
+                    channel_name=kwargs.get("channel_name"),
+                    user_name=kwargs.get("user_name"),
+                    days_back=kwargs.get("days_back"),
+                    granularity=kwargs.get("granularity", "day"),
+                )
             )
 
-            logger.info(f"Retrieved temporal data: {len(temporal_data) if temporal_data else 0} records")
+            logger.info(
+                f"Retrieved temporal data: {len(temporal_data) if temporal_data else 0} records"
+            )
 
             if not temporal_data:
                 return AnalysisErrorResponse(
@@ -80,14 +84,14 @@ class TemporalAnalyzer:
             )
 
         except Exception as e:
-            logger.error(f"Error in temporal analysis: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"Error in temporal analysis: {type(e).__name__}: {e}", exc_info=True
+            )
             return AnalysisErrorResponse(
                 error=f"Analysis failed: {str(e)}", plugin="TemporalAnalyzer"
             )
 
-    def _analyze_patterns(
-        self, temporal_data: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def _analyze_patterns(self, temporal_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analyze temporal patterns in the provided data."""
         if not temporal_data:
             return {
@@ -124,7 +128,7 @@ class TemporalAnalyzer:
         # Calculate trend (comparing first half vs second half)
         mid_point = len(message_counts) // 2
         total_periods = len(temporal_data)
-        
+
         # Determine precise timeframe context based on period count
         if total_periods <= 7:
             trend_timeframe = f"over {total_periods} days"
@@ -142,7 +146,7 @@ class TemporalAnalyzer:
                 trend_timeframe = f"over {months} months"
         else:
             trend_timeframe = f"over {total_periods} days"
-        
+
         if mid_point > 0:
             first_half_avg = sum(message_counts[:mid_point]) / mid_point
             second_half_avg = sum(message_counts[mid_point:]) / (
