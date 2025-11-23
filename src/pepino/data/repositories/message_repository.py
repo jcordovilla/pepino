@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...config import Settings
+from ...logging_config import get_logger
 from ..database.manager import DatabaseManager
 from ..models.message import Message
-from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -1242,6 +1242,21 @@ class MessageRepository:
             }
             for row in rows
         ]
+
+    def get_latest_message_id_per_channel(self) -> Dict[str, str]:
+        """Get the most recent message ID for each channel.
+
+        Returns a dict mapping channel_id -> latest_message_id.
+        Used for incremental sync to only fetch new messages.
+        """
+        query = """
+            SELECT channel_id, MAX(id) as latest_id
+            FROM messages
+            WHERE channel_id IS NOT NULL
+            GROUP BY channel_id
+        """
+        rows = self.db_manager.execute_query(query)
+        return {row["channel_id"]: row["latest_id"] for row in rows if row["latest_id"]}
 
     def get_messages_without_embeddings(
         self, channel_filter: Optional[str] = None, max_messages: Optional[int] = None

@@ -90,8 +90,28 @@ class SyncManager:
         # For now, we'll use data staleness as a proxy for new activity
         return await self.is_data_stale(1)  # Consider 1 hour as "recent activity"
 
-    async def perform_sync(self) -> tuple[Dict[str, Any], SyncLogEntry]:
-        """Perform a complete Discord data sync"""
+    def _get_latest_message_ids(self) -> Dict[str, str]:
+        """Get latest message IDs per channel for incremental sync."""
+        try:
+            db_manager = DatabaseManager(self.db_path)
+            message_repo = MessageRepository(db_manager)
+            try:
+                return message_repo.get_latest_message_id_per_channel()
+            finally:
+                db_manager.close_connections()
+        except Exception as e:
+            logger.warning(f"Could not get latest message IDs: {e}")
+            return {}
+
+    async def perform_sync(
+        self, incremental: bool = True
+    ) -> tuple[Dict[str, Any], SyncLogEntry]:
+        """Perform a Discord data sync.
+
+        Args:
+            incremental: If True, only fetch messages newer than the last synced message
+                        per channel. If False, fetch all messages.
+        """
         logger.info("🔌 Connecting to Discord...")
 
         # Initialize database
@@ -100,8 +120,21 @@ class SyncManager:
         # Load existing data
         data_store = await self.load_existing_data()
 
+        # Get latest message IDs for incremental sync
+        latest_message_ids = self._get_latest_message_ids() if incremental else {}
+        if latest_message_ids:
+            logger.info(
+                f"📊 Found {len(latest_message_ids)} channels with existing messages (incremental sync)"
+            )
+        else:
+            logger.info("📊 No existing messages found (full sync)")
+
         # Create and run client
-        client = DiscordClient(data_store=data_store, intents=self.intents)
+        client = DiscordClient(
+            data_store=data_store,
+            latest_message_ids=latest_message_ids,
+            intents=self.intents,
+        )
         try:
             await client.start(self.discord_token)
             return client.new_data, client.get_sync_log()
@@ -115,10 +148,15 @@ class SyncManager:
             finally:
                 # Force cleanup of any remaining resources
                 import gc
+
                 gc.collect()
 
     async def run_incremental_sync(self, force: bool = False) -> IncrementalSyncResult:
-        """Run an incremental sync operation"""
+        """Run an incremental sync operation.
+
+        Only fetches messages newer than the last synced message per channel.
+        This is much faster than a full sync when the database already has data.
+        """
         start_time = time.time()
         logger.info("🔄 Starting incremental sync...")
 
@@ -217,7 +255,7 @@ class SyncManager:
             logger.error(f"❌ Error clearing sync state: {e}")
 
     async def run_full_sync(self, clear_existing: bool = True) -> FullSyncResult:
-        """Run a complete sync operation"""
+        """Run a complete sync operation (fetches all messages, ignoring existing data)"""
         start_time = time.time()
 
         if clear_existing:
@@ -226,8 +264,8 @@ class SyncManager:
             logger.info("🚀 Starting full re-sync from beginning...")
 
         try:
-            # Perform sync
-            messages_data, sync_log = await self.perform_sync()
+            # Perform sync with incremental=False to fetch all messages
+            messages_data, sync_log = await self.perform_sync(incremental=False)
 
             # Save results
             await self.save_sync_results(messages_data, sync_log)

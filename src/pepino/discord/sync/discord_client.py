@@ -20,9 +20,15 @@ logger = logging.getLogger(__name__)
 class DiscordClient(discord.Client):
     """Main Discord client for synchronizing message data"""
 
-    def __init__(self, data_store: Dict[str, Any], **kwargs):
+    def __init__(
+        self,
+        data_store: Dict[str, Any],
+        latest_message_ids: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.data_store = data_store
+        self.latest_message_ids = latest_message_ids or {}
         self.new_data = {}
         self.rate_limit_delay = 0.1  # Minimal delay between channels (100ms)
         self.max_retries = 3  # Maximum number of retries for failed requests
@@ -40,7 +46,7 @@ class DiscordClient(discord.Client):
 
             accessible_channels = []
             inaccessible_channels = []
-            
+
             # Sync text channels
             for channel in guild.text_channels:
                 perms = channel.permissions_for(guild.me)
@@ -48,7 +54,7 @@ class DiscordClient(discord.Client):
                     accessible_channels.append(channel)
                 else:
                     inaccessible_channels.append(channel)
-            
+
             # Sync forum channels
             for channel in guild.forums:
                 perms = channel.permissions_for(guild.me)
@@ -76,47 +82,70 @@ class DiscordClient(discord.Client):
                 )
 
             for channel in accessible_channels:
-                logger.info(f"  📄 Channel: #{channel.name} (ID: {channel.id}) [Type: {channel.type}]")
+                logger.info(
+                    f"  📄 Channel: #{channel.name} (ID: {channel.id}) [Type: {channel.type}]"
+                )
 
                 try:
                     # Handle forum channels differently - sync their threads
                     if isinstance(channel, discord.ForumChannel):
                         logger.info(f"    🧵 Forum channel - syncing threads...")
                         total_forum_messages = 0
-                        
+
                         # Get all threads in the forum
                         async for thread in channel.archived_threads(limit=None):
-                            thread_messages = await self._sync_forum_thread(thread, guild.name, channel.name)
+                            thread_messages = await self._sync_forum_thread(
+                                thread, guild.name, channel.name
+                            )
                             if thread_messages:
                                 total_forum_messages += len(thread_messages)
-                                self.new_data[guild.name].setdefault(channel.name, []).extend(thread_messages)
-                        
+                                self.new_data[guild.name].setdefault(
+                                    channel.name, []
+                                ).extend(thread_messages)
+
                         # Also get active threads
                         for thread in channel.threads:
-                            thread_messages = await self._sync_forum_thread(thread, guild.name, channel.name)
+                            thread_messages = await self._sync_forum_thread(
+                                thread, guild.name, channel.name
+                            )
                             if thread_messages:
                                 total_forum_messages += len(thread_messages)
-                                self.new_data[guild.name].setdefault(channel.name, []).extend(thread_messages)
-                        
+                                self.new_data[guild.name].setdefault(
+                                    channel.name, []
+                                ).extend(thread_messages)
+
                         if total_forum_messages:
-                            logger.info(f"    ✅ {total_forum_messages} message(s) synced from forum threads")
+                            logger.info(
+                                f"    ✅ {total_forum_messages} message(s) synced from forum threads"
+                            )
                             self.sync_logger.add_messages_synced(total_forum_messages)
                         else:
                             logger.info(f"    📫 No messages found in forum threads")
-                    
+
                     else:
                         # Handle regular text channels
-                        logger.info(f"    🆕 Full sync from beginning of channel history")
+                        channel_id = str(channel.id)
+                        last_message_id = self.latest_message_ids.get(channel_id)
 
-                        # Always sync all messages (no incremental logic)
-                        new_messages = await self.sync_with_retry(channel, None)
+                        if last_message_id:
+                            logger.info(
+                                f"    🔄 Incremental sync (after message {last_message_id})"
+                            )
+                        else:
+                            logger.info(
+                                f"    🆕 Full sync from beginning of channel history"
+                            )
+
+                        new_messages = await self.sync_with_retry(
+                            channel, last_message_id
+                        )
 
                         if new_messages:
                             logger.info(f"    ✅ {len(new_messages)} message(s) synced")
                             self.sync_logger.add_messages_synced(len(new_messages))
-                            self.new_data[guild.name].setdefault(channel.name, []).extend(
-                                new_messages
-                            )
+                            self.new_data[guild.name].setdefault(
+                                channel.name, []
+                            ).extend(new_messages)
                         else:
                             logger.info(f"    📫 No messages found")
 
@@ -205,35 +234,53 @@ class DiscordClient(discord.Client):
     ) -> List[Dict[str, Any]]:
         """Sync messages from a forum thread"""
         try:
-            logger.info(f"      🧵 Thread: {thread.name} (ID: {thread.id})")
-            
+            thread_id = str(thread.id)
+            last_message_id = self.latest_message_ids.get(thread_id)
+
+            if last_message_id:
+                logger.info(
+                    f"      🧵 Thread: {thread.name} (ID: {thread.id}) [incremental]"
+                )
+            else:
+                logger.info(f"      🧵 Thread: {thread.name} (ID: {thread.id}) [full]")
+
             # Check permissions
             perms = thread.permissions_for(thread.guild.me)
             if not (perms.read_messages and perms.read_message_history):
-                logger.warning(f"        🚫 Insufficient permissions for thread {thread.name}")
+                logger.warning(
+                    f"        🚫 Insufficient permissions for thread {thread.name}"
+                )
                 return []
-            
+
             messages = []
             message_count = 0
-            
-            async for message in thread.history(limit=None, oldest_first=True):
+
+            async for message in thread.history(
+                limit=None,
+                after=discord.Object(id=last_message_id) if last_message_id else None,
+                oldest_first=True,
+            ):
                 message_count += 1
                 if message_count % 50 == 0:  # Progress every 50 messages for threads
-                    logger.info(f"        Synced {message_count} messages from thread {thread.name}")
-                
+                    logger.info(
+                        f"        Synced {message_count} messages from thread {thread.name}"
+                    )
+
                 # Extract message data with thread information
                 message_data = MessageExtractor.extract_message_data(message)
-                
+
                 # Override channel name to be the forum name for consistency
                 message_data["channel"]["name"] = forum_name
-                
+
                 messages.append(message_data)
-            
+
             if messages:
-                logger.info(f"        ✅ {len(messages)} message(s) from thread {thread.name}")
-            
+                logger.info(
+                    f"        ✅ {len(messages)} message(s) from thread {thread.name}"
+                )
+
             return messages
-            
+
         except discord.Forbidden:
             logger.warning(f"        🚫 Forbidden access to thread {thread.name}")
             return []
@@ -241,9 +288,7 @@ class DiscordClient(discord.Client):
             logger.error(f"        ❌ Error syncing thread {thread.name}: {e}")
             return []
 
-    async def _sync_channel_members(
-        self, channel
-    ) -> List[Dict[str, Any]]:
+    async def _sync_channel_members(self, channel) -> List[Dict[str, Any]]:
         """Sync all members who have access to a specific channel"""
         try:
             members_data = []
@@ -316,16 +361,17 @@ class DiscordClient(discord.Client):
         try:
             # Close the Discord client first
             await super().close()
-            
+
             # Ensure aiohttp session is closed
-            if hasattr(self, '_session') and self._session:
+            if hasattr(self, "_session") and self._session:
                 await self._session.close()
-                
+
         except Exception as e:
             logger.warning(f"Error during client cleanup: {e}")
         finally:
             # Force cleanup of any remaining resources
             import gc
+
             gc.collect()
 
     def get_sync_log(self) -> "SyncLogEntry":
