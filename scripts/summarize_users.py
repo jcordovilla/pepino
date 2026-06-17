@@ -36,7 +36,7 @@ import requests
 from pepino.config import Settings
 
 
-DEFAULT_MODEL = "deepseek-r1:8b"
+DEFAULT_MODEL = "qwen3-coder"
 DEFAULT_MAX_WORDS = 120
 DEFAULT_LIMIT = 100
 MESSAGE_SAMPLE_LIMIT = 500

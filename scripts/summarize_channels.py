@@ -3,7 +3,7 @@ Utility script to generate narrative channel summaries using a local Ollama mode
 
 Given a JSON export produced by `pepino analyze channels --all`, this script:
 - Extracts key analytics fields for the requested channels.
-- Calls a local LLM (default: deepseek-r1:8b) to produce a <100-word narrative summary
+- Calls a local LLM (default: qwen3-coder) to produce a <100-word narrative summary
   describing channel purpose, content themes, and engagement.
 - Writes the summaries to stdout and optionally to a JSON file.
 
@@ -32,7 +32,7 @@ import requests
 from pepino.config import Settings
 
 
-DEFAULT_MODEL = "deepseek-r1:8b"
+DEFAULT_MODEL = "qwen3-coder"
 DEFAULT_MAX_WORDS = 100
 SYSTEM_PROMPT = (
     "You are an expert community analyst. Craft concise (under 100 words) narrative "
